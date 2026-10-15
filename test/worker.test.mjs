@@ -25,3 +25,14 @@ test('the agent interface answers unknown paths with a pointer to llms.txt', asy
 test('the agent interface asks for an address', async () => {
   const [s] = await call('v1/token?a=nope'); assert.equal(s, 400);
 });
+test('MCP: initialize, list the five tools, refuse a bad address', async () => {
+  const rpc = async b => { const r = await worker.fetch(new Request('http://x/mcp', { method: 'POST', body: JSON.stringify(b) }), env); return r.status === 202 ? null : r.json(); };
+  const i = await rpc({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } }); assert.equal(i.result.serverInfo.name, 'shuntdesk');
+  assert.equal(await rpc({ jsonrpc: '2.0', method: 'notifications/initialized' }), null);
+  const l = await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' }); assert.equal(l.result.tools.length, 5);
+  const c = await rpc({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'token', arguments: { address: 'x' } } }); assert.equal(c.result.isError, true);
+});
+test('Telegram: the webhook refuses a wrong secret', async () => {
+  const r = await worker.fetch(new Request('http://x/api/tg', { method: 'POST', headers: { 'x-telegram-bot-api-secret-token': 'nope' }, body: '{"message":{"chat":{"id":1},"text":"/start"}}' }), { ...env, TELEGRAM_SECRET: 'right' });
+  assert.equal(r.status, 403);
+});

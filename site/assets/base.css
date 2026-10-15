@@ -702,3 +702,9 @@ html.entering #hud, html.entering .top { animation: arrive 1.5s .7s both; }
 
 /* second read */
 .second { box-shadow: inset 3px 0 0 #e6b450; } .sectext { font-family: var(--mono); font-size: 13.5px; line-height: 1.6; color: var(--ink); white-space: pre-wrap; margin: 12px 0 0; }
+
+/* rug replay timeline */
+.tl { list-style: none; padding: 0; margin: 14px 0 0; display: grid; gap: 10px; }
+.tl li { display: grid; grid-template-columns: 160px 150px 1fr; gap: 16px; padding: 10px 0; font-size: 15px; background: linear-gradient(90deg, rgba(237,235,230,.35), rgba(237,235,230,.03)) top / 100% 1px no-repeat; }
+.tl time { font-family: var(--mono); font-size: 12px; color: var(--dim); } .tl b { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; } .tl span { color: #c9c7c2; }
+@media (max-width: 900px) { .tl li { grid-template-columns: 1fr; gap: 4px; } }

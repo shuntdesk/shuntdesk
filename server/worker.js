@@ -343,15 +343,246 @@ async function secondRead(st, env, b, ip) {
   return v;
 }
 
+// ---------- MCP: the same reads as tools, over Streamable HTTP (JSON responses, no session state) ----------
+// Add it to a client as a remote server at https://shuntdesk.com/mcp. Read-only, no key, 120 calls an hour per caller.
+const MCP_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
+const ADDR = { type: 'string', pattern: '^0x[0-9a-fA-F]{40}$', description: 'A token address on Robinhood Chain (chain id 4663)' };
+const TOOLS = [
+  { name: 'token', title: 'What Shuntdesk knows about one token', p: 'token', description: 'The latest Shuntdesk verdict on a Robinhood Chain token (CLEAN, RISKY or DANGER, scored out of 100) and how its price moved an hour and a day later, a fresh server-side security read (red flags, holders), launch facts for Pons tokens (snipers, bundles, insiders, developer share, curve progress) and the crew desk position. verdict is null when nobody has run the checks yet; the reply carries the link that runs them. A verdict is a rule-based reading and can be wrong. Not advice.', inputSchema: { type: 'object', properties: { address: ADDR }, required: ['address'], additionalProperties: false } },
+  { name: 'verdicts', title: 'Latest verdicts', p: 'verdicts', description: 'The 50 latest verdicts Shuntdesk filed, each with its price at the call and an hour and a day later, and how many CLEAN and DANGER calls held an hour later.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
+  { name: 'crew_desk', title: 'The crew desk', p: 'desk', description: 'The public paper desk that bets on Shuntdesk verdicts: equity in paper USDG, open positions, and the last 20 closed trades, each with a post-mortem. All money is simulated.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
+  { name: 'pons_graduations', title: 'Fresh Pons graduations', p: 'graduated', description: 'Tokens that just completed the Pons bonding curve on Robinhood Chain, read from the Pons V2 factory log.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
+  { name: 'daily_report', title: 'Daily report', p: 'report', description: 'The crew desk over the last 24 hours: balance and change, verdict counts, how many calls held, best and worst trade, with a one-paragraph summary.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
+];
+async function mcp(st, env, request, body, ip) {
+  const H = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' };
+  if (request.method !== 'POST') return new Response(JSON.stringify({ error: 'POST JSON-RPC to this address; this server does not stream' }), { status: 405, headers: { ...H, Allow: 'POST' } });
+  const one = async m => {
+    if (!m || m.jsonrpc !== '2.0' || typeof m.method !== 'string') return { jsonrpc: '2.0', id: m?.id ?? null, error: { code: -32600, message: 'Invalid request' } };
+    if (m.id === undefined) return null;   // a notification (notifications/initialized and the like): nothing to answer
+    const ok = result => ({ jsonrpc: '2.0', id: m.id, result }), fail = (code, message) => ({ jsonrpc: '2.0', id: m.id, error: { code, message } });
+    if (m.method === 'initialize') {
+      const want = m.params?.protocolVersion, v = MCP_VERSIONS.includes(want) ? want : MCP_VERSIONS[0];
+      return ok({ protocolVersion: v, capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'shuntdesk', title: 'Shuntdesk', version: '1.1.0' },
+        instructions: 'Read-only tools for Robinhood Chain tokens from shuntdesk.com. Quote a verdict as a rule-based reading of public data that can be wrong, never as advice, and link https://shuntdesk.com/ticket/?a=<address>.' });
+    }
+    if (m.method === 'ping') return ok({});
+    if (m.method === 'tools/list') return ok({ tools: TOOLS.map(({ p, ...t }) => ({ ...t, annotations: { readOnlyHint: true, openWorldHint: true } })) });
+    if (m.method === 'tools/call') {
+      const tool = TOOLS.find(t => t.name === m.params?.name); if (!tool) return fail(-32602, 'Unknown tool: ' + String(m.params?.name).slice(0, 40));
+      if (!allow(st, ip, 'agent', 120)) return ok({ isError: true, content: [{ type: 'text', text: 'Rate limited: 120 calls an hour.' }] });
+      const a = String(m.params?.arguments?.address || '').toLowerCase();
+      if (tool.p === 'token' && !isAddr(a)) return ok({ isError: true, content: [{ type: 'text', text: 'address must be 0x followed by 40 hex characters' }] });
+      const [code, out] = await agentData(st, env, tool.p, a);
+      return ok({ isError: code !== 200, content: [{ type: 'text', text: JSON.stringify(out, null, 1) }], structuredContent: out });
+    }
+    return fail(-32601, 'Method not found: ' + m.method.slice(0, 40));
+  };
+  if (!body || (typeof body !== 'object')) return new Response(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }), { status: 400, headers: H });
+  const res = Array.isArray(body) ? (await Promise.all(body.slice(0, 20).map(one))).filter(Boolean) : await one(body);
+  await save(env, st);
+  if (!res || (Array.isArray(res) && !res.length)) return new Response(null, { status: 202, headers: H });
+  return new Response(JSON.stringify(res), { status: 200, headers: H });
+}
+
+// ---------- rug replay: a token's whole life on one line, with every real event marked ----------
+// Launch and graduation from the Pons factory log (Blockscout's index), price history from Codex, the verdict
+// Shuntdesk filed at the time if it had one, and the steepest fall. Cached 30 minutes per token, 120 a day.
+const replays = new Map(); let replayDay = { day: '', n: 0 };
+const word64 = a => '0x' + a.slice(2).padStart(64, '0');
+async function ponsEvents(env, addr) {
+  const out = {}; if (!env.BLOCKSCOUT_API_KEY) return out;
+  for (const [k, t0] of [['launch', T_LAUNCH], ['graduated', T_GRAD]]) {
+    try {
+      const r = await fetch(`https://api.blockscout.com/4663/api?module=logs&action=getLogs&address=${PONS}&fromBlock=39100000&toBlock=latest&topic0=${t0}&topic1=${word64(addr)}&topic0_1_opr=and&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA });
+      const l = (await r.json()).result?.[0];
+      if (l) out[k] = { t: parseInt(l.timeStamp, 16) * 1000, block: parseInt(l.blockNumber, 16), by: k === 'launch' ? wordAddr(l.topics[3]) : null };
+    } catch (e) {}
+  }
+  return out;
+}
+async function replay(st, env, addr) {
+  const hit = replays.get(addr), now = Date.now(); if (hit && now - hit.t < 30 * 60000) return hit.v;
+  const day = new Date().toISOString().slice(0, 10); if (replayDay.day !== day) replayDay = { day, n: 0 };
+  if (!env.CODEX_API_KEY || replayDay.n >= 120) return { ok: false, why: 'busy, try again later' };
+  replayDay.n++;
+  const [ev, L] = await Promise.all([ponsEvents(env, addr), launch(env, addr).catch(() => null)]);
+  // the price line from launch (or 30 days back) to now, at a resolution that keeps it under ~600 bars
+  const to = Math.floor(now / 1000), from = Math.max(to - 30 * 86400, ev.launch ? Math.floor(ev.launch.t / 1000) - 600 : to - 30 * 86400), span = to - from;
+  const res = span <= 2 * 86400 ? '5' : span <= 7 * 86400 ? '15' : span <= 20 * 86400 ? '60' : '240';
+  let bars = [];
+  try {
+    const q = `{ getBars(symbol: "${addr}:4663", from: ${from}, to: ${to}, resolution: "${res}", removeLeadingNullValues: true) { t o h l c v } }`;
+    const r = await fetch('https://graph.codex.io/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: env.CODEX_API_KEY }, body: JSON.stringify({ query: q }) });
+    const b = (await r.json()).data?.getBars;
+    if (b) bars = b.t.map((t, i) => ({ t: t * 1000, o: b.o[i], h: b.h[i], l: b.l[i], c: b.c[i], v: b.v?.[i] || 0 })).filter(x => x.c != null && x.o != null);
+  } catch (e) {}
+  if (!bars.length && !ev.launch) { const v = { ok: false, why: 'no price history found for this token' }; replays.set(addr, { t: now, v }); return v; }
+  // the peak, the steepest fall from it, and where the price stands now
+  let peak = bars[0] || null; for (const b of bars) if (b.h > peak.h) peak = b;
+  let fall = null; if (peak) { let low = peak; for (const b of bars) if (b.t >= peak.t && b.l < low.l) low = b; fall = low !== peak ? { t: low.t, price: low.l, fromPeak: low.l / peak.h - 1 } : null; }
+  let drop = null; for (let i = 1; i < bars.length; i++) { const d = bars[i].c / bars[i - 1].c - 1; if (!drop || d < drop.d) drop = { t: bars[i].t, d, from: bars[i - 1].c, to: bars[i].c }; }
+  const last = bars[bars.length - 1] || null;
+  const vs = st.verdicts.filter(v => v.addr === addr).map(v => ({ t: v.t, verdict: v.verdict, score: v.score, desk: v.platform, claimed: v.claimed || null, price: v.p0, after1h: v.p1h || null, after24h: v.p24h || null, stops: v.tags || [] })).sort((a, b) => a.t - b.t);
+  const sym = (await goplus(env, addr).catch(() => null))?.token_symbol || vs[0]?.sym || null;
+  const v = { ok: true, token: addr, symbol: sym, res, bars: bars.map(b => [b.t, b.o, b.h, b.l, b.c]), launch: ev.launch || null, graduated: ev.graduated || null,
+    peak: peak ? { t: peak.t, price: peak.h } : null, fall, drop: drop && drop.d < -0.2 ? drop : null, now: last ? { t: last.t, price: last.c, fromPeak: peak ? last.c / peak.h - 1 : null } : null,
+    verdicts: vs, launchFacts: L?.ok && L.launchpad ? L : null };
+  replays.set(addr, { t: now, v }); if (replays.size > 200) replays.delete(replays.keys().next().value);
+  return v;
+}
+// calls on file whose price later fell hard: the replays worth watching
+function rugs(st) {
+  return st.verdicts.map(v => { const later = v.p24h || v.p1h; return later && v.p0 ? { token: v.addr, symbol: v.sym, verdict: v.verdict, score: v.score, t: v.t, fall: later / v.p0 - 1, after: v.p24h ? '24h' : '1h' } : null; })
+    .filter(x => x && x.fall <= -0.5).sort((a, b) => a.fall - b.fall).slice(0, 12);
+}
+
+// ---------- phone alerts: Web Push for watched tokens, sent even when no Shuntdesk tab is open ----------
+// A browser subscribes with the site's VAPID key and names the tokens it watches. Every 15 minutes the server prices
+// them all in one Codex read and compares with the price and liquidity it saw first. A move of 30% or more queues a
+// message and wakes the browser with an empty push; the service worker then fetches the message from the inbox.
+// No payload is sent, so nothing has to be encrypted, and the push service only ever sees that something changed.
+const PUSH_MOVE = 0.3, PUSH_MAX = 300, PUSH_TOKENS = 12;
+const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const b64uJson = o => b64u(new TextEncoder().encode(JSON.stringify(o)));
+let vapidKey = null;
+async function vapidHeader(env, endpoint) {
+  if (!vapidKey) vapidKey = await crypto.subtle.importKey('jwk', JSON.parse(env.VAPID_PRIVATE), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  const u = new URL(endpoint), head = b64uJson({ typ: 'JWT', alg: 'ES256' }), claims = b64uJson({ aud: u.origin, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: 'https://shuntdesk.com' });
+  const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, vapidKey, new TextEncoder().encode(head + '.' + claims));
+  return `vapid t=${head}.${claims}.${b64u(sig)}, k=${env.VAPID_PUBLIC}`;
+}
+async function wake(env, sub) {
+  const r = await fetch(sub.endpoint, { method: 'POST', headers: { TTL: '43200', Urgency: 'normal', Authorization: await vapidHeader(env, sub.endpoint), 'Content-Length': '0' } });
+  return r.status;
+}
+function pushSubscribe(st, b) {
+  const ep = String(b?.sub?.endpoint || '');
+  if (!/^https:\/\/[^\s]{10,500}$/.test(ep)) return [400, { ok: false, why: 'no push subscription' }];
+  const tokens = (Array.isArray(b.tokens) ? b.tokens : []).slice(0, PUSH_TOKENS).map(t => ({ addr: String(t.addr || '').toLowerCase(), sym: word(t.sym, 12) })).filter(t => isAddr(t.addr));
+  const P = st.push = st.push || {};
+  let id = String(b.id || ''); if (!P[id] || P[id].endpoint !== ep) id = Object.keys(P).find(k => P[k].endpoint === ep) || crypto.randomUUID();
+  const old = P[id] || { base: {}, inbox: [], made: Date.now() };
+  // a token keeps the baseline it already had; a new one gets its baseline at the next server read
+  const base = {}; for (const t of tokens) if (old.base[t.addr]) base[t.addr] = old.base[t.addr];
+  P[id] = { endpoint: ep, tokens, base, inbox: old.inbox.slice(0, 10), made: old.made, t: Date.now() };
+  const ids = Object.keys(P); if (ids.length > PUSH_MAX) ids.sort((a, z) => P[a].t - P[z].t).slice(0, ids.length - PUSH_MAX).forEach(k => delete P[k]);
+  return [200, { ok: true, id, watching: tokens.length }];
+}
+async function pushTick(st, env) {
+  const P = st.push; if (!P || !env.VAPID_PRIVATE || !env.CODEX_API_KEY) return;
+  const now = Date.now(); if (now - (st.pushT || 0) < 15 * 60000) return; st.pushT = now;
+  const all = [...new Set(Object.values(P).flatMap(s => s.tokens.map(t => t.addr)))].slice(0, 200); if (!all.length) return;
+  const px = {};
+  for (let i = 0; i < all.length; i += 25) {
+    const q = `{ filterTokens(tokens: [${all.slice(i, i + 25).map(a => `"${a}:4663"`).join(',')}], limit: 25) { results { priceUSD liquidity token { address } } } }`;
+    try { const r = await fetch('https://graph.codex.io/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: env.CODEX_API_KEY }, body: JSON.stringify({ query: q }) }); for (const x of (await r.json()).data?.filterTokens?.results || []) px[x.token.address.toLowerCase()] = { p: Number(x.priceUSD) || 0, l: Number(x.liquidity) || 0 }; } catch (e) {}
+  }
+  let sent = 0;
+  for (const [id, s] of Object.entries(P)) {
+    const msgs = [];
+    for (const t of s.tokens) {
+      const now1 = px[t.addr]; if (!now1 || !now1.p) continue;
+      const b0 = s.base[t.addr]; if (!b0) { s.base[t.addr] = { p: now1.p, l: now1.l, said: {} }; continue; }
+      const said = b0.said || (b0.said = {}), say = (k, text) => { if (now - (said[k] || 0) > 6 * HOUR) { said[k] = now; msgs.push({ t: now, addr: t.addr, sym: t.sym, text }); } };
+      if (b0.l && now1.l < b0.l * (1 - PUSH_MOVE)) say('liq', `Liquidity fell ${Math.round((1 - now1.l / b0.l) * 100)}% since you started watching.`);
+      if (now1.p < b0.p * (1 - PUSH_MOVE)) say('down', `Price is down ${Math.round((1 - now1.p / b0.p) * 100)}% since you started watching.`);
+      if (now1.p > b0.p * (1 + PUSH_MOVE)) say('up', `Price is up ${Math.round((now1.p / b0.p - 1) * 100)}% since you started watching.`);
+    }
+    if (!msgs.length) continue;
+    s.inbox = [...msgs, ...s.inbox].slice(0, 10);
+    try { const code = await wake(env, s); if (code === 404 || code === 410) delete P[id]; else sent++; } catch (e) {}
+  }
+  st.pushLast = { t: now, tokens: all.length, priced: Object.keys(px).length, sent };
+}
+
+// ---------- the Telegram bot, @shuntdesk_bot: a webhook that answers in the same request ----------
+// Telegram posts each update here with the secret set at setWebhook; the reply goes back as the response body.
+const tgEsc = s => String(s ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const pct = v => v == null ? '—' : Number(v).toFixed(1) + '%';
+// free questions on Telegram: the conductor answers from what Shuntdesk actually holds right now
+const ABOUT = 'Shuntdesk (shuntdesk.com) runs seven fixed-rule checks on Robinhood Chain tokens in the browser (sources, gate, scout, tracer, linker, auditor, judge) and gives CLEAN (75+), RISKY (45-74) or DANGER (under 45). The crew desk is a public paper desk: CLEAN calls go long, DANGER calls on pools with $20K+ go short, 4% of equity each, paper money only. Every call is priced again after an hour and a day; the record is on Hugging Face (huggingface.co/datasets/shuntdesk/verdicts). Site pages (links, not bot commands): shuntdesk.com/ticket (run the checks), shuntdesk.com/board (live yard, Pons graduations), shuntdesk.com/desk (your paper desk, 10,000 paper USDG, up to 100x on deep pools), shuntdesk.com/deployer (what a wallet launched on Pons), shuntdesk.com/replay (a token\'s fall with its events), shuntdesk.com/report (daily), shuntdesk.com/agents (JSON API, MCP at shuntdesk.com/mcp). Bot commands: /check 0x..., /new, /desk, /report. Phone alerts for watched tokens. $SHUNT is the project token, CA 0x7e517e779b85895894becad80c9bb69b4cb1c4d6, launched on Pons. No wallet, no key, no account.';
+async function tgAsk(st, env, chat, q, addr) {
+  const r = report(st), d = await agentData(st, env, 'desk', '').then(x => x[1]);
+  let tok = ''; if (addr) { const [code, x] = await agentData(st, env, 'token', addr); if (code === 200) tok = `\nToken asked about: ${x.symbol || addr} (${addr}). Verdict on file: ${x.verdict ? `${x.verdict.verdict} ${x.verdict.score}, ${x.verdict.desk}, filed ${x.verdict.at}` : 'none yet'}. Security read: ${x.serverCheck ? (x.serverCheck.redFlags.join(', ') || 'no red flag') : 'unavailable'}. Launch: ${x.launch?.launchpad ? `${x.launch.launchpad}, snipers ${x.launch.sniperPct}%, bundles ${x.launch.bundlerPct}%, insiders ${x.launch.insiderPct}%, developer ${x.launch.devPct}%${x.launch.graduated ? ', graduated' : ''}` : 'not a launchpad token or unknown'}. Crew position: ${x.crewPosition ? x.crewPosition.side + ' ' + x.crewPosition.leverage + 'x' : 'none'}. Full check: ${x.fullCheck}`; }
+  const facts = `${ABOUT}\n\nRight now: crew desk equity ${d.equity} paper USDG (started ${d.start}), ${d.open.length} open: ${d.open.slice(0, 6).map(p => `${p.symbol} ${p.side} ${p.net >= 0 ? '+' : ''}${p.net}`).join(', ') || 'none'}. Last closed: ${d.closed.slice(0, 3).map(h => `${h.symbol} ${h.side} ${h.pnl} (${h.why})`).join('; ') || 'none'}. Last 24h: ${r.verdicts.CLEAN} clean, ${r.verdicts.RISKY} risky, ${r.verdicts.DANGER} danger; ${r.judged ? `${r.held} of ${r.judged} calls held an hour later` : 'none checked an hour later yet'}. Latest calls: ${st.verdicts.slice(0, 6).map(v => `${v.sym} ${v.verdict} ${v.score}`).join(', ') || 'none'}. Pons graduations in the last day: ${(st.grads?.rows || []).length}.${tok}\n\nQuestion: ${q.slice(0, 300)}`;
+  const plain = addr ? `I can only answer that with the language model, which is not available right now. Send /check ${addr} for what Shuntdesk knows.` : 'I can only answer that with the language model, which is not available right now. Try /help.';
+  const out = await conduct(st, env, 'tg:' + chat, 'tg:' + chat + ':' + q.toLowerCase().slice(0, 120), 'You are answering on Telegram as the Shuntdesk bot. Answer the question in at most four short sentences from the facts only. If the facts do not cover it, say so and point to the right page or command. Never say whether to buy or sell, never predict a price, never promise anything about $SHUNT. Plain text, no markdown, no emoji.', facts, plain);
+  return tgEsc(out.text) + (out.by === 'model' ? '\n\n<i>The conductor, a language model, from Shuntdesk\'s own figures. Not advice.</i>' : '');
+}
+async function telegram(st, env, request, body) {
+  if (!env.TELEGRAM_SECRET || request.headers.get('x-telegram-bot-api-secret-token') !== env.TELEGRAM_SECRET) return new Response('forbidden', { status: 403 });
+  const msg = body?.message || body?.channel_post; const text = String(msg?.text || '').trim(), chat = msg?.chat?.id;
+  if (!chat || !text) return new Response('ok');
+  const reply = (html, extra = {}) => new Response(JSON.stringify({ method: 'sendMessage', chat_id: chat, text: html.slice(0, 4000), parse_mode: 'HTML', disable_web_page_preview: true, reply_to_message_id: msg.message_id, ...extra }), { headers: { 'Content-Type': 'application/json' } });
+  const me = String(env.TELEGRAM_BOT_NAME || 'shuntdesk_bot').toLowerCase(), group = msg.chat.type !== 'private';
+  const mentioned = text.toLowerCase().includes('@' + me) || msg.reply_to_message?.from?.username?.toLowerCase() === me;
+  const clean = text.replace(new RegExp('@' + me, 'ig'), '').trim();
+  const found = clean.match(/0x[0-9a-fA-F]{40}/), cmd = (clean.match(/^\/(\w+)/)?.[1] || '').toLowerCase();
+  if (group && !cmd && !mentioned) return new Response('ok');   // in groups, only speak when spoken to
+  if (!allow(st, 'tg:' + chat, 'tg', 40)) return reply('Slow down a little: 40 questions an hour per chat.');
+  const site = 'https://shuntdesk.com', footer = '\n\n<i>A rule-based reading of public data. It can be wrong. Not advice.</i>';
+  if (cmd === 'start' || cmd === 'help') return reply(`<b>Shuntdesk</b> · every token rides the line\n\nAsk anything about Shuntdesk, a token, the crew desk or what just launched. Or use:\n\n/check <code>0x…</code> what Shuntdesk knows about a Robinhood Chain token\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
+  // anything that is not a command, or a token address with a question around it, goes to the conductor
+  const question = clean.replace(/^\/\w+\s*/, '').replace(/0x[0-9a-fA-F]{40}/, '').trim();
+  if (!cmd && (!found || question.length > 3)) return reply(await tgAsk(st, env, chat, clean, found ? found[0].toLowerCase() : null));
+  if (cmd === 'desk') {
+    const [, d] = await agentData(st, env, 'desk', ''), last = d.closed[0];
+    return reply(`<b>Crew desk</b> · paper USDG\n\nEquity <b>${money(d.equity)}</b> (${d.equity >= d.start ? '+' : ''}${money(d.equity - d.start)} since ${money(d.start)})\nOpen positions: ${d.open.length}\n${last ? `Last closed: ${tgEsc(last.symbol)} ${last.side} <b>${last.pnl >= 0 ? '+' : ''}${last.pnl}</b> (${tgEsc(last.why)})` : 'No trade closed yet.'}${last?.postMortem ? `\n\n<i>${tgEsc(last.postMortem)}</i>` : ''}\n\n${site}/desk/`);
+  }
+  if (cmd === 'report') {
+    const [, r] = await agentData(st, env, 'report', '');
+    return reply(`<b>Daily report</b>\n\nCrew desk ${money(r.equity)} (${r.change >= 0 ? '+' : ''}${money(r.change)} in 24h)\nVerdicts ${r.verdicts.CLEAN} clean · ${r.verdicts.RISKY} risky · ${r.verdicts.DANGER} danger\nHeld an hour later: ${r.judged ? `${r.held} of ${r.judged}` : 'none checked yet'}${r.note?.text ? `\n\n${tgEsc(r.note.text)}` : ''}\n\n${site}/report/`);
+  }
+  if (cmd === 'new' || cmd === 'graduated') {
+    const rows = (st.grads?.rows || []).slice(0, 6);
+    return reply(rows.length ? `<b>Fresh off Pons</b>\n\n${rows.map(r => `• <code>${r.token}</code> · ${(m => m < 60 ? Math.max(1, Math.round(m)) + ' min' : (m / 60).toFixed(m < 600 ? 1 : 0) + ' h')((Date.now() - r.t) / 60000)} ago\n  ${site}/ticket/?a=${r.token}`).join('\n')}` : 'No graduation read in the last day yet.');
+  }
+  if (!found) return reply('Send /check followed by a token address: /check <code>0x…</code>');
+  const a = found[0].toLowerCase(), [code, x] = await agentData(st, env, 'token', a);
+  if (code !== 200) return reply('Could not read that token right now. Try again in a minute.');
+  const v = x.verdict, L = x.launch?.ok && x.launch.launchpad ? x.launch : null, s = x.serverCheck;
+  const move = (p, q) => p && q ? `${q >= p ? '+' : ''}${((q / p - 1) * 100).toFixed(1)}%` : '—';
+  const lines = [`<b>${tgEsc(x.symbol || a.slice(0, 8))}</b>${x.name ? ' · ' + tgEsc(x.name) : ''}`, `<code>${a}</code>`, ''];
+  if (v) lines.push(`Verdict <b>${v.verdict} ${v.score}</b> · ${v.desk === 'depot' ? 'depot, no trade' : v.desk + ' desk'}`, `Filed ${new Date(v.at).toISOString().slice(0, 16).replace('T', ' ')} UTC · price after 1h ${move(v.priceAtVerdict, v.after1h)} · after 24h ${move(v.priceAtVerdict, v.after24h)}`);
+  else lines.push('No verdict on file yet: nobody has run the seven checks on it.');
+  if (s) lines.push('', s.redFlags.length ? `Security read: <b>${s.redFlags.length} red flag${s.redFlags.length > 1 ? 's' : ''}</b>: ${tgEsc(s.redFlags.slice(0, 3).join(', '))}` : 'Security read: no red flag found by GoPlus.', s.holders ? `Holders: ${Number(s.holders).toLocaleString('en-US')}` : '');
+  if (L) lines.push('', `Launch: ${L.launchpad === 'pons' ? 'Pons' : tgEsc(L.launchpad)}${L.graduated ? ', graduated' : L.progress != null ? `, ${Math.round(L.progress)}% to graduation` : ''}`, `Snipers ${pct(L.sniperPct)} · bundles ${pct(L.bundlerPct)} · insiders ${pct(L.insiderPct)} · developer ${pct(L.devPct)}`);
+  if (x.crewPosition) lines.push('', `Crew desk holds a <b>${x.crewPosition.side}</b> at ${x.crewPosition.leverage}x.`);
+  lines.push('', `Full seven checks: ${x.fullCheck}`);
+  return reply(lines.filter((l, i, arr) => !(l === '' && arr[i - 1] === '')).join('\n') + footer);
+}
+
+// the agent interface's reads, shared by /api/v1/* and the MCP tools
+async function agentData(st, env, p, a) {
+  if (p === 'token') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a token address on Robinhood Chain' }]; const r = await agentToken(st, env, a); await save(env, st); return [200, r]; }
+  if (p === 'verdicts') return [200, { verdicts: st.verdicts.slice(0, 50).map(v => ({ token: v.addr, symbol: v.sym, verdict: v.verdict, score: v.score, desk: v.platform, at: new Date(v.t).toISOString(), priceAtVerdict: v.p0, after1h: v.p1h || null, after24h: v.p24h || null })), record: record(st).after1h }];
+  if (p === 'desk') return [200, { paper: true, start: START, equity: Math.round(equity(st) * 100) / 100, cash: Math.round(st.cash * 100) / 100, open: st.pos.map(x => ({ token: x.addr, symbol: x.sym, side: x.side, leverage: x.lev, entry: x.entry, mark: x.mark || x.entry, net: Math.round(worth(x).net * 100) / 100 })), closed: st.hist.slice(0, 20).map(h => ({ token: h.addr, symbol: h.sym, side: h.side, leverage: h.lev, entry: h.entry, exit: h.exit, pnl: Math.round(h.pnl * 100) / 100, why: h.why, postMortem: h.note?.text || null, at: new Date(h.t).toISOString() })) }];
+  if (p === 'graduated') return [200, { launchpad: 'pons', tokens: (st.grads?.rows || []).map(r => ({ token: r.token, at: new Date(r.t).toISOString() })) }];
+  if (p === 'report') { const r = report(st); r.note = await reportNote(st, env, r); return [200, r]; }
+  return [404, { error: 'unknown endpoint', see: 'https://shuntdesk.com/llms.txt' }];
+}
+
 // ---------- the open record on Hugging Face (huggingface.co/datasets/shuntdesk/verdicts) ----------
 // Once a day, the calls made the day before last, each with its price an hour and a day later, go up as one JSONL
 // file per day (a call needs a full day before its 24-hour price exists). One commit, through the Hub's commit API.
 const HF_REPO = 'shuntdesk/verdicts';
 const b64 = s => { const bytes = new TextEncoder().encode(s); let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(bin); };
+// Yesterday also goes up once a day as a first version (some 24-hour prices still to come); the next day's run
+// writes the same file again with them, so a file is final two days after its date.
 async function hfPublish(st, env, force = false) {
+  const now = Date.now(), DAY = 24 * HOUR, final = new Date(now - 2 * DAY).toISOString().slice(0, 10), first = new Date(now - DAY).toISOString().slice(0, 10);
+  const today = new Date(now).toISOString().slice(0, 10);
+  const a = force || st.hf?.day !== final ? await hfDay(st, env, final, 'day') : null;
+  const b = force || st.hf?.first !== first ? await hfDay(st, env, first, 'first') : null;
+  // today so far, every three hours, so the record is never a day behind
+  const c = force || now - (st.hf?.todayT || 0) > 3 * HOUR ? await hfDay(st, env, today, 'today') : null;
+  return { final: a, first: b, today: c };
+}
+async function hfDay(st, env, day, label) {
+  const early = label !== 'day';
   if (!env.HF_TOKEN) return { ok: false, why: 'no token' };
-  const now = Date.now(), DAY = 24 * HOUR, day = new Date(now - 2 * DAY).toISOString().slice(0, 10);
-  if (!force && st.hf?.day === day) return { ok: true, why: 'already published ' + day };
+  const now = Date.now(), DAY = 24 * HOUR;
   const from = Date.parse(day + 'T00:00:00Z'), to = from + DAY;
   const rows = st.verdicts.filter(v => v.t >= from && v.t < to).sort((a, b) => a.t - b.t).map(v => ({
     time: new Date(v.t).toISOString(), token: v.addr, symbol: v.sym, verdict: v.verdict, score: v.score, claimed: v.claimed || v.verdict, desk: v.platform, zone: v.zone,
@@ -361,11 +592,11 @@ async function hfPublish(st, env, force = false) {
   const trades = st.hist.filter(h => h.t >= from && h.t < to).map(h => ({ closed: new Date(h.t).toISOString(), opened: new Date(h.opened || h.t).toISOString(), token: h.addr, symbol: h.sym, side: h.side, leverage: h.lev, entry: h.entry, exit: h.exit, pnl_usdg: Math.round(h.pnl * 100) / 100, fees_usdg: Math.round(h.fees * 100) / 100, closed_because: h.why, post_mortem: h.note?.text || null }));
   const files = [[`data/verdicts/${day}.jsonl`, rows.map(r => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : '')]];
   if (trades.length) files.push([`data/trades/${day}.jsonl`, trades.map(r => JSON.stringify(r)).join('\n') + '\n']);
-  const body = [JSON.stringify({ key: 'header', value: { summary: `Calls of ${day}: ${rows.length} verdicts, ${trades.length} crew trades closed` } }),
+  const body = [JSON.stringify({ key: 'header', value: { summary: `Calls of ${day}${label === 'today' ? ' (so far today)' : early ? ' (first version, some 24h prices still to come)' : ''}: ${rows.length} verdicts, ${trades.length} crew trades closed` } }),
     ...files.map(([path, text]) => JSON.stringify({ key: 'file', value: { path, encoding: 'base64', content: b64(text) } }))].join('\n');
   const r = await fetch(`https://huggingface.co/api/datasets/${HF_REPO}/commit/main`, { method: 'POST', headers: { Authorization: 'Bearer ' + env.HF_TOKEN, 'Content-Type': 'application/x-ndjson' }, body });
   const out = { ok: r.ok, day, verdicts: rows.length, trades: trades.length, status: r.status };
-  if (r.ok) st.hf = { day, t: now, verdicts: rows.length, trades: trades.length }; else out.why = (await r.text()).slice(0, 160);
+  if (r.ok) st.hf = { ...(st.hf || {}), ...(label === 'today' ? { todayT: now } : { [label]: day }), t: now }; else out.why = (await r.text()).slice(0, 160);
   return out;
 }
 
@@ -375,7 +606,7 @@ async function agentToken(st, env, addr) {
   let gp = null; try { gp = await goplus(env, addr); } catch (e) {}
   const sr = gp ? serverRead(gp) : null;
   return {
-    token: addr, chain: 'robinhood', chainId: 4663,
+    token: addr, symbol: gp?.token_symbol || v?.sym || null, name: gp?.token_name || null, chain: 'robinhood', chainId: 4663,
     verdict: v ? { verdict: v.verdict, score: v.score, desk: v.platform, zone: v.zone, at: new Date(v.t).toISOString(), stops: v.tags || [], priceAtVerdict: v.p0, after1h: v.p1h || null, after24h: v.p24h || null } : null,
     serverCheck: sr ? { redFlags: sr.red, holders: sr.holders, source: 'GoPlus' } : null,
     launch: await launch(env, addr).catch(() => null),
@@ -544,7 +775,8 @@ export default {
     // one address: www and plain http both go to https://shuntdesk.com (a desk kept in the browser belongs to one origin)
     const u = new URL(request.url);
     if (u.hostname === 'www.shuntdesk.com' || (u.hostname === 'shuntdesk.com' && u.protocol === 'http:')) return Response.redirect('https://shuntdesk.com' + u.pathname + u.search, 301);
-    return new URL(request.url).pathname.startsWith('/api/') ? env.DESK.get(env.DESK.idFromName('main')).fetch(request) : env.ASSETS.fetch(request);
+    const path = new URL(request.url).pathname;
+    return path.startsWith('/api/') || path === '/mcp' ? env.DESK.get(env.DESK.idFromName('main')).fetch(request) : env.ASSETS.fetch(request);
   },
   scheduled(event, env) { return env.DESK ? undefined : api.scheduled(event, env); }
 };
@@ -555,7 +787,7 @@ const api = {
   async fetch(request, env) {
     useEnv(env);
     const url = new URL(request.url), ip = request.headers.get('cf-connecting-ip') || 'local';
-    if (request.method === 'OPTIONS') return new Response(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'GET, POST' } });
+    if (request.method === 'OPTIONS') return new Response(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version, Authorization', 'Access-Control-Allow-Methods': 'GET, POST' } });
     try {
       // what the server itself can reach right now: one read of each outside service, nothing stored
       if (url.pathname === '/api/health') {
@@ -576,18 +808,21 @@ const api = {
       if (url.pathname === '/api/explain' && body) { const r = await explain(st, env, body, ip); await save(env, st); return json(r); }
       if (url.pathname === '/api/trade' && body) { const r = await tradeBrief(st, env, body, ip); await save(env, st); return json(r); }
       if (url.pathname === '/api/grads') return json({ rows: (st.grads?.rows || []).map(({ token, t, block }) => ({ token, t, block })), read: st.grads?.t || 0, err: st.grads?.err || null });
+      if (url.pathname === '/api/dataset') return json({ repo: 'https://huggingface.co/datasets/' + HF_REPO, published: st.hf || null, last: st.hfLast || null });
       if (url.pathname === '/api/report') { const r = report(st), had = st.rnote?.t; r.note = await reportNote(st, env, r); if (r.note.t !== had) await save(env, st); return json(r); }
       // the agent interface: read-only, CORS open, 120 calls an hour per caller
       if (url.pathname.startsWith('/api/v1/')) {
         if (!allow(st, ip, 'agent', 120)) return json({ error: 'rate limited: 120 calls an hour' }, 429);
-        const p = url.pathname.slice(8), a = (url.searchParams.get('a') || '').toLowerCase();
-        if (p === 'token') { if (!isAddr(a)) return json({ error: 'pass ?a=0x… a token address on Robinhood Chain' }, 400); const r = await agentToken(st, env, a); await save(env, st); return json(r); }
-        if (p === 'verdicts') return json({ verdicts: st.verdicts.slice(0, 50).map(v => ({ token: v.addr, symbol: v.sym, verdict: v.verdict, score: v.score, desk: v.platform, at: new Date(v.t).toISOString(), priceAtVerdict: v.p0, after1h: v.p1h || null, after24h: v.p24h || null })), record: record(st).after1h });
-        if (p === 'desk') return json({ paper: true, start: START, equity: Math.round(equity(st) * 100) / 100, cash: Math.round(st.cash * 100) / 100, open: st.pos.map(x => ({ token: x.addr, symbol: x.sym, side: x.side, leverage: x.lev, entry: x.entry, mark: x.mark || x.entry, net: Math.round(worth(x).net * 100) / 100 })), closed: st.hist.slice(0, 20).map(h => ({ token: h.addr, symbol: h.sym, side: h.side, leverage: h.lev, entry: h.entry, exit: h.exit, pnl: Math.round(h.pnl * 100) / 100, why: h.why, postMortem: h.note?.text || null, at: new Date(h.t).toISOString() })) });
-        if (p === 'graduated') return json({ launchpad: 'pons', tokens: (st.grads?.rows || []).map(r => ({ token: r.token, at: new Date(r.t).toISOString() })) });
-        if (p === 'report') { const r = report(st); r.note = await reportNote(st, env, r); return json(r); }
-        return json({ error: 'unknown endpoint', see: 'https://shuntdesk.com/llms.txt' }, 404);
+        const [code, out] = await agentData(st, env, url.pathname.slice(8), (url.searchParams.get('a') || '').toLowerCase());
+        return json(out, code);
       }
+      if (url.pathname === '/mcp' || url.pathname === '/api/mcp') return mcp(st, env, request, body, ip);
+      if (url.pathname === '/api/replay') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); if (!allow(st, ip, 'replay', 30)) return json({ ok: false, why: 'slow down' }, 429); const r = await replay(st, env, a); await save(env, st); return json(r); }
+      if (url.pathname === '/api/rugs') return json({ rows: rugs(st) });
+      if (url.pathname === '/api/push/key') return json({ key: env.VAPID_PUBLIC || null });
+      if (url.pathname === '/api/push/sub' && body) { if (!allow(st, ip, 'push', 30)) return json({ ok: false, why: 'slow down' }, 429); const [code, out] = pushSubscribe(st, body); await save(env, st); return json(out, code); }
+      if (url.pathname === '/api/push/inbox') { const s = st.push?.[url.searchParams.get('id') || '']; if (!s) return json({ messages: [] }); const out = s.inbox; s.inbox = []; await save(env, st); return json({ messages: out }); }
+      if (url.pathname === '/api/tg' && body) { const r = await telegram(st, env, request, body); await save(env, st); return r; }
       if (url.pathname === '/api/brief') { const had = st.brief?.t; const r = await brief(st, env, ip); if (r.t !== had) await save(env, st); return json(r); }
       if (url.pathname === '/api/board') {
         if (body) {
@@ -610,7 +845,8 @@ const api = {
   async scheduled(event, env) {
     useEnv(env); const st = await load(env); await tick(st);
     try { await postMortem(st, env); } catch (e) {}
-    try { if (new Date().getUTCHours() >= 1) await hfPublish(st, env); } catch (e) {}   // once a day, after 01:00 UTC
+    try { await pushTick(st, env); } catch (e) { st.pushLast = { t: Date.now(), error: String(e.message || e).slice(0, 120) }; }
+    try { if (new Date().getUTCHours() >= 1) { const r = await hfPublish(st, env); if (r.final || r.first || r.today) st.hfLast = { t: Date.now(), ...r }; } } catch (e) { st.hfLast = { t: Date.now(), error: String(e.message || e).slice(0, 160) }; }   // once a day, after 01:00 UTC
     try { await gradScan(st, env); } catch (e) { st.grads = { ...(st.grads || { rows: [] }), err: String(e.message || e).slice(0, 120) }; }   // the graduation feed is extra: a failed read never stops the desk
     seasonRoll(st); await save(env, st);
   }

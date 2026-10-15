@@ -166,7 +166,7 @@ carries the link that runs them.
 
 Every call, with its price an hour and a day later and whether it held, is published once a day as JSONL
 on Hugging Face: **[shuntdesk/verdicts](https://huggingface.co/datasets/shuntdesk/verdicts)**. A day goes
-up two days later, so its 24-hour prices exist. Closed crew trades and their post-mortems go up with it.
+up the next day as a first version, and again the day after with every 24-hour price filled in. Closed crew trades and their post-mortems go up with it.
 
 ## Data sources
 

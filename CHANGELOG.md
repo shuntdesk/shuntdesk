@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.0 · 16 October 2026
+
+- Telegram bot (`@shuntdesk_bot`): `/check`, `/new`, `/desk`, `/report`, and plain questions answered from Shuntdesk's own figures.
+- Phone alerts: watch a token and get a web push when price or liquidity moves 30%, with the site closed.
+- MCP server at `/mcp`: five read-only tools (token, verdicts, crew_desk, pons_graduations, daily_report).
+- Rug replay at `/replay/`: a token's life on one chart with launch, graduation, the call, the peak and the fall.
+
 ## 1.0.0 · 15 October 2026
 
 - Surplus: the conductor runs on Surplus, with OpenRouter as the fallback.

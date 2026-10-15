@@ -1,8 +1,9 @@
 // The watchlist: tokens kept in this browser and looked at again while a Shuntdesk page is open.
 // Every minute the pool is priced again; a big move in price or liquidity raises an alert, and a browser
 // notification when the visitor allowed them. Every half hour the oldest token runs the line again, so a
-// verdict that changed shows up too. Nothing leaves the browser except the reads themselves.
-import { prices, pairFor, scan, compact, sig, ageShort } from './data.js';
+// verdict that changed shows up too. With phone alerts on, the server also watches the same tokens and wakes this
+// device with a push when price or liquidity moves 30%, even with no Shuntdesk tab open.
+import { prices, pairFor, scan, compact, sig, ageShort, api } from './data.js';
 import { $, esc } from './ui.js';
 
 const KEY = 'sd.watch', MAX = 12, MOVE = 0.3;
@@ -15,9 +16,37 @@ export function watch(res) {
   l.unshift({ addr: res.addr, sym: res.sym, verdict: res.verdict, score: res.score, p0: res.price || 0, l0: res.liq || 0, t: Date.now(), checked: Date.now(), alerts: [] });
   write(l);
   try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); } catch (e) {}
+  pushSync();
   return l.length;
 }
-export function unwatch(addr) { write(read().filter(w => w.addr !== addr)); }
+export function unwatch(addr) { write(read().filter(w => w.addr !== addr)); pushSync(); }
+
+// ---- phone alerts (Web Push) ----
+const PKEY = 'sd.push', pushId = () => { try { return localStorage.getItem(PKEY) || ''; } catch (e) { return ''; } };
+export const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+export const pushOn = () => !!pushId();
+const u8 = s => { const b = atob(s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - s.length % 4) % 4)); return Uint8Array.from(b, c => c.charCodeAt(0)); };
+export async function pushEnable() {
+  if (!pushSupported()) throw new Error('This browser has no push. On an iPhone, add Shuntdesk to the home screen first.');
+  if (await Notification.requestPermission() !== 'granted') throw new Error('Notifications are blocked for this site.');
+  const { key } = await api('push/key'); if (!key) throw new Error('Phone alerts are not set up on the server.');
+  const reg = await navigator.serviceWorker.register('/sw.js?id=' + (pushId() || 'new'));
+  await navigator.serviceWorker.ready;
+  const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: u8(key) });
+  const r = await api('push/sub', { id: pushId(), sub: sub.toJSON(), tokens: read().map(w => ({ addr: w.addr, sym: w.sym })) });
+  if (!r || !r.ok) throw new Error(r?.why || 'The server did not answer.');
+  try { localStorage.setItem(PKEY, r.id); } catch (e) {}
+  await navigator.serviceWorker.register('/sw.js?id=' + r.id);   // the worker reads its inbox id from its own address
+  return r;
+}
+export async function pushDisable() {
+  try { const reg = await navigator.serviceWorker.getRegistration('/'); const sub = await reg?.pushManager.getSubscription(); await sub?.unsubscribe(); await reg?.unregister(); } catch (e) {}
+  try { localStorage.removeItem(PKEY); } catch (e) {}
+}
+async function pushSync() {
+  if (!pushOn()) return;
+  try { const reg = await navigator.serviceWorker.getRegistration('/'); const sub = await reg?.pushManager.getSubscription(); if (sub) await api('push/sub', { id: pushId(), sub: sub.toJSON(), tokens: read().map(w => ({ addr: w.addr, sym: w.sym })) }); } catch (e) {}
+}
 
 function alert(w, text) {
   const last = w.alerts[0];
@@ -64,10 +93,17 @@ export function mountWatch(box) {
       <span class="wa">${w.alerts[0] ? esc(w.alerts[0].text) : 'no alerts'}</span>
       <button class="btn ghost" data-un="${w.addr}" type="button">Stop</button></div>`).join('')
       : '<p class="note" style="margin:0">Run a ticket and press Watch. This browser looks at the token again every minute while a Shuntdesk page is open, and tells you when its price or liquidity moves 30% or its verdict changes.</p>';
+    const pb = $('#w-push', box); if (pb) { pb.hidden = !pushSupported() && !/iPhone|iPad/.test(navigator.userAgent); pb.textContent = pushOn() ? 'Phone alerts on · turn off' : 'Turn on phone alerts'; }
     const perm = 'Notification' in window ? Notification.permission : 'unsupported';
-    $('#w-perm', box).textContent = perm === 'granted' ? 'BROWSER ALERTS ON' : perm === 'denied' ? 'BROWSER ALERTS BLOCKED · ALERTS SHOW HERE ONLY' : perm === 'unsupported' ? 'ALERTS SHOW HERE ONLY' : 'BROWSER ALERTS: ASKED WHEN YOU WATCH A TOKEN';
+    $('#w-perm', box).textContent = pushOn() ? 'PHONE ALERTS ON · THE SERVER CHECKS EVERY 15 MINUTES, EVEN WITH THIS TAB CLOSED' : perm === 'granted' ? 'BROWSER ALERTS ON' : perm === 'denied' ? 'BROWSER ALERTS BLOCKED · ALERTS SHOW HERE ONLY' : perm === 'unsupported' ? 'ALERTS SHOW HERE ONLY' : 'BROWSER ALERTS: ASKED WHEN YOU WATCH A TOKEN';
   }
-  box.addEventListener('click', e => { const b = e.target.closest('[data-un]'); if (b) { unwatch(b.dataset.un); paint(); } });
+  box.addEventListener('click', async e => {
+    const b = e.target.closest('[data-un]'); if (b) { unwatch(b.dataset.un); paint(); return; }
+    const p = e.target.closest('#w-push'); if (!p) return;
+    p.disabled = true; const was = p.textContent; p.textContent = 'Working…';
+    try { if (pushOn()) await pushDisable(); else await pushEnable(); paint(); } catch (x) { p.textContent = was; $('#w-perm', box).textContent = String(x.message || x).toUpperCase(); }
+    p.disabled = false;
+  });
   addEventListener('storage', e => { if (e.key === KEY) paint(); });
   paint(); check().then(paint);
   setInterval(() => check().then(paint), 60000);

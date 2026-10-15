@@ -1,0 +1,13 @@
+{
+  "name": "Shuntdesk",
+  "short_name": "Shuntdesk",
+  "description": "A token scanner on Robinhood Chain with something to lose.",
+  "start_url": "/ticket/",
+  "display": "standalone",
+  "background_color": "#060708",
+  "theme_color": "#060708",
+  "icons": [
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

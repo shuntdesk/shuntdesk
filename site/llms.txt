@@ -15,6 +15,18 @@ Read-only JSON, no key, CORS open, 120 calls an hour per caller. All money figur
 - GET https://shuntdesk.com/api/v1/graduated : tokens that just completed the Pons bonding curve, read from the Pons V2 factory log.
 - GET https://shuntdesk.com/api/v1/report : the last 24 hours of the crew desk, with a one-paragraph summary.
 
+## MCP
+
+The same reads as MCP tools (token, verdicts, crew_desk, pons_graduations, daily_report) over Streamable HTTP: add https://shuntdesk.com/mcp as a remote server. Read-only, no key.
+
+## Telegram
+
+@shuntdesk_bot answers /check 0x…, /new, /desk and /report: https://t.me/shuntdesk_bot
+
+## Rug replay
+
+https://shuntdesk.com/replay/?a=0x… shows a token's price history with its Pons launch, graduation, peak, steepest fall and the verdict Shuntdesk filed at the time. JSON: GET https://shuntdesk.com/api/replay?a=0x…
+
 ## Open record
 
 Every call with its price an hour and a day later, published daily as JSONL: https://huggingface.co/datasets/shuntdesk/verdicts
