@@ -1,0 +1,617 @@
+// Shuntdesk backend. One module, written for Cloudflare Workers (fetch + scheduled) and run
+// locally by dev/serve.mjs with a file in place of KV.
+//
+// What it holds: the shared crew desk (paper money), the record of how verdicts turned out,
+// a self-reported leaderboard, and the conductor (a language model that explains, never trades).
+//
+// Where verdicts come from: the seven checks run in visitors' browsers and the result is posted here.
+// The server does not take that on trust. It re-reads price, liquidity and pool age, runs its own
+// security reading (GoPlus: sell test, taxes, owner powers, holder concentration), and only lets the
+// crew trade a ticket its own reading agrees with. What it cannot repeat is the funder tracing, so a
+// ticket can still be wrong about wallet groups. Paper money only, 4% of equity per position, one
+// position per token, rate-limited per address.
+import { FEE, MAX_IMPACT, impact, fill, value } from '../site/assets/trade.js';
+
+const DS = 'https://api.dexscreener.com';
+// some data services turn away requests that do not say who is asking
+const UA = { 'User-Agent': 'Mozilla/5.0 (compatible; Shuntdesk/1.0; +https://shuntdesk.com)' };
+const START = 10000, HOUR = 3600000;
+// the desk's record in storage. Changing the name starts a new desk from zero (v2: reset before launch, 2026-10-14).
+const STATE = 'state-v2';
+const fresh = () => ({ cash: START, pos: [], hist: [], log: [], curve: [], verdicts: [], board: {}, rate: {}, said: {}, brief: null, ai: { day: '', n: 0 }, seq: 1, updated: 0, grads: null, season: null, seasons: [] });
+
+const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' } });
+// One copy of the state in memory, shared by every request this instance serves. Requests overlap while they
+// wait on other services; if each worked on its own copy, the last to save would wipe out the others' changes.
+let mem = null;
+const load = async env => mem || (mem = await env.KV.get(STATE).then(s => s ? Object.assign(fresh(), JSON.parse(s)) : fresh()));
+const save = async (env, st) => { st.updated = Date.now(); await env.KV.put(STATE, JSON.stringify(st)); };
+const isAddr = a => /^0x[0-9a-fA-F]{40}$/.test(a || '');
+const zoneFor = liq => liq >= 250000 ? { zone: 1, max: 100 } : liq >= 40000 ? { zone: 2, max: 25 } : { zone: 3, max: 5 };
+const sig = n => n >= 1 ? n.toFixed(4) : n.toPrecision(4);
+const money = n => Math.round(n).toLocaleString('en-US');
+const num = (v, lo = 0, hi = 1e12) => { const n = Number(v); return n >= lo && n <= hi ? n : 0; };
+const word = (v, n = 14) => String(v ?? '').replace(/[^\w .$%-]/g, '').slice(0, n);
+
+// Prices for the crew come from the chain itself. The aggregators (DexScreener, GeckoTerminal) turn away
+// Cloudflare's shared addresses, so the server reads each pool's current price from the pool's own state with a
+// plain eth_call, which every node serves. Uniswap v3: slot0() on the pool. Uniswap v4: the pool's slot in the
+// PoolManager, read with extsload. Pools quoted in WETH or native ETH are converted with the ETH price read the
+// same way from the deepest WETH / USDG pool. The public node comes first; a keyed one stands behind it.
+const RPCS = ['https://rpc.mainnet.chain.robinhood.com'];
+const WETH = '0x0bd7d308f8e1639fab988df18a8011f41eacad73', USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168', ETH0 = '0x0000000000000000000000000000000000000000';
+const ETH_REF = { pool: '0x52e65b17fb6e5ba00ed806f37afcd2daa50271ca', q: 'usd', base0: true, d0: 18, d1: 6 };   // WETH / USDG, Uniswap v3
+async function rpc(method, params = []) {
+  let err;
+  for (const url of RPCS) {
+    try {
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
+      if (!r.ok) throw new Error('node said ' + r.status);
+      const j = await r.json(); if (j.error) throw new Error(j.error.message); return j.result;
+    } catch (e) { err = e; }
+  }
+  throw err;
+}
+// keccak-256, needed to find a v4 pool's storage slot
+const K_RC = [0x1n, 0x8082n, 0x800000000000808an, 0x8000000080008000n, 0x808bn, 0x80000001n, 0x8000000080008081n, 0x8000000000008009n, 0x8an, 0x88n, 0x80008009n, 0x8000000an, 0x8000808bn, 0x800000000000008bn, 0x8000000000008089n, 0x8000000000008003n, 0x8000000000008002n, 0x8000000000000080n, 0x800an, 0x800000008000000an, 0x8000000080008081n, 0x8000000000008080n, 0x80000001n, 0x8000000080008008n];
+const K_ROT = [0, 1, 62, 28, 27, 36, 44, 6, 55, 20, 3, 10, 43, 25, 39, 41, 45, 15, 21, 8, 18, 2, 61, 56, 14], M64 = (1n << 64n) - 1n;
+const rol = (v, n) => n ? ((v << BigInt(n)) | (v >> BigInt(64 - n))) & M64 : v;
+export function keccak256(hexIn) {
+  const src = (hexIn.match(/../g) || []).map(b => parseInt(b, 16)), rate = 136, p = new Uint8Array(Math.ceil((src.length + 1) / rate) * rate);
+  p.set(src); p[src.length] ^= 0x01; p[p.length - 1] ^= 0x80;
+  const s = new Array(25).fill(0n);
+  for (let o = 0; o < p.length; o += rate) {
+    for (let i = 0; i < 17; i++) { let w = 0n; for (let b = 7; b >= 0; b--) w = (w << 8n) | BigInt(p[o + i * 8 + b]); s[i] ^= w; }
+    for (let r = 0; r < 24; r++) {
+      const C = [0, 1, 2, 3, 4].map(x => s[x] ^ s[x + 5] ^ s[x + 10] ^ s[x + 15] ^ s[x + 20]);
+      for (let x = 0; x < 5; x++) { const D = C[(x + 4) % 5] ^ rol(C[(x + 1) % 5], 1); for (let y = 0; y < 25; y += 5) s[x + y] ^= D; }
+      const B = new Array(25);
+      for (let x = 0; x < 5; x++) for (let y = 0; y < 5; y++) B[y + 5 * ((2 * x + 3 * y) % 5)] = rol(s[x + 5 * y], K_ROT[x + 5 * y]);
+      for (let x = 0; x < 5; x++) for (let y = 0; y < 5; y++) s[x + 5 * y] = B[x + 5 * y] ^ (~B[(x + 1) % 5 + 5 * y] & M64 & B[(x + 2) % 5 + 5 * y]);
+      s[0] ^= K_RC[r];
+    }
+  }
+  let out = ''; for (let i = 0; i < 4; i++) for (let b = 0; b < 8; b++) out += ((s[i] >> BigInt(8 * b)) & 0xffn).toString(16).padStart(2, '0');
+  return out;
+}
+// the pool's current sqrtPriceX96
+async function sqrtPrice(m) {
+  if (m.pool.length === 42) return BigInt('0x' + (await rpc('eth_call', [{ to: m.pool, data: '0x3850c7bd' }, 'latest'])).slice(2, 66));   // slot0()
+  const slot = keccak256(m.pool.slice(2) + '6'.padStart(64, '0'));                                                                        // _pools[poolId], slot 6
+  return BigInt(await rpc('eth_call', [{ to: m.mgr, data: '0x1e2eaeaf' + slot }, 'latest'])) & ((1n << 160n) - 1n);                      // extsload(slot): low 160 bits
+}
+async function poolRatio(m) {
+  const s = await sqrtPrice(m); if (!s) return 0;
+  const r = Number(s * s * 10n ** 18n / (1n << 192n)) / 1e18 * 10 ** (m.d0 - m.d1);
+  return m.base0 ? r : 1 / r;   // quote tokens per base token
+}
+let ethCache = { v: 0, t: 0 };
+async function ethUsd() {
+  if (Date.now() - ethCache.t < 45000 && ethCache.v) return ethCache.v;
+  const v = await poolRatio(ETH_REF); if (v) ethCache = { v, t: Date.now() };
+  return ethCache.v;
+}
+// a pool's price in USD, right now
+async function chainPrice(m) { const r = await poolRatio(m); return r ? r * (m.q === 'eth' ? await ethUsd() : 1) : 0; }// what the server needs to price a pool, built from the token, the pool the browser named, and GoPlus's own list of the token's pools
+async function poolMeta(addr, pool, quote, gp) {
+  const hit = (gp?.dex || []).find(d => String(d.pair || '').toLowerCase() === pool);
+  if (!hit) return { why: 'the pool is not one GoPlus lists for this token' };
+  const q = quote === WETH || quote === ETH0 ? 'eth' : quote === USDG ? 'usd' : null;
+  if (!q) return { why: 'the pool is not quoted in ETH or USDG' };
+  const dBase = parseInt(await rpc('eth_call', [{ to: addr, data: '0x313ce567' }, 'latest']), 16), dQuote = q === 'usd' ? 6 : 18, base0 = BigInt(addr) < BigInt(quote);
+  const mgr = String(hit.pool_manager || '').toLowerCase();
+  if (pool.length === 66 && !isAddr(mgr)) return { why: 'no pool manager known for this v4 pool' };
+  return { m: { pool, q, base0, d0: base0 ? dBase : dQuote, d1: base0 ? dQuote : dBase, ...(pool.length === 66 ? { mgr } : {}) }, liq: Number(hit.liquidity) || 0 };
+}// The server's own security reading (GoPlus), so the crew never trades on the browser's word alone.
+let gpToken = { v: '', until: 0 };
+async function goplus(env, addr) {
+  const headers = { Accept: 'application/json' };
+  try {
+    if (env.GOPLUS_APP_KEY && env.GOPLUS_APP_SECRET) {   // a key raises the rate limit; without one the call still works
+      if (Date.now() > gpToken.until) {
+        const time = Math.floor(Date.now() / 1000), raw = new TextEncoder().encode(env.GOPLUS_APP_KEY + time + env.GOPLUS_APP_SECRET);
+        const sign = [...new Uint8Array(await crypto.subtle.digest('SHA-1', raw))].map(b => b.toString(16).padStart(2, '0')).join('');
+        const t = await (await fetch('https://api.gopluslabs.io/api/v1/token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ app_key: env.GOPLUS_APP_KEY, time, sign }) })).json();
+        if (t.result?.access_token) gpToken = { v: t.result.access_token, until: Date.now() + (t.result.expires_in - 300) * 1000 };
+      }
+      if (gpToken.v) headers.Authorization = gpToken.v;
+    }
+    const r = await fetch(`https://api.gopluslabs.io/api/v1/token_security/4663?contract_addresses=${addr}`, { headers });
+    return (await r.json()).result?.[addr] || null;
+  } catch (e) { return null; }
+}
+// what the server can confirm about a token: red flags, and whether it has enough holders to be called clean
+function serverRead(gp) {
+  if (!gp) return null;
+  const on = k => gp[k] === '1', own = (gp.owner_address || '').toLowerCase(), ownerLive = !!own && !/^0x0{40}$/.test(own) && !own.endsWith('dead');
+  const top10 = (gp.holders || []).filter(h => h.is_contract != 1 && h.is_locked != 1).slice(0, 10).reduce((s, h) => s + Number(h.percent) * 100, 0);
+  const red = [on('is_honeypot') && 'fails the sell test', on('cannot_sell_all') && 'cannot sell all', Number(gp.sell_tax) > 0.1 && 'sell tax over 10%', on('is_blacklisted') && 'blacklist',
+    on('is_mintable') && ownerLive && 'owner can mint', on('hidden_owner') && 'hidden owner', top10 > 50 && `ten wallets hold ${top10.toFixed(0)}%`].filter(Boolean);
+  return { red, holders: Number(gp.holder_count) || 0, top10 };
+}
+
+const worth = (p, now = Date.now()) => value(p, p.mark || p.entry, p.liq, now);
+const equity = st => st.cash + st.pos.reduce((s, p) => s + worth(p).back, 0);
+function say(st, who, text) { st.log.unshift([Date.now(), who, text]); st.log = st.log.slice(0, 60); }
+function close(st, p, v, why) {
+  st.pos = st.pos.filter(x => x.id !== p.id); st.cash += v.back;
+  st.hist.unshift({ sym: p.sym, addr: p.addr, side: p.side, lev: p.lev, entry: p.entry, exit: v.exit, pnl: v.net, fees: p.fee0 + v.closeFee + v.borrow, why, t: Date.now(), opened: p.t }); st.hist = st.hist.slice(0, 80);
+}
+// rate limit: n actions per hour per caller per kind
+function allow(st, ip, kind, n) {
+  const k = kind + ':' + ip, now = Date.now(), live = (st.rate[k] || []).filter(t => now - t < HOUR);
+  if (live.length >= n) { st.rate[k] = live; return false; }
+  live.push(now); st.rate[k] = live;
+  if (Object.keys(st.rate).length > 600) for (const key of Object.keys(st.rate)) if (!st.rate[key].some(t => now - t < HOUR)) delete st.rate[key];
+  return true;
+}
+
+// marks every position at the live price, applies the guard's rules, and follows up on past verdicts
+async function tick(st) {
+  const now = Date.now();
+  const due = st.verdicts.filter(v => (!v.p1h && now - v.t >= HOUR) || (!v.p24h && now - v.t >= 24 * HOUR));
+  for (const p of [...st.pos]) {
+    if (!p.m) continue;
+    try { const px = await chainPrice(p.m); if (px) p.mark = px; } catch (e) { continue; }
+    const v = worth(p, now);
+    if (v.health <= 0.1) { say(st, 'Guard', `${p.sym} ${p.side} liquidated at ${sig(v.exit)}`); close(st, p, v, 'liquidated'); }
+    else if (v.health < 0.5) { say(st, 'Guard', `${p.sym} health ${v.health.toFixed(2)}, stop hit, closed at ${sig(v.exit)}`); close(st, p, v, 'stop'); }
+    else if (v.health > 1.6) { say(st, 'Guard', `${p.sym} up 60% on collateral, taken at ${sig(v.exit)}`); close(st, p, v, 'target'); }
+    else if (now - p.t > 24 * HOUR) { say(st, 'Guard', `${p.sym} held a day, closed at ${sig(v.exit)}`); close(st, p, v, 'a day passed'); }
+  }
+  for (const v of due.slice(0, 8)) {   // a few per minute keeps each run well inside the request allowance
+    if (!v.m) continue;
+    let px = 0; try { px = await chainPrice(v.m); } catch (e) {}
+    if (!px) continue;
+    if (!v.p1h && now - v.t >= HOUR) v.p1h = px;
+    if (!v.p24h && now - v.t >= 24 * HOUR) v.p24h = px;
+  }
+  const last = st.curve[st.curve.length - 1];
+  if (!last || now - last[0] >= 10 * 60000) { st.curve.push([now, Math.round(equity(st) * 100) / 100]); st.curve = st.curve.slice(-432); }
+}
+// did the verdicts hold up? clean should be higher later, danger lower
+function record(st) {
+  const tally = k => {
+    const o = { CLEAN: { n: 0, right: 0 }, DANGER: { n: 0, right: 0 } };
+    for (const v of st.verdicts) { const px = v[k]; if (!px || !o[v.verdict]) continue; o[v.verdict].n++; if (v.verdict === 'CLEAN' ? px > v.p0 : px < v.p0) o[v.verdict].right++; }
+    return o;
+  };
+  const count = { CLEAN: 0, RISKY: 0, DANGER: 0 }; st.verdicts.forEach(v => count[v.verdict]++);
+  return { count, after1h: tally('p1h'), after24h: tally('p24h'), latest: st.verdicts.slice(0, 30).map(({ m, ...v }) => v) };
+}
+
+async function postVerdict(st, env, body, ip) {
+  const addr = String(body.addr || '').toLowerCase();
+  if (!isAddr(addr) || !['CLEAN', 'RISKY', 'DANGER'].includes(body.verdict)) return { ok: false, why: 'bad request' };
+  if (st.verdicts.some(v => v.addr === addr && Date.now() - v.t < 6 * HOUR)) return { ok: true, why: 'already on file' };
+  if (!allow(st, ip, 'verdict', 40)) return { ok: false, why: 'slow down' };
+  // The browser names the pool it priced the token from. The server checks that pool against GoPlus's list for the
+  // token, takes the liquidity from GoPlus, and reads the price itself from the pool's last swap on chain.
+  const pool = String(body.pool || '').toLowerCase(), quote = String(body.quote || '').toLowerCase();
+  if (!/^0x[0-9a-f]{40}([0-9a-f]{24})?$/.test(pool) || !isAddr(quote)) return { ok: false, why: 'no pool named' };
+  let gp = await goplus(env, addr);
+  if (!gp) { await new Promise(r => setTimeout(r, 1500)); gp = await goplus(env, addr); }   // it is rate-limited; one more try
+  if (!gp) return { ok: true, why: 'not traded: the security service did not answer' };
+  let meta; try { meta = await poolMeta(addr, pool, quote, gp); } catch (e) { return { ok: false, why: 'chain not answering: ' + String(e.message || e).slice(0, 90) }; }
+  if (!meta.m) return { ok: true, why: 'not traded: ' + meta.why };
+  let price = 0; try { price = await chainPrice(meta.m); } catch (e) {}
+  if (!price) return { ok: true, why: 'not traded: the pool price could not be read from the chain' };
+  const pair = { sym: word(gp.token_symbol || body.sym || addr.slice(0, 6), 12), price, created: num(body.created, 0, 1e14),
+    // liquidity: the security service's figure and the browser's often disagree, so the smaller of the two is used.
+    // An inflated claim cannot raise it, and a doubtful pool is treated as the thinner one.
+    liq: num(body.liq) ? Math.min(meta.liq || num(body.liq), num(body.liq)) : meta.liq };
+  // pool age is the one thing taken from the browser: neither GoPlus nor a cheap chain read gives it
+  const ageMin = pair.created ? (Date.now() - pair.created) / 60000 : 0, z = zoneFor(pair.liq);
+  // a clean ticket needs the server to find no red flag and 50 holders; a danger ticket needs the server to find a red flag.
+  // anything the server cannot confirm is filed as risky and not traded.
+  const sr = serverRead(gp);
+  let verdict = body.verdict, note = '';
+  if (verdict === 'CLEAN' && ageMin < 60) { verdict = 'RISKY'; note = 'pool under an hour old'; }
+  else if (verdict !== 'RISKY' && !sr) { verdict = 'RISKY'; note = 'server could not check it'; }
+  else if (verdict === 'CLEAN' && (sr.red.length || sr.holders < 50)) { verdict = 'RISKY'; note = 'server check found: ' + (sr.red[0] || `only ${sr.holders} holders`); }
+  else if (verdict === 'DANGER' && !sr.red.length) { verdict = 'RISKY'; note = 'server check found no red flag'; }
+  else if (verdict === 'DANGER') note = 'server confirms: ' + sr.red[0];
+  else if (verdict === 'CLEAN') note = 'server check agrees';
+  const platform = verdict === 'CLEAN' ? 'long' : verdict === 'DANGER' && pair.liq >= 20000 ? 'short' : 'depot';
+  const score = Math.max(0, Math.min(100, Math.round(Number(body.score) || 0)));
+  const v = { addr, sym: pair.sym, verdict, score, platform, zone: z.zone, t: Date.now(), p0: pair.price, liq: Math.round(pair.liq), m: { ...meta.m }, tags: (body.tags || []).slice(0, 7).map(t => String(t).slice(0, 18)) };
+  st.verdicts.unshift(v); st.verdicts = st.verdicts.slice(0, 300);
+  if (verdict !== body.verdict) v.claimed = body.verdict;
+  say(st, 'Dispatcher', `${v.sym} ${verdict.toLowerCase()} ${score}, ${platform === 'depot' ? 'to the depot' : 'to the ' + platform + ' desk'}${note ? ' (' + note + ')' : ''}`);
+  if (platform === 'depot') return { ok: true, why: verdict !== body.verdict ? 'held back: ' + note : 'filed, no trade' };
+  if (st.pos.some(p => p.addr === addr)) return { ok: true, why: 'already held' };
+  if (st.pos.length >= 8) { say(st, 'Sizer', 'eight positions open, no room'); return { ok: true, why: 'desk full' }; }
+  const lev = z.zone === 1 ? 4 : z.zone === 2 ? 2 : 1;   // the crew stays far under what the zone allows
+  // 4% of equity, shrunk if that size would move the pool too far
+  let col = Math.min(st.cash / (1 + FEE * lev), Math.max(50, Math.round(equity(st) * 0.04)));
+  if (impact(col * lev, pair.liq) > MAX_IMPACT / 2) col = Math.floor(MAX_IMPACT / 2 * pair.liq / 2 / lev);
+  if (col < 50) { say(st, 'Sizer', 'pool too thin or cash too low for the smallest size, skipped'); return { ok: true, why: 'skipped, too thin' }; }
+  const size = col * lev, entry = fill(pair.price, size, pair.liq, platform === 'long'), fee0 = size * FEE;
+  st.cash -= col + fee0;
+  st.pos.push({ id: st.seq++, addr, sym: v.sym, side: platform, lev, col, size, entry, fee0, mark: pair.price, liq: pair.liq, m: { ...meta.m }, t: Date.now(), zone: z.zone });
+  say(st, 'Sizer', `${money(col)} USDG at ${lev.toFixed(1)}x, zone ${z.zone}`);
+  say(st, 'Signal', `${platform} ${v.sym} filled at ${sig(entry)}, ${(impact(size, pair.liq) * 100).toFixed(2)}% from quote, fee ${fee0.toFixed(2)}`);
+  return { ok: true, why: 'opened ' + platform };
+}
+
+// ---------- the conductor ----------
+const RULES = 'You are the conductor at Shuntdesk, a site that runs seven fixed-rule checks on tokens and runs paper (simulated) margin desks on real prices. You explain; you never trade and never advise. Use only the facts given. Plain words, short sentences, no hype, no emoji, no exclamation marks, no price predictions, no telling anyone to buy or sell. If the facts do not answer the question, say so in one sentence.';
+// asks the model if a key is configured and the allowances hold; otherwise returns the plain fallback
+async function conduct(st, env, ip, key, task, facts, fallback) {
+  if (st.said[key]) return st.said[key];
+  let out = { text: fallback, by: 'rules' };
+  const day = new Date().toISOString().slice(0, 10); if (st.ai.day !== day) st.ai = { day, n: 0 };
+  // OpenRouter if its key is set, else Groq; capped at 300 model answers a day so the spend stays in cents
+  // Surplus first (inference paid in CREDIT on Robinhood Chain), then OpenRouter, then Groq
+  const ai = env.SURPLUS_API_KEY ? { url: 'https://api.surplusllm.com/api/v1/chat/completions', key: env.SURPLUS_API_KEY, model: env.SURPLUS_MODEL || 'anthropic/claude-haiku-5.5', via: 'Surplus' }
+    : env.OPENROUTER_API_KEY ? { url: 'https://openrouter.ai/api/v1/chat/completions', key: env.OPENROUTER_API_KEY, model: env.OPENROUTER_MODEL || 'anthropic/claude-haiku-5.5' }
+    : env.GROQ_API_KEY ? { url: 'https://api.groq.com/openai/v1/chat/completions', key: env.GROQ_API_KEY, model: env.GROQ_MODEL || 'llama-3.3-70b-versatile' } : null;
+  if (ai && st.ai.n < 300 && allow(st, ip, 'ask', 20)) {
+    try {
+      const r = await fetch(ai.url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + ai.key },
+        // thinking is switched off where the provider allows it: with it on, the whole allowance went to reasoning and the answer came back empty
+        body: JSON.stringify({ model: ai.model, temperature: 0.3, max_tokens: 500, ...(ai.via ? {} : env.OPENROUTER_API_KEY ? { reasoning: { enabled: false } } : {}), messages: [{ role: 'system', content: RULES + ' ' + task }, { role: 'user', content: facts }] }) });
+      if (r.ok) { const j = await r.json(), t = j.choices?.[0]?.message?.content?.trim(); if (t) { out = { text: t.slice(0, 900), by: 'model', via: ai.via || 'OpenRouter' }; st.ai.n++; } }
+      else if (ai.via && env.OPENROUTER_API_KEY) {   // Surplus out of balance or down: the same model through OpenRouter
+        const r2 = await fetch('https://openrouter.ai/api/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + env.OPENROUTER_API_KEY },
+          body: JSON.stringify({ model: env.OPENROUTER_MODEL || 'anthropic/claude-haiku-5.5', temperature: 0.3, max_tokens: 500, reasoning: { enabled: false }, messages: [{ role: 'system', content: RULES + ' ' + task }, { role: 'user', content: facts }] }) });
+        if (r2.ok) { const j = await r2.json(), t = j.choices?.[0]?.message?.content?.trim(); if (t) { out = { text: t.slice(0, 900), by: 'model', via: 'OpenRouter' }; st.ai.n++; } }
+      }
+    } catch (e) {}
+  }
+  st.said[key] = out;
+  const keys = Object.keys(st.said); if (keys.length > 400) keys.slice(0, 100).forEach(k => delete st.said[k]);
+  return out;
+}
+function explain(st, env, b, ip) {
+  const steps = (b.steps || []).slice(0, 7), q = String(b.q || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+  const facts = `Token ${word(b.sym)}. Verdict ${word(b.verdict)}, score ${num(b.score, 0, 100)}/100, sent to ${word(b.platform)}.\n` + steps.map(s => `${word(s.name)}: ${word(s.tag, 20)}. ${String(s.detail || '').slice(0, 200)}`).join('\n');
+  const worst = steps.filter(s => s.status === 'bad' || s.status === 'warn').slice(0, 2).map(s => s.detail).join(' ');
+  const where = b.platform === 'long' ? 'the long desk' : b.platform === 'short' ? 'the short desk' : 'the depot, with no trade';
+  const plain = `${word(b.sym)} scored ${num(b.score, 0, 100)} out of 100, so the judge called it ${word(b.verdict).toLowerCase()} and sent it to ${where}. ${worst || 'None of the seven stops raised a flag.'} This is a fixed-rule reading of public chain data and it can be wrong.`;
+  if (q) return conduct(st, env, ip, `q:${String(b.addr).toLowerCase()}:${num(b.score, 0, 100)}:${q.toLowerCase()}`, 'A visitor asks a question about this ticket. Answer it in at most three sentences from the findings.', facts + '\n\nQuestion: ' + q, 'The conductor can only answer that with its language model, which is not available right now. The findings are all listed in the route above.');
+  return conduct(st, env, ip, `v:${String(b.addr).toLowerCase()}:${num(b.score, 0, 100)}`, 'Explain this verdict to an ordinary person in three short sentences. Name the one or two findings that mattered most. End by noting it is a rule-based reading that can be wrong.', facts, plain);
+}
+function tradeBrief(st, env, b, ip) {
+  const side = b.side === 'short' ? 'short' : 'long', lev = num(b.lev, 1, 100), col = num(b.col), size = col * lev, price = num(b.price), liq = num(b.liq);
+  if (!price || !col || !liq) return { text: 'Load a token and set a size first.', by: 'rules' };
+  const k = impact(size, liq), entry = fill(price, size, liq, side === 'long'), fee = size * FEE, lp = num(b.liqPrice), dist = Math.abs(lp / entry - 1) * 100;
+  const facts = `Paper trade, nothing real. ${side.toUpperCase()} ${word(b.sym)} at ${lev}x. Collateral ${col.toFixed(0)} USDG, position size ${size.toFixed(0)} USDG, borrowed ${(size - col).toFixed(0)} USDG. Quoted price ${sig(price)}, expected fill ${sig(entry)} (${(k * 100).toFixed(2)}% price impact because the pool holds ${money(liq)} USD). Fee ${fee.toFixed(2)} USDG to open and about the same to close. Borrow cost 0.02% an hour on the borrowed part. Liquidated near ${sig(lp)}, which is ${dist.toFixed(1)}% ${side === 'long' ? 'below' : 'above'} the fill. Liquidation means 90% of the collateral is gone. Verdict on this token: ${word(b.verdict) || 'not checked yet'}.`;
+  const plain = `This ${side} puts ${col.toFixed(0)} USDG of paper collateral behind a ${size.toFixed(0)} USDG position at ${lev}x. It should fill near ${sig(entry)}, ${(k * 100).toFixed(2)}% from the quoted price because of the pool's depth, and costs ${fee.toFixed(2)} USDG to open and about the same to close. A ${dist.toFixed(1)}% move ${side === 'long' ? 'down' : 'up'}, to about ${sig(lp)}, liquidates it.`;
+  return conduct(st, env, ip, `t:${word(b.sym)}:${side}:${lev}:${Math.round(col / 25)}:${price.toPrecision(3)}`, 'Explain this paper trade before it is opened, in four short sentences: what is borrowed, what it costs, what a 10% move in each direction does to the collateral, and where it is liquidated. Do not say whether to take it.', facts, plain);
+}
+// a short spoken summary of the crew desk, rewritten at most every 30 minutes and only when something happened
+async function brief(st, env, ip) {
+  const now = Date.now(), last = st.log[0]?.[0] || 0;
+  if (st.brief && (now - st.brief.t < 30 * 60000 || last <= st.brief.t)) return st.brief;
+  const eq = equity(st), wins = st.hist.filter(h => h.pnl > 0).length;
+  const plain = st.pos.length || st.hist.length ? `The crew desk is worth ${money(eq)} USDG against a start of ${money(START)}. It holds ${st.pos.length} open position${st.pos.length === 1 ? '' : 's'} and has closed ${st.hist.length}, ${wins} of them at a gain.` : 'The crew desk has not traded yet. It opens a paper position when a visitor runs a ticket that comes back clean, or danger on a pool deep enough to short.';
+  if (!st.pos.length && !st.hist.length) return st.brief = { t: now, text: plain, by: 'rules' };
+  const facts = `Crew desk, paper money. Equity ${eq.toFixed(2)} USDG, started with ${START}. Free cash ${st.cash.toFixed(2)}.\nOpen: ${st.pos.map(p => { const v = worth(p); return `${p.side} ${p.sym} ${p.lev}x, collateral ${p.col}, result so far ${v.net.toFixed(2)}`; }).join('; ') || 'none'}.\nClosed (latest first): ${st.hist.slice(0, 6).map(h => `${h.side} ${h.sym} ${h.pnl.toFixed(2)} (${h.why})`).join('; ') || 'none'}.\nLog: ${st.log.slice(0, 8).map(l => l[1] + ': ' + l[2]).join(' | ')}`;
+  delete st.said['brief'];
+  const out = await conduct(st, env, ip, 'brief', 'Give a three-sentence status of the crew desk: how it stands against its start, what it holds, and what happened most recently.', facts, plain);
+  delete st.said['brief'];
+  return st.brief = { t: now, text: out.text, by: out.by };
+}
+
+// Post-mortems: once a crew position is closed, the conductor writes why it made or lost money, from that trade's own
+// numbers. It explains after the fact; it never chose the trade. One per alarm run, so the daily allowance stays small.
+async function postMortem(st, env) {
+  const h = st.hist.find(x => !x.note && Date.now() - x.t < 6 * HOUR); if (!h) return;
+  const held = Math.max(1, Math.round((h.t - (h.opened || h.t)) / 60000)), move = h.entry ? (h.exit / h.entry - 1) * 100 : 0;
+  const v = st.verdicts.find(x => x.addr === h.addr);
+  const facts = `Paper trade by the crew desk. ${h.side.toUpperCase()} ${h.sym} at ${h.lev}x. Entry ${sig(h.entry)}, exit ${sig(h.exit)}, a ${move.toFixed(2)}% price move. Held ${held} minutes. Closed because: ${h.why}. Result ${h.pnl.toFixed(2)} USDG after ${h.fees.toFixed(2)} in fees and borrow.${v ? ` It was opened on a ${v.verdict} ${v.score} verdict${v.tags?.length ? ` (stops: ${v.tags.join(', ')})` : ''}.` : ''}`;
+  const plain = `${h.side === 'long' ? 'Long' : 'Short'} ${h.sym} closed ${h.pnl >= 0 ? 'up' : 'down'} ${money(Math.abs(h.pnl))} USDG: the price moved ${move.toFixed(1)}% in ${held} minutes and the guard closed it on ${h.why}.`;
+  h.note = await conduct(st, env, 'crew', 'pm:' + h.addr + ':' + h.t, 'Write a two or three sentence post-mortem of this closed paper trade: what the price did, why the guard closed it, and what that says about the verdict it was opened on. No advice, no prediction.', facts, plain);
+}
+// the report's paragraph, rewritten at most every three hours
+async function reportNote(st, env, r) {
+  const now = Date.now(); if (st.rnote && now - st.rnote.t < 3 * HOUR) return st.rnote;
+  const facts = `Crew desk, paper money, last 24 hours. Equity ${r.equity} USDG (${r.change >= 0 ? '+' : ''}${r.change} in 24 hours, ${r.total >= 0 ? '+' : ''}${r.total} since it started with ${r.start}). Verdicts: ${r.verdicts.CLEAN} clean, ${r.verdicts.RISKY} risky, ${r.verdicts.DANGER} danger. Of ${r.judged} calls checked an hour later, ${r.held} held. Trades closed: ${r.closed}, ${r.wins} in profit. Best: ${r.best ? `${r.best.sym} ${r.best.side} ${r.best.pnl}` : 'none'}. Worst: ${r.worst ? `${r.worst.sym} ${r.worst.side} ${r.worst.pnl}` : 'none'}. Open now: ${r.open}. Tokens that graduated from Pons: ${r.grads}.`;
+  const plain = `The crew desk ${r.change >= 0 ? 'gained' : 'lost'} ${money(Math.abs(r.change))} USDG in 24 hours and stands at ${money(r.equity)}. ${r.judged ? `${r.held} of ${r.judged} calls held an hour later.` : 'No call has been checked an hour later yet.'}`;
+  delete st.said['rnote'];
+  const out = await conduct(st, env, 'crew', 'rnote', 'Write the daily report paragraph for the crew desk in three plain sentences: how it did, how its calls held up, and the one thing that mattered most. Misses are said plainly. No advice.', facts, plain);
+  delete st.said['rnote'];
+  return st.rnote = { t: now, text: out.text, by: out.by };
+}
+
+// ---------- a second read from ChargeAI, an open model for Pons launches served on Surplus ----------
+// Shuntdesk's verdict stays its own; this is another model's opinion, shown beside it. The facts sent are the ones the
+// browser's checks found, rebuilt here from numbers only. Shared for 30 minutes per token, capped at 200 a day.
+const CHARGE = 'launch/charge-ai/charge-30b@9ff2ef1';
+const seconds = new Map(); let secondDay = { day: '', n: 0 };
+async function secondRead(st, env, b, ip) {
+  const addr = String(b.addr || '').toLowerCase(); if (!isAddr(addr)) return { ok: false, why: 'bad address' };
+  const hit = seconds.get(addr), now = Date.now(); if (hit && now - hit.t < 30 * 60000) return hit.v;
+  if (!env.SURPLUS_API_KEY) return { ok: false, why: 'not set up' };
+  const day = new Date().toISOString().slice(0, 10); if (secondDay.day !== day) secondDay = { day, n: 0 };
+  if (secondDay.n >= 200 || !allow(st, ip, 'second', 15)) return { ok: false, why: 'busy, try again later' };
+  const L = await launch(env, addr).catch(() => null);
+  if (!L?.launchpad || L.launchpad !== 'pons') return { ok: false, why: 'ChargeAI reads Pons launches only' };
+  const n = (v, d = 1) => Number.isFinite(Number(v)) ? Number(v).toFixed(d) : 'unknown';
+  const facts = `Pons launch on Robinhood Chain. Token ${word(b.sym, 12)}, ${addr}. Age ${n(num(b.ageMin, 0, 1e7) / 60, 1)} hours. ${L.graduated ? 'Graduated from the curve.' : `Curve progress ${n(L.progress, 0)}%.`} Holders ${num(b.holders, 0, 1e9)}. Top 10 wallets hold ${n(b.top10)}%. Snipers hold ${n(L.sniperPct)}%, bundlers ${n(L.bundlerPct)}%, insiders ${n(L.insiderPct)}%, developer ${n(L.devPct)}%. Liquidity about $${Math.round(num(b.liq))}.${b.chg != null ? ` Price change 24h ${n(b.chg, 0)}%.` : ''}\nRead this launch.`;
+  secondDay.n++;
+  let v = { ok: false, why: 'ChargeAI did not answer' };
+  try {
+    const r = await fetch('https://api.surplusllm.com/api/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + env.SURPLUS_API_KEY }, body: JSON.stringify({ model: CHARGE, max_tokens: 320, temperature: 0.2, messages: [{ role: 'user', content: facts }] }) });
+    const j = await r.json().catch(() => null), t = j?.choices?.[0]?.message?.content;
+    // the site carries no emoji, so pictographs in the model's reply are dropped; the words are kept as written
+    if (t) v = { ok: true, text: t.replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').replace(/[ \t]+\n/g, '\n').trim().slice(0, 900), model: 'ChargeAI (charge-30b)', via: 'Surplus', t: now };
+    else if (r.status === 402) v = { ok: false, why: 'the Surplus balance is empty' };
+  } catch (e) {}
+  seconds.set(addr, { t: now, v }); if (seconds.size > 300) seconds.delete(seconds.keys().next().value);
+  return v;
+}
+
+// ---------- the open record on Hugging Face (huggingface.co/datasets/shuntdesk/verdicts) ----------
+// Once a day, the calls made the day before last, each with its price an hour and a day later, go up as one JSONL
+// file per day (a call needs a full day before its 24-hour price exists). One commit, through the Hub's commit API.
+const HF_REPO = 'shuntdesk/verdicts';
+const b64 = s => { const bytes = new TextEncoder().encode(s); let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(bin); };
+async function hfPublish(st, env, force = false) {
+  if (!env.HF_TOKEN) return { ok: false, why: 'no token' };
+  const now = Date.now(), DAY = 24 * HOUR, day = new Date(now - 2 * DAY).toISOString().slice(0, 10);
+  if (!force && st.hf?.day === day) return { ok: true, why: 'already published ' + day };
+  const from = Date.parse(day + 'T00:00:00Z'), to = from + DAY;
+  const rows = st.verdicts.filter(v => v.t >= from && v.t < to).sort((a, b) => a.t - b.t).map(v => ({
+    time: new Date(v.t).toISOString(), token: v.addr, symbol: v.sym, verdict: v.verdict, score: v.score, claimed: v.claimed || v.verdict, desk: v.platform, zone: v.zone,
+    stops: v.tags || [], liquidity_usd: v.liq, price: v.p0, price_1h: v.p1h || null, price_24h: v.p24h || null,
+    held_1h: v.p1h && v.verdict !== 'RISKY' ? (v.verdict === 'CLEAN' ? v.p1h > v.p0 : v.p1h < v.p0) : null,
+    held_24h: v.p24h && v.verdict !== 'RISKY' ? (v.verdict === 'CLEAN' ? v.p24h > v.p0 : v.p24h < v.p0) : null }));
+  const trades = st.hist.filter(h => h.t >= from && h.t < to).map(h => ({ closed: new Date(h.t).toISOString(), opened: new Date(h.opened || h.t).toISOString(), token: h.addr, symbol: h.sym, side: h.side, leverage: h.lev, entry: h.entry, exit: h.exit, pnl_usdg: Math.round(h.pnl * 100) / 100, fees_usdg: Math.round(h.fees * 100) / 100, closed_because: h.why, post_mortem: h.note?.text || null }));
+  const files = [[`data/verdicts/${day}.jsonl`, rows.map(r => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : '')]];
+  if (trades.length) files.push([`data/trades/${day}.jsonl`, trades.map(r => JSON.stringify(r)).join('\n') + '\n']);
+  const body = [JSON.stringify({ key: 'header', value: { summary: `Calls of ${day}: ${rows.length} verdicts, ${trades.length} crew trades closed` } }),
+    ...files.map(([path, text]) => JSON.stringify({ key: 'file', value: { path, encoding: 'base64', content: b64(text) } }))].join('\n');
+  const r = await fetch(`https://huggingface.co/api/datasets/${HF_REPO}/commit/main`, { method: 'POST', headers: { Authorization: 'Bearer ' + env.HF_TOKEN, 'Content-Type': 'application/x-ndjson' }, body });
+  const out = { ok: r.ok, day, verdicts: rows.length, trades: trades.length, status: r.status };
+  if (r.ok) st.hf = { day, t: now, verdicts: rows.length, trades: trades.length }; else out.why = (await r.text()).slice(0, 160);
+  return out;
+}
+
+// ---------- Shuntdesk for agents: read-only JSON for other programs (documented in /llms.txt) ----------
+async function agentToken(st, env, addr) {
+  const v = st.verdicts.find(x => x.addr === addr), pos = st.pos.find(p => p.addr === addr);
+  let gp = null; try { gp = await goplus(env, addr); } catch (e) {}
+  const sr = gp ? serverRead(gp) : null;
+  return {
+    token: addr, chain: 'robinhood', chainId: 4663,
+    verdict: v ? { verdict: v.verdict, score: v.score, desk: v.platform, zone: v.zone, at: new Date(v.t).toISOString(), stops: v.tags || [], priceAtVerdict: v.p0, after1h: v.p1h || null, after24h: v.p24h || null } : null,
+    serverCheck: sr ? { redFlags: sr.red, holders: sr.holders, source: 'GoPlus' } : null,
+    launch: await launch(env, addr).catch(() => null),
+    crewPosition: pos ? { side: pos.side, leverage: pos.lev, entry: pos.entry, mark: pos.mark || pos.entry, opened: new Date(pos.t).toISOString() } : null,
+    fullCheck: `https://shuntdesk.com/ticket/?a=${addr}`,
+    note: v ? 'The verdict was filed when someone ran the seven checks on shuntdesk.com; the server re-checked it before the crew traded. It can be wrong. Not advice.' : 'No verdict on file. Open fullCheck to run the seven checks; the verdict is filed for everyone once it runs. Not advice.'
+  };
+}
+
+// Candles from Codex, for pools too young for the free feed. The key stays here; answers are shared
+// between visitors for a minute, and a daily ceiling keeps the free allowance (10,000 a month) intact.
+const bars = new Map(); let codexDay = { day: '', n: 0 };
+async function candles(env, addr) {
+  const hit = bars.get(addr), now = Date.now();
+  if (hit && now - hit.t < 60000) return hit.v;
+  const day = new Date().toISOString().slice(0, 10); if (codexDay.day !== day) codexDay = { day, n: 0 };
+  if (!env.CODEX_API_KEY || codexDay.n >= 300) return { rows: [], res: 1 };
+  const ask = async (res, secs) => {
+    codexDay.n++;
+    const to = Math.floor(now / 1000), q = `{ getBars(symbol: "${addr}:4663", from: ${to - secs}, to: ${to}, resolution: "${res}", removeLeadingNullValues: true) { t o h l c } }`;
+    const r = await fetch('https://graph.codex.io/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: env.CODEX_API_KEY }, body: JSON.stringify({ query: q }) });
+    const b = (await r.json()).data?.getBars; if (!b) return [];
+    return b.t.map((t, i) => ({ t: t * 1000, o: b.o[i], h: b.h[i], l: b.l[i], c: b.c[i] })).filter(x => x.c != null && x.o != null);
+  };
+  let res = 5, rows = [];
+  try { rows = await ask(5, 36000); if (rows.length < 24) { const one = await ask(1, 7200); if (one.length > rows.length) { rows = one; res = 1; } } } catch (e) {}
+  const v = { rows: rows.slice(-120), res };
+  bars.set(addr, { t: now, v }); if (bars.size > 300) bars.delete(bars.keys().next().value);
+  return v;
+}
+
+// New and trending pools, read once on the server with the CoinGecko key and shared by every visitor for a
+// minute. The keyless feed allows each visitor only about ten calls a minute, which a busy page runs through.
+const lists = new Map();
+async function pools(env, kind) {
+  // the free CoinGecko plan is 10,000 calls a month, about 330 a day: 6 minutes for new pools and 20 for trending
+  // comes to at most 312 calls a day however many people are on the site
+  const hit = lists.get(kind), now = Date.now();
+  if (hit && now - hit.t < (kind === 'new' ? 360000 : 1200000)) return hit.v;
+  let v = { rows: [], source: 'CoinGecko' };
+  try {
+    const r = await fetch(`https://api.coingecko.com/api/v3/onchain/networks/robinhood/${kind === 'new' ? 'new_pools' : 'trending_pools'}?page=1&include=base_token`, { headers: { Accept: 'application/json', ...(env.COINGECKO_API_KEY ? { 'x-cg-demo-api-key': env.COINGECKO_API_KEY } : {}) } });
+    const j = await r.json();
+    v.rows = (j.data || []).map(d => {
+      const a = d.attributes, id = d.relationships?.base_token?.data?.id || '', tok = (j.included || []).find(i => i.id === id), tx = a.transactions?.h24 || {};
+      return { pool: a.address, addr: id.split('_')[1] || '', sym: tok?.attributes?.symbol || a.name.split(' / ')[0], name: tok?.attributes?.name || '', created: Date.parse(a.pool_created_at), liq: Number(a.reserve_in_usd) || 0, fdv: Number(a.fdv_usd) || 0,
+        price: Number(a.base_token_price_usd) || 0, tx24: (tx.buys || 0) + (tx.sells || 0), buyers: tx.buyers || 0, sellers: tx.sellers || 0, chg: Number(a.price_change_percentage?.h24) || 0, vol24: Number(a.volume_usd?.h24) || 0 };
+    }).filter(x => x.addr);
+  } catch (e) {}
+  if (v.rows.length) lists.set(kind, { t: now, v }); else if (hit) return hit.v;   // a failed refresh keeps the last good list
+  return v;
+}
+
+// ---------- Pons: the launchpad most new tokens here come from ----------
+// Its V2 factory logs every launch (token, curve, creator) and every graduation (token).
+const PONS = '0x7ed598bcef8bd9edd8c97a195c6d13f40801ec7e';
+const T_LAUNCH = '0x8d4aad4953d0ca700d468f3753aa14432d1b35b43ec6409f051fb6aa43a89607';
+const T_GRAD = '0x0a44ef75df69c534f43cd6c1aa3ef8983065fe5fe79ef9e79f6494e6f258c259';
+const hex = n => '0x' + n.toString(16), wordAddr = w => '0x' + String(w).slice(-40).toLowerCase();
+// every five minutes, read the graduations since the last read; the first read goes back about a day
+async function gradScan(st, env) {
+  const g = st.grads = st.grads || { block: 0, rows: [], t: 0 }, now = Date.now();
+  if (now - g.t < 5 * 60000) return; g.t = now;
+  const head = parseInt(await rpc('eth_blockNumber'), 16), from = g.block ? g.block + 1 : head - 860000;   // about 10 blocks a second
+  if (from > head) return;
+  const to = Math.min(head, from + 900000);
+  // the public node is the only one that serves logs over a wide range (the keyed one allows a few hundred blocks),
+  // and from shared Cloudflare addresses it sometimes refuses: ask it directly, a few times, with a pause
+  let logs = null, why = '';
+  for (let k = 0; k < 3 && !logs; k++) {
+    try {
+      const r = await fetch(RPCS[0], { method: 'POST', headers: { 'Content-Type': 'application/json', ...UA }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getLogs', params: [{ address: PONS, topics: [T_GRAD], fromBlock: hex(from), toBlock: hex(to) }] }) });
+      const j = await r.json().catch(() => null); if (j && Array.isArray(j.result)) logs = j.result; else why = 'node said ' + r.status + (j?.error?.message ? ': ' + j.error.message.slice(0, 80) : '');
+    } catch (e) { why = String(e.message || e).slice(0, 80); }
+    if (!logs) await new Promise(r => setTimeout(r, 1500));
+  }
+  // the public node refuses shared Cloudflare addresses at times: the keyed Blockscout index has the same log
+  if (!logs && env?.BLOCKSCOUT_API_KEY) try {
+    const r = await fetch(`https://api.blockscout.com/4663/api?module=logs&action=getLogs&address=${PONS}&topic0=${T_GRAD}&fromBlock=${from}&toBlock=${to}&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA });
+    const j = await r.json(); if (Array.isArray(j.result)) logs = j.result; else if (j.message === 'No records found') logs = []; else why += ' · blockscout: ' + String(j.message || r.status).slice(0, 60);
+  } catch (e) { why += ' · blockscout: ' + String(e.message || e).slice(0, 60); }
+  if (!logs) { g.err = why; return; }
+  g.err = null;
+  for (const l of logs.slice(-30)) {
+    const token = wordAddr(l.topics[1]); if (g.rows.some(r => r.token === token)) continue;   // the graduation names the token itself
+    let t = l.timeStamp ? parseInt(l.timeStamp, 16) * 1000 : 0; if (!t) try { t = parseInt((await rpc('eth_getBlockByNumber', [l.blockNumber, false])).timestamp, 16) * 1000; } catch (e) {}
+    if (isAddr(token)) g.rows.push({ token, block: parseInt(l.blockNumber, 16), t: t || now });
+  }
+  g.block = to; g.rows = g.rows.sort((a, b) => b.block - a.block).slice(0, 40);
+}
+
+// Launch facts from Codex for launchpad tokens: snipers, bundles, insiders, the developer's share, curve progress.
+// Shared by every visitor for ten minutes, with its own daily ceiling inside the same free allowance.
+const launches = new Map(); let launchDay = { day: '', n: 0 };
+async function launch(env, addr) {
+  const hit = launches.get(addr), now = Date.now();
+  if (hit && now - hit.t < 600000) return hit.v;
+  const day = new Date().toISOString().slice(0, 10); if (launchDay.day !== day) launchDay = { day, n: 0 };
+  if (!env.CODEX_API_KEY || launchDay.n >= 150) return { ok: false, why: 'not available right now' };
+  launchDay.n++;
+  let v = { ok: false, why: 'no answer' };
+  try {
+    const q = `{ filterTokens(tokens: ["${addr}:4663"], limit: 1) { results { holders sniperCount sniperHeldPercentage bundlerCount bundlerHeldPercentage insiderCount insiderHeldPercentage devHeldPercentage token { launchpad { launchpadName graduationPercent completed completedAt } } } } }`;
+    const r = await fetch('https://graph.codex.io/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: env.CODEX_API_KEY }, body: JSON.stringify({ query: q }) });
+    const x = (await r.json()).data?.filterTokens?.results?.[0];
+    if (x) { const lp = x.token?.launchpad; v = { ok: true, launchpad: lp?.launchpadName || null, progress: lp?.graduationPercent ?? null, graduated: lp ? !!lp.completed : null,
+      snipers: x.sniperCount, sniperPct: x.sniperHeldPercentage, bundlers: x.bundlerCount, bundlerPct: x.bundlerHeldPercentage, insiders: x.insiderCount, insiderPct: x.insiderHeldPercentage, devPct: x.devHeldPercentage }; }
+    else v = { ok: true, launchpad: null };
+  } catch (e) {}
+  launches.set(addr, { t: now, v }); if (launches.size > 400) launches.delete(launches.keys().next().value);
+  return v;
+}
+
+// ---------- the daily report: the last 24 hours of the crew desk, from its own state ----------
+function report(st) {
+  const now = Date.now(), DAY = 24 * HOUR, eq = equity(st);
+  const past = st.curve.find(p => now - p[0] <= DAY), eq0 = past ? past[1] : START;
+  const v = st.verdicts.filter(x => now - x.t < DAY), count = { CLEAN: 0, RISKY: 0, DANGER: 0 }; v.forEach(x => count[x.verdict]++);
+  // calls priced again an hour later, among the last two days: did they hold?
+  const judged = st.verdicts.filter(x => x.p1h && now - x.t < 2 * DAY && (x.verdict === 'CLEAN' || x.verdict === 'DANGER'));
+  const held = judged.filter(x => x.verdict === 'CLEAN' ? x.p1h > x.p0 : x.p1h < x.p0).length;
+  const closed = st.hist.filter(h => now - h.t < DAY).sort((a, b) => b.pnl - a.pnl), trim = h => h && { sym: h.sym, side: h.side, pnl: Math.round(h.pnl * 100) / 100, why: h.why };
+  return { t: now, equity: Math.round(eq * 100) / 100, change: Math.round((eq - eq0) * 100) / 100, start: START, total: Math.round((eq - START) * 100) / 100,
+    verdicts: count, judged: judged.length, held, closed: closed.length, wins: closed.filter(h => h.pnl > 0).length,
+    best: trim(closed[0]), worst: trim(closed.length > 1 ? closed[closed.length - 1] : null), open: st.pos.length,
+    grads: (st.grads?.rows || []).filter(r => now - r.t < DAY).length };
+}
+
+// ---------- weekly seasons on the board of desks: Monday 00:00 UTC to Monday ----------
+const seasonId = (t = Date.now()) => { const d = new Date(t), back = (d.getUTCDay() + 6) % 7; return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - back); };
+function boardRows(st) {
+  const rows = Object.entries(st.board).map(([h, r]) => ({ handle: h, pnl: r.pnl ?? r.equity - START, equity: r.equity, trades: r.trades, wins: r.wins, busts: r.busts || 0, t: r.t, crew: false }));
+  const eq = Math.round(equity(st) * 100) / 100;
+  rows.push({ handle: 'THE CREW', pnl: Math.round((eq - (st.season?.crew0 ?? START)) * 100) / 100, equity: eq, trades: st.hist.length, wins: st.hist.filter(h => h.pnl > 0).length, t: st.updated, crew: true });
+  return rows.sort((a, b) => b.pnl - a.pnl);
+}
+// a new week: the best desk of the one that ended goes on record, and every desk starts the season from zero
+function seasonRoll(st) {
+  const id = seasonId();
+  if (st.season?.id === id) return;
+  if (st.season?.id) {
+    const top = boardRows(st).find(r => !r.crew && r.trades > 0);
+    st.seasons = [{ id: st.season.id, handle: top ? top.handle : null, pnl: top ? top.pnl : 0 }, ...(st.seasons || [])].slice(0, 8);
+  }
+  st.season = { id, crew0: Math.round(equity(st) * 100) / 100 }; st.board = {};
+}
+function boardView(st) {
+  seasonRoll(st);
+  return { season: st.season.id, ends: st.season.id + 7 * 24 * HOUR, past: st.seasons || [], rows: boardRows(st).slice(0, 50) };
+}
+
+// On Cloudflare everything under /api/ runs inside one Durable Object: a single instance with its own storage,
+// so there is exactly one copy of the desk, and an alarm marks it every minute without a cron trigger.
+// (Workers KV would not do: its free plan allows 1,000 writes a day and the desk writes more often than that.)
+export class Desk {
+  constructor(ctx, env) { this.ctx = ctx; this.env = { ...env, KV: { get: async k => (await ctx.storage.get(k)) ?? null, put: (k, v) => ctx.storage.put(k, v) } }; }
+  async fetch(request) {
+    if (!(await this.ctx.storage.getAlarm())) await this.ctx.storage.setAlarm(Date.now() + 60000);
+    return api.fetch(request, this.env);
+  }
+  async alarm() { try { await api.scheduled({}, this.env); } finally { await this.ctx.storage.setAlarm(Date.now() + 60000); } }
+}
+export default {
+  async fetch(request, env) {
+    if (!env.DESK) return api.fetch(request, env);   // local server: no Durable Object, a file stands in
+    // one address: www and plain http both go to https://shuntdesk.com (a desk kept in the browser belongs to one origin)
+    const u = new URL(request.url);
+    if (u.hostname === 'www.shuntdesk.com' || (u.hostname === 'shuntdesk.com' && u.protocol === 'http:')) return Response.redirect('https://shuntdesk.com' + u.pathname + u.search, 301);
+    return new URL(request.url).pathname.startsWith('/api/') ? env.DESK.get(env.DESK.idFromName('main')).fetch(request) : env.ASSETS.fetch(request);
+  },
+  scheduled(event, env) { return env.DESK ? undefined : api.scheduled(event, env); }
+};
+
+// the keyed node, when one is configured, stands behind the public one
+const useEnv = env => { if (env.ALCHEMY_RPC_URL && !RPCS.includes(env.ALCHEMY_RPC_URL)) RPCS.push(env.ALCHEMY_RPC_URL); };
+const api = {
+  async fetch(request, env) {
+    useEnv(env);
+    const url = new URL(request.url), ip = request.headers.get('cf-connecting-ip') || 'local';
+    if (request.method === 'OPTIONS') return new Response(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'GET, POST' } });
+    try {
+      // what the server itself can reach right now: one read of each outside service, nothing stored
+      if (url.pathname === '/api/health') {
+        const T = '0x39dbed3a2bd333467115de45665cc57f813c4571', probe = async (u, h) => { try { const r = await fetch(u, { headers: { Accept: 'application/json', ...UA, ...h } }); return r.status; } catch (e) { return 'unreachable'; } };
+        return json({ dexscreener: await probe(DS + '/tokens/v1/robinhood/' + T), dexscreenerNoAgent: await (async () => { try { return (await fetch(DS + '/tokens/v1/robinhood/' + T)).status; } catch (e) { return 'unreachable'; } })(), goplus: await probe('https://api.gopluslabs.io/api/v1/token_security/4663?contract_addresses=' + T), geckoterminal: await probe('https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/' + T), rpc: await (async () => { try { return (await fetch('https://rpc.mainnet.chain.robinhood.com', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' })).status; } catch (e) { return 'unreachable'; } })(), chain: await (async () => { const o = { nodes: RPCS.length }; for (const [k, fn] of [['ethUsd', () => poolRatio(ETH_REF)], ['decimals', () => rpc('eth_call', [{ to: T, data: '0x313ce567' }, 'latest'])]]) { try { o[k] = String(await fn()).slice(0, 12); } catch (e) { o[k] = 'ERR ' + String(e.message || e).slice(0, 60); } } return o; })(), keys: { openrouter: !!env.OPENROUTER_API_KEY, goplus: !!env.GOPLUS_APP_KEY, codex: !!env.CODEX_API_KEY, coingecko: !!env.COINGECKO_API_KEY } });
+      }
+      if (url.pathname === '/api/candles') { const a = (url.searchParams.get('a') || '').toLowerCase(); return isAddr(a) ? json(await candles(env, a)) : json({ rows: [], res: 1 }, 400); }
+      if (url.pathname === '/api/pools') return json(await pools(env, url.searchParams.get('kind') === 'new' ? 'new' : 'trending'));
+      if (url.pathname === '/api/launch') { const a = (url.searchParams.get('a') || '').toLowerCase(); return isAddr(a) ? json(await launch(env, a)) : json({ ok: false, why: 'bad address' }, 400); }
+      const st = await load(env);
+      const body = request.method === 'POST' ? await request.json().catch(() => ({})) : null;
+      if (url.pathname === '/api/desk') {
+        const pos = st.pos.map(p => { const v = worth(p), { m, ...rest } = p; return { ...rest, net: v.net, health: v.health }; });
+        return json({ start: START, equity: Math.round(equity(st) * 100) / 100, cash: Math.round(st.cash * 100) / 100, pos, hist: st.hist.slice(0, 20), log: st.log.slice(0, 30), curve: st.curve, updated: st.updated, record: record(st) });
+      }
+      if (url.pathname === '/api/verdict' && body) { const r = await postVerdict(st, env, body, ip); await save(env, st); return json(r); }
+      if (url.pathname === '/api/second' && body) { const r = await secondRead(st, env, body, ip); await save(env, st); return json(r); }
+      if (url.pathname === '/api/explain' && body) { const r = await explain(st, env, body, ip); await save(env, st); return json(r); }
+      if (url.pathname === '/api/trade' && body) { const r = await tradeBrief(st, env, body, ip); await save(env, st); return json(r); }
+      if (url.pathname === '/api/grads') return json({ rows: (st.grads?.rows || []).map(({ token, t, block }) => ({ token, t, block })), read: st.grads?.t || 0, err: st.grads?.err || null });
+      if (url.pathname === '/api/report') { const r = report(st), had = st.rnote?.t; r.note = await reportNote(st, env, r); if (r.note.t !== had) await save(env, st); return json(r); }
+      // the agent interface: read-only, CORS open, 120 calls an hour per caller
+      if (url.pathname.startsWith('/api/v1/')) {
+        if (!allow(st, ip, 'agent', 120)) return json({ error: 'rate limited: 120 calls an hour' }, 429);
+        const p = url.pathname.slice(8), a = (url.searchParams.get('a') || '').toLowerCase();
+        if (p === 'token') { if (!isAddr(a)) return json({ error: 'pass ?a=0x… a token address on Robinhood Chain' }, 400); const r = await agentToken(st, env, a); await save(env, st); return json(r); }
+        if (p === 'verdicts') return json({ verdicts: st.verdicts.slice(0, 50).map(v => ({ token: v.addr, symbol: v.sym, verdict: v.verdict, score: v.score, desk: v.platform, at: new Date(v.t).toISOString(), priceAtVerdict: v.p0, after1h: v.p1h || null, after24h: v.p24h || null })), record: record(st).after1h });
+        if (p === 'desk') return json({ paper: true, start: START, equity: Math.round(equity(st) * 100) / 100, cash: Math.round(st.cash * 100) / 100, open: st.pos.map(x => ({ token: x.addr, symbol: x.sym, side: x.side, leverage: x.lev, entry: x.entry, mark: x.mark || x.entry, net: Math.round(worth(x).net * 100) / 100 })), closed: st.hist.slice(0, 20).map(h => ({ token: h.addr, symbol: h.sym, side: h.side, leverage: h.lev, entry: h.entry, exit: h.exit, pnl: Math.round(h.pnl * 100) / 100, why: h.why, postMortem: h.note?.text || null, at: new Date(h.t).toISOString() })) });
+        if (p === 'graduated') return json({ launchpad: 'pons', tokens: (st.grads?.rows || []).map(r => ({ token: r.token, at: new Date(r.t).toISOString() })) });
+        if (p === 'report') { const r = report(st); r.note = await reportNote(st, env, r); return json(r); }
+        return json({ error: 'unknown endpoint', see: 'https://shuntdesk.com/llms.txt' }, 404);
+      }
+      if (url.pathname === '/api/brief') { const had = st.brief?.t; const r = await brief(st, env, ip); if (r.t !== had) await save(env, st); return json(r); }
+      if (url.pathname === '/api/board') {
+        if (body) {
+          const h = String(body.handle || '').trim().toLowerCase();
+          if (!/^[a-z0-9_]{2,16}$/.test(h) || h === 'the_crew') return json({ ok: false, why: 'handle must be 2 to 16 letters, digits or _' }, 400);
+          if (!allow(st, ip, 'board', 30)) return json({ ok: false, why: 'slow down' }, 429);
+          const eq = Number(body.equity); if (!(eq >= 0 && eq < 1e8)) return json({ ok: false, why: 'bad equity' }, 400);
+          seasonRoll(st);
+          // the season's result: what the desk made since this week began (sent by the page, so self-reported like the rest)
+          const pnl = body.season === st.season.id && Number.isFinite(Number(body.pnl)) ? Math.max(-1e8, Math.min(1e8, Number(body.pnl))) : eq - START;
+          st.board[h] = { equity: Math.round(eq * 100) / 100, pnl: Math.round(pnl * 100) / 100, trades: Math.max(0, body.trades | 0), wins: Math.max(0, body.wins | 0), busts: Math.max(0, body.busts | 0), t: Date.now() };
+          const all = Object.entries(st.board); if (all.length > 500) all.sort((a, b) => a[1].t - b[1].t).slice(0, 100).forEach(([k]) => delete st.board[k]);
+          await save(env, st);
+        }
+        return json(boardView(st));
+      }
+      return json({ error: 'not found' }, 404);
+    } catch (e) { return json({ error: String(e.message || e) }, 500); }
+  },
+  async scheduled(event, env) {
+    useEnv(env); const st = await load(env); await tick(st);
+    try { await postMortem(st, env); } catch (e) {}
+    try { if (new Date().getUTCHours() >= 1) await hfPublish(st, env); } catch (e) {}   // once a day, after 01:00 UTC
+    try { await gradScan(st, env); } catch (e) { st.grads = { ...(st.grads || { rows: [] }), err: String(e.message || e).slice(0, 120) }; }   // the graduation feed is extra: a failed read never stops the desk
+    seasonRoll(st); await save(env, st);
+  }
+};

@@ -1,0 +1,38 @@
+# Shuntdesk
+
+> A token scanner on Robinhood Chain (chain id 4663) with something to lose. Seven fixed-rule checks give each token one verdict (CLEAN, RISKY or DANGER, scored out of 100). A public paper desk, the crew, bets simulated money on the verdicts it can confirm, and every call is priced again an hour and a day later. Paper money only. Nothing here is advice.
+
+Site: https://shuntdesk.com
+X: https://x.com/shuntdesk
+
+## For agents
+
+Read-only JSON, no key, CORS open, 120 calls an hour per caller. All money figures are paper USDG.
+
+- GET https://shuntdesk.com/api/v1/token?a=0x… : what Shuntdesk knows about one token. The latest verdict on file (with the price an hour and a day later when known), a fresh server-side security read (GoPlus red flags, holder count), launch facts for launchpad tokens (snipers, bundles, insiders and developer share, curve progress), and the crew's open position on it if any. `verdict` is null when nobody has run the checks yet: open `fullCheck` to run them.
+- GET https://shuntdesk.com/api/v1/verdicts : the 50 latest verdicts, and how many CLEAN and DANGER calls held an hour later.
+- GET https://shuntdesk.com/api/v1/desk : the crew desk: equity, open positions, the last 20 closed trades, each with the conductor's post-mortem.
+- GET https://shuntdesk.com/api/v1/graduated : tokens that just completed the Pons bonding curve, read from the Pons V2 factory log.
+- GET https://shuntdesk.com/api/v1/report : the last 24 hours of the crew desk, with a one-paragraph summary.
+
+## Open record
+
+Every call with its price an hour and a day later, published daily as JSONL: https://huggingface.co/datasets/shuntdesk/verdicts
+
+## How a verdict is made
+
+- Sources: a pool exists, its price, age and volume.
+- Gate: liquidity and pool age.
+- Scout: holders and how much the ten largest keep.
+- Tracer: who funded the top wallets, the deployer's record.
+- Linker: wallets that share a funder; snipers, bundles and insiders at launch.
+- Auditor: contract code, sell simulation, taxes, owner powers.
+- Judge: the score. A pool under an hour old, under 50 holders, or with a check left unread cannot be called CLEAN.
+
+The checks run in the visitor's browser on public data. The server re-checks a verdict before the crew trades it, and holds back what it cannot confirm. A language model (the conductor) explains verdicts and writes post-mortems; it cannot change a score or open a trade. It runs through Surplus (surplusllm.com). For Pons launches the ticket page also shows a second read by ChargeAI, a separate open model on Surplus; that read is not part of the verdict.
+
+## Rules for using this
+
+- Say that a verdict is a rule-based reading of public data and can be wrong.
+- Do not present it as advice, a guarantee, or proof of fraud.
+- Link the ticket page (https://shuntdesk.com/ticket/?a=0x…) when you quote a verdict.

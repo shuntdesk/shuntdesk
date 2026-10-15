@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Board — Shuntdesk</title>
+<meta name="description" content="A live 3D yard where every train is one of the newest pools on Robinhood Chain, standing at the check it has actually reached.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shuntdesk">
+<meta property="og:title" content="Board — Shuntdesk">
+<meta property="og:description" content="A live 3D yard where every train is one of the newest pools on Robinhood Chain, standing at the check it has actually reached.">
+<meta property="og:url" content="https://shuntdesk.com/board/">
+<meta property="og:image" content="https://shuntdesk.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shuntdesk. One score. Three tracks.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://shuntdesk.com/og.png">
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="stylesheet" href="/assets/base.css">
+</head>
+<body class="sub b3d">
+<canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
+<div class="stage">
+  <div><div class="eyebrow">Board · live</div><h1 class="disp">The yard, live.<br><span class="acc">Every train is a token.</span></h1></div>
+  <div class="tally" id="tally"></div>
+</div>
+<main class="page">
+  <p class="mut" style="max-width:620px;margin-bottom:22px">Not a screensaver. Each train above is one of the newest pools on Robinhood Chain, standing at the check it has actually reached in your browser. When the judge rules, it takes its track. The Graduated tab holds the tokens that just completed the Pons curve.</p>
+  <div class="stats">
+    <div class="stub stat"><div class="in"><div class="cap"><b>On the board</b></div><div class="v" id="s-n">0</div><small id="s-src">loading the feed</small></div></div>
+    <div class="stub stat"><div class="in"><div class="cap"><b>Checked here</b></div><div class="v" id="s-done">0</div><small>by this browser, kept 15 minutes</small></div></div>
+    <div class="stub stat"><div class="in"><div class="cap"><b>Verdicts</b></div><div class="v" id="s-v">0 · 0 · 0</div><div class="bar3"><i id="b-c" style="background:var(--long)"></i><i id="b-r" style="background:#8b8e94"></i><i id="b-d" style="background:var(--short)"></i></div><small>clean · risky · danger</small></div></div>
+    <div class="stub stat"><div class="in"><div class="cap"><b>Spend</b></div><div class="v">$0.00</div><small>free public data, rule-based judge</small></div></div>
+  </div>
+  <div class="stub n"><div class="in">
+    <div class="tools">
+      <div class="tabs"><button class="on" data-t="new">Newest</button><button data-t="grad">Graduated</button><button data-t="hot">Trending</button></div>
+      <div style="display:flex;gap:14px;align-items:center"><span class="note" id="b-msg" style="margin:0"></span><button class="btn ghost" id="b-all" style="padding:10px 16px">Run the line on all</button></div>
+    </div>
+    <div class="dep" id="dep">
+      <div class="r h"><span>AGE</span><span>TOKEN</span><span>LIQUIDITY</span><span>24H TRADES</span><span>ON THE LINE</span><span>VERDICT</span><span></span></div>
+    </div>
+  </div></div>
+</main>
+<footer class="foot"></footer>
+<script type="module" src="/assets/board.js"></script>
+</body>
+</html>

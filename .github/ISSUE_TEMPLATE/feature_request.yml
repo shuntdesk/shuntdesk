@@ -1,0 +1,8 @@
+name: Idea
+description: Something Shuntdesk could read, check or show
+labels: [idea]
+body:
+  - type: textarea
+    id: idea
+    attributes: { label: The idea, description: What it would read or show, and which public data it would use. }
+    validations: { required: true }

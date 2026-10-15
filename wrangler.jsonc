@@ -1,0 +1,19 @@
+{
+  // Shuntdesk on Cloudflare: static site from ./site, the backend in one Durable Object.
+  // Deploy:   npx.cmd wrangler deploy
+  // Secrets (once, each prompts for the value):
+  //   npx.cmd wrangler secret put OPENROUTER_API_KEY
+  //   npx.cmd wrangler secret put GOPLUS_APP_KEY
+  //   npx.cmd wrangler secret put GOPLUS_APP_SECRET
+  //   npx.cmd wrangler secret put CODEX_API_KEY
+  //   npx.cmd wrangler secret put COINGECKO_API_KEY
+  "name": "shuntdesk",
+  "main": "server/worker.js",
+  "compatibility_date": "2026-09-01",
+  "routes": [{ "pattern": "shuntdesk.com/*", "zone_name": "shuntdesk.com" }, { "pattern": "www.shuntdesk.com/*", "zone_name": "shuntdesk.com" }],
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": { "directory": "./site", "binding": "ASSETS", "run_worker_first": true, "not_found_handling": "404-page" },
+  "durable_objects": { "bindings": [{ "name": "DESK", "class_name": "Desk" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Desk"] }]
+}

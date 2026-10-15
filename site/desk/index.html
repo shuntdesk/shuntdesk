@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Desk — Shuntdesk</title>
+<meta name="description" content="The crew's shared paper desk, its record, and your own paper margin desk: majors tick by tick, stock tokens and any coin on Robinhood Chain. No real funds.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shuntdesk">
+<meta property="og:title" content="Desk — Shuntdesk">
+<meta property="og:description" content="The crew's shared paper desk, its record, and your own paper margin desk: majors tick by tick, stock tokens and any coin on Robinhood Chain. No real funds.">
+<meta property="og:url" content="https://shuntdesk.com/desk/">
+<meta property="og:image" content="https://shuntdesk.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shuntdesk. One score. Three tracks.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://shuntdesk.com/og.png">
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="stylesheet" href="/assets/base.css">
+</head>
+<body class="sub">
+<canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
+<main class="page">
+  <div class="ph">
+    <div><div class="eyebrow">Paper desk</div><h1 class="disp">Real prices.<br><span class="acc">Paper money.</span></h1></div>
+    <p class="side mut" style="max-width:430px">Two desks. The crew's is public and runs on its own: it bets on this site's verdicts, so its balance is how you grade us. Yours sits below it, with 10,000 to work with and nothing real to lose.</p>
+  </div>
+
+  <div class="sect"><span>01</span><b>The crew desk</b><i id="c-state">loading</i></div>
+  <div class="dk">
+    <div class="col">
+      <div class="stub"><div class="in">
+        <div class="cap"><b>Crew equity</b><span>USDG, paper, shared by everyone</span></div>
+        <div class="bigv" id="c-eq">······</div>
+        <div class="note" id="c-ret" style="margin:0"></div>
+        <canvas id="c-curve" class="curve"></canvas>
+        <div class="cap"><span id="c-sub"></span><span>one point every ten minutes</span></div>
+        <div class="aibox" id="c-brief" hidden></div>
+      </div></div>
+      <div class="stub n"><div class="in">
+        <div class="cap"><b>Crew positions</b><span>4% of equity each · closed at stop, target or one day</span></div>
+        <table class="pos" id="c-pos"></table>
+      </div></div>
+    </div>
+    <div class="col">
+      <div class="stub n"><div class="in">
+        <div class="cap"><b>Did the verdicts hold?</b><span>price checked later</span></div>
+        <div class="sum" id="c-rec" style="margin-top:10px"></div>
+      </div></div>
+      <div class="stub n"><div class="in">
+        <div class="cap"><b>Crew log</b><span>latest first</span></div>
+        <div class="log" id="c-log"></div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="sect"><span>02</span><b>Your desk</b><i>kept in this browser</i><button class="btn ghost" id="reset" style="padding:9px 14px;margin-left:auto">Reset</button></div>
+  <div class="acct">
+    <div class="stub stat"><div class="in"><div class="cap"><b>Equity</b><span id="a-mark">USDG, paper</span></div><div class="v" id="a-eq">···</div><small id="a-ret">&nbsp;</small></div></div>
+    <div class="stub stat"><div class="in"><div class="cap"><b>Free cash</b></div><div class="v" id="a-cash">···</div><small>not in a position</small></div></div>
+    <div class="stub stat"><div class="in"><div class="cap"><b>Open P&amp;L</b></div><div class="v" id="a-open">0.00</div><small id="a-npos">no open positions</small></div></div>
+    <div class="stub stat"><div class="in"><div class="cap"><b>Closed P&amp;L</b></div><div class="v" id="a-closed">0.00</div><small id="a-ntr">no closed trades</small></div></div>
+  </div>
+  <div class="stub n" style="margin-top:14px"><div class="in">
+    <div class="tools">
+      <div class="tabs" id="mk-tabs"><button data-t="own">$SHUNT</button><button data-t="majors" class="on">Majors</button><button data-t="stocks">Stocks</button><button data-t="chain">Chain</button><button data-t="paste">Paste a token</button></div>
+      <span class="note" id="mk-note" style="margin:0"></span>
+    </div>
+    <div class="mlist" id="mk-list"></div>
+    <div id="mk-paste" hidden>
+      <div class="field"><input id="o-addr" placeholder="0x… any token address on Robinhood Chain" spellcheck="false" autocomplete="off"><button class="btn ghost" id="o-load">Load</button></div>
+      <div class="chips" id="o-chips"></div>
+    </div>
+  </div></div>
+  <div class="dk" style="margin-top:18px">
+    <div class="col">
+      <div class="stub"><div class="in">
+        <div class="pairhd"><b id="p-sym">······</b><span class="px" id="p-px"></span><span class="mut mono" id="p-chg" style="font-size:12px"></span><span class="mono" id="p-src" style="font-size:11px;color:var(--long)"></span><span class="zn tag" id="p-zone"></span></div>
+        <div id="chart"></div>
+        <div class="cap"><span id="p-note">loading the chart</span><span id="p-ver"></span></div>
+      </div></div>
+      <div class="stub n"><div class="in">
+        <div class="cap"><b>Open positions</b><span>majors on every trade · chain tokens from the last on-chain swap, every 3 seconds</span></div>
+        <table class="pos" id="t-pos"></table>
+      </div></div>
+      <div class="stub n"><div class="in">
+        <div class="cap"><b>Closed trades</b><span>latest first</span></div>
+        <table class="pos" id="t-hist"></table>
+      </div></div>
+    </div>
+    <div class="col">
+      <div class="stub"><div class="in">
+        <div class="cap"><b>Open a paper position</b><span id="o-what">market price</span></div>
+        <div class="seg2"><button class="on l" id="o-long">Long</button><button id="o-short">Short</button></div>
+        <div class="bal"><span>Free to use</span><b id="o-bal">···</b><i>USDG not in a position</i></div>
+        <div class="balrow"><div><span>In open positions</span><b id="o-lock">···</b></div><div><span>Total desk value</span><b id="o-eq">···</b></div></div>
+        <div class="rescue" id="o-rescue" hidden>
+          <div class="note" id="o-why" style="margin:0 0 10px"></div>
+          <div class="two" style="margin:0"><button class="btn" id="o-closeall" type="button">Close all positions</button><button class="btn ghost" id="o-resetnow" type="button">Start over at 10,000</button></div>
+        </div>
+        <div class="lab"><span>Collateral, USDG</span><input class="numin" id="o-coln" type="number" min="0" step="1" inputmode="decimal" value="500" aria-label="Collateral in USDG"></div>
+        <input type="range" id="o-col" min="0" max="100" value="5" step="0.1" aria-label="Collateral as a share of the balance">
+        <div class="quick" id="q-col"><button type="button" data-p="5">5%</button><button type="button" data-p="10">10%</button><button type="button" data-p="25">25%</button><button type="button" data-p="50">50%</button><button type="button" data-p="100">Max</button></div>
+        <div class="lab"><span>Leverage</span><span class="levbox"><input class="numin" id="o-levn" type="number" min="1" max="5" step="1" inputmode="numeric" value="1" aria-label="Leverage"><i>x</i></span></div>
+        <input type="range" id="o-lev" min="1" max="5" value="1" step="1" aria-label="Leverage">
+        <div class="quick" id="q-lev"></div>
+        <div class="two">
+          <label><span>Stop loss, % of collateral</span><input id="o-sl" type="number" min="0" max="89" step="5" placeholder="off"></label>
+          <label><span>Take profit, % of collateral</span><input id="o-tp" type="number" min="0" step="5" placeholder="off"></label>
+        </div>
+        <div class="sum">
+          <div><span>Position size</span><b id="k-size"></b></div>
+          <div><span>Borrowed</span><b id="k-bor"></b></div>
+          <div><span>Expected fill</span><b id="k-fill"></b></div>
+          <div><span>Fees, 0.1% each way</span><b id="k-fee"></b></div>
+          <div><span>Liquidation price</span><b id="k-liq"></b></div>
+          <div><span>Health on entry, 1.00 is full</span><b id="k-h0"></b></div>
+          <div><span>Largest size that opens at this leverage</span><b id="k-max"></b></div>
+        </div>
+        <button class="btn g" id="o-go" style="width:100%;justify-content:center;margin-top:14px">Open long</button>
+        <button class="btn ghost" id="o-fit" style="width:100%;justify-content:center;margin-top:8px" hidden>Fit the order to this pool</button>
+        <button class="btn ghost" id="o-ask" style="width:100%;justify-content:center;margin-top:8px">Ask the conductor about this order</button>
+        <div class="aibox" id="o-ai" hidden></div>
+        <div class="note" id="o-msg">SIMULATED AT THE LIVE POOL PRICE. NO ORDER IS SENT ANYWHERE.</div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="sect"><span>03</span><b>The board of desks</b><i>weekly seasons · self-reported</i></div>
+  <div class="note" id="lb-season" style="margin:-6px 0 14px">SEASON LOADING…</div>
+  <div class="dk">
+    <div class="stub n"><div class="in"><table class="pos" id="lb"></table></div></div>
+    <div class="stub"><div class="in">
+      <div class="cap"><b>Put your desk on the board</b></div>
+      <form id="lb-form"><div class="field" style="margin-top:14px"><input id="lb-in" placeholder="a handle, 2 to 16 characters" maxlength="16" spellcheck="false" autocomplete="off"><button class="btn">Post</button></div></form>
+      <div class="note" id="lb-msg">YOUR BROWSER REPORTS ITS OWN PAPER EQUITY. NOBODY VERIFIES IT, SO TREAT THE RANKING AS A GAME.</div>
+      <button class="btn ghost" id="lb-card" type="button" hidden style="width:100%;justify-content:center;margin-top:12px">Save my season card</button>
+      <div class="cap" style="margin-top:18px"><b>Past seasons</b><span>the best desk of each week</span></div><div class="chips" id="lb-past" style="margin-top:10px"></div>
+    </div></div>
+  </div>
+</main>
+<footer class="foot"></footer>
+<script src="/assets/vendor/lightweight-charts.js"></script>
+<script type="module" src="/assets/desk.js"></script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>For agents — Shuntdesk</title>
+<meta name="description" content="Read-only JSON for AI agents and bots: verdicts, launch facts, the crew desk and its post-mortems, Pons graduations. No key.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shuntdesk">
+<meta property="og:title" content="For agents — Shuntdesk">
+<meta property="og:description" content="Read-only JSON for AI agents and bots: verdicts, launch facts, the crew desk and its post-mortems, Pons graduations. No key.">
+<meta property="og:url" content="https://shuntdesk.com/agents/">
+<meta property="og:image" content="https://shuntdesk.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shuntdesk. One score. Three tracks.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://shuntdesk.com/og.png">
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="stylesheet" href="/assets/base.css">
+</head>
+<body class="sub">
+<canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
+<main class="page">
+  <div class="ph">
+    <div><div class="eyebrow">For agents</div><h1 class="disp">Your agent asks.<br><span class="acc">The line answers.</span></h1></div>
+    <div class="side"><p class="mut" style="max-width:520px">Read-only JSON for AI agents, bots and dashboards. No key, no account, open to any origin, 120 calls an hour per caller. Every figure is the same one the site shows. The full brief for language models is in <a class="acc" href="/llms.txt">/llms.txt</a>, and the whole record is an open dataset on <a class="acc" href="https://huggingface.co/datasets/shuntdesk/verdicts" target="_blank" rel="noopener">Hugging Face</a>.</p></div>
+  </div>
+  <div class="ag" id="ag">
+    <div class="stub n"><div class="in">
+      <div class="cap"><b>Endpoints</b><span>GET · JSON · shuntdesk.com</span></div>
+      <div class="eps" id="eps"></div>
+    </div></div>
+    <div class="stub n"><div class="in">
+      <div class="cap"><b>Try it</b><span id="ag-st">live from the desk</span></div>
+      <div class="field" style="margin-top:12px"><input id="ag-url" spellcheck="false" autocomplete="off"><button class="btn" id="ag-go" type="button">Run →</button></div>
+      <pre class="json" id="ag-out">Pick an endpoint on the left, or edit the address and press Run.</pre>
+      <div class="cap" style="margin-top:12px"><b>From code</b><span>any language that can fetch</span></div>
+      <pre class="json code" id="ag-code"></pre>
+    </div></div>
+  </div>
+  <p class="note" style="margin-top:16px">A verdict is a fixed-rule reading of public chain data and it can be wrong. The seven checks run in a visitor's browser, so a token nobody has run yet has no verdict on file: the answer then carries the link that runs them. Paper money only. Not advice.</p>
+</main>
+<footer class="foot"></footer>
+<script type="module" src="/assets/agents.js"></script>
+</body>
+</html>

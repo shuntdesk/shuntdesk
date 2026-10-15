@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ticket — Shuntdesk</title>
+<meta name="description" content="Paste any token on Robinhood Chain. Seven checks, about ten seconds, one verdict, and every lost point explained.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shuntdesk">
+<meta property="og:title" content="Ticket — Shuntdesk">
+<meta property="og:description" content="Paste any token on Robinhood Chain. Seven checks, about ten seconds, one verdict, and every lost point explained.">
+<meta property="og:url" content="https://shuntdesk.com/ticket/">
+<meta property="og:image" content="https://shuntdesk.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shuntdesk. One score. Three tracks.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://shuntdesk.com/og.png">
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="stylesheet" href="/assets/base.css">
+</head>
+<body class="sub">
+<canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
+<main class="page">
+  <div class="ph">
+    <div><div class="eyebrow">Ticket</div><h1 class="disp">One token in.<br><span class="acc">One verdict out.</span></h1></div>
+    <form class="side" id="f">
+      <div class="field"><input id="a" placeholder="0x… token address on Robinhood Chain" spellcheck="false" autocomplete="off"><button class="btn">Board the line →</button></div>
+      <div class="note" id="msg">NO WALLET · NO KEY · CHECKS RUN IN YOUR BROWSER ON PUBLIC DATA</div>
+      <div class="chips" id="sugg"></div>
+    </form>
+  </div>
+
+  <div class="tk" id="tk" hidden>
+    <div class="stub tkstub" id="card"><div class="in">
+      <div class="cap"><b id="t-no">TICKET</b><span>ROBINHOOD CHAIN</span></div>
+      <div class="sym" id="t-sym">······</div>
+      <div class="ad" id="t-ad"></div>
+      <div class="facts" id="t-facts"></div>
+      <div class="stampbox"><div class="stamp" id="t-stamp"></div></div>
+      <div class="plat" id="t-plat"><span>On the line</span><span id="t-zone"></span></div>
+      <div class="note" id="t-crew" style="margin:10px 0 0"></div>
+      <div class="acts" id="t-acts"></div>
+      <div class="perf"></div><div class="code"></div>
+    </div></div>
+    <div class="stub n"><div class="in">
+      <div class="cap"><b>Route</b><span id="rt-state">waiting</span></div>
+      <div class="route" id="route"><div class="fillv" id="fillv"></div><div class="car" id="car"></div></div>
+    </div></div>
+    <div class="stub n second" id="second" hidden style="grid-column:1/-1"><div class="in">
+      <div class="cap"><b>Second read · ChargeAI</b><span id="sec-by">an open model for Pons launches, served on Surplus</span></div>
+      <pre class="sectext" id="sec-text"></pre>
+      <div class="note" id="sec-note" style="margin:10px 0 0">ANOTHER MODEL&rsquo;S OPINION, SHOWN BESIDE THE VERDICT. SHUNTDESK DID NOT CHECK ITS FIGURES, AND THE VERDICT ABOVE DOES NOT USE IT.</div>
+    </div></div>
+    <div class="stub" id="cond" hidden style="grid-column:1/-1"><div class="in">
+      <div class="cap"><b>The conductor</b><span id="cond-by"></span></div>
+      <p class="condtext" id="cond-text"></p>
+      <form id="cond-form"><div class="field"><input id="cond-q" maxlength="160" placeholder="Ask about this ticket, e.g. why did the scout flag it?" autocomplete="off"><button class="btn ghost">Ask</button></div></form>
+    </div></div>
+  </div>
+  <div class="stub n wbox" id="watch" hidden><div class="in">
+    <div class="cap"><b>Watching</b><span id="w-n"></span></div>
+    <div id="w-list"></div>
+    <div class="note" id="w-perm" style="margin:12px 0 0"></div>
+  </div></div>
+</main>
+<footer class="foot"></footer>
+<script type="module" src="/assets/ticket.js"></script>
+</body>
+</html>

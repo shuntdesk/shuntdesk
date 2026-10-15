@@ -1,0 +1,17 @@
+# secrets and local state: never in the repo
+.env*
+.dev.vars
+.data/
+.wrangler/
+node_modules/
+
+# launch material, reference videos and media sources stay on the machine
+launch/
+REFERENSI-WEB/
+dev/*
+!dev/serve.mjs
+
+# editor and OS
+.vscode/
+.DS_Store
+Thumbs.db
