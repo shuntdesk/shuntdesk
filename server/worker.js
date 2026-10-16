@@ -490,9 +490,9 @@ function yardShift(st, body) {
 const YARD_DAY0 = Date.UTC(2026, 9, 16);
 function yardDaily(st) {
   const day = new Date().toISOString().slice(0, 10);
-  if (st.daily?.day !== day) {
+  if (st.daily?.day !== day || new Set(st.daily.tokens).size < st.daily.tokens.length) {
     // a fixed pick for the day, made the first time anyone asks: shuffled with the date as the seed
-    const pool = playTrains(st); let seed = [...day].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
+    const seen = new Set(), pool = playTrains(st).filter(t => !seen.has(t.token) && seen.add(t.token)); let seed = [...day].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
     const rnd = () => (seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296;
     const pick = pool.map(t => [rnd(), t]).sort((a, b) => a[0] - b[0]).slice(0, 5).map(x => x[1].token);
     st.daily = { day, tokens: pick, rows: {} };
@@ -500,7 +500,7 @@ function yardDaily(st) {
   return st.daily;
 }
 function dailyView(st, me) {
-  const d = yardDaily(st), trains = playTrains(st).filter(t => d.tokens.includes(t.token)).map(({ move1h, move24h, ...t }) => t);
+  const d = yardDaily(st), seen = new Set(), trains = playTrains(st).filter(t => d.tokens.includes(t.token) && !seen.has(t.token) && seen.add(t.token)).map(({ move1h, move24h, ...t }) => t);
   const rows = Object.entries(d.rows).map(([handle, r]) => ({ handle, ...r })).sort((a, b) => b.right - a.right || b.pts - a.pts || a.t - b.t);
   return { day: d.day, no: Math.floor((Date.UTC(...d.day.split('-').map((v, i) => i === 1 ? v - 1 : +v)) - YARD_DAY0) / 864e5) + 1, trains, rows: rows.slice(0, 30), players: rows.length, rank: me ? rows.findIndex(r => r.handle === me) + 1 || null : null, played: me ? !!d.rows[me] : false };
 }
