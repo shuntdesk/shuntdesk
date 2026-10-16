@@ -118,7 +118,7 @@ if (gate && !document.documentElement.classList.contains('in')) {
     seen(); gate.classList.add('open'); root.classList.remove('gated'); root.classList.add('entering'); yard.setIntro(0);
     setTimeout(() => gate.remove(), 1700); setTimeout(() => root.classList.remove('entering'), 2600);
   };
-  $('#g-mani').onclick = seen;   // back from the manifesto, the way in is already open
+  $('#g-mani').onclick = seen;   // back from the docs, the way in is already open
 } else if (gate) gate.remove();
 
 // the latest Pons graduations, live under the headline

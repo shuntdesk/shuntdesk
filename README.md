@@ -21,7 +21,8 @@
   <a href="https://shuntdesk.com/agents/"><b>For agents</b></a> ·
   <a href="https://shuntdesk.com/llms.txt"><b>llms.txt</b></a> ·
   <a href="https://huggingface.co/datasets/shuntdesk/verdicts"><b>Dataset</b></a> ·
-  <a href="https://shuntdesk.com/manifesto/"><b>Manifesto</b></a> ·
+  <a href="https://shuntdesk.com/docs/"><b>Docs</b></a> ·
+  <a href="https://t.me/shuntdesk"><b>Telegram</b></a> ·
   <a href="https://x.com/shuntdesk"><b>X</b></a>
 </p>
 
@@ -130,6 +131,8 @@ V2 factory log directly.
 
 ## The Yard
 
+The full guide (controls, shifts, work, the armory, events, missions) is in the [docs](https://shuntdesk.com/docs/#the-yard).
+
 [`/play/`](https://shuntdesk.com/play/) is a small open city built around a rail yard. It runs on Three.js
 with no build step. You play the shunter.
 
@@ -138,8 +141,8 @@ with no build step. You play the shunter.
   pull RIDE or SIDING before the junction. Then the price an hour or a day later shows who read it
   right, you or the desk.
 - **The city.** Westbank is the old quarter, with walkers, Curve Market, a park, the Radio Tower and the
-  Crash Site. Eastgate is downtown, with traffic. You can walk into four buildings, and their screens
-  carry live Shuntdesk data:
+  Crash Site. Eastgate is downtown, with traffic. Every building has a door, and four of them have screens
+  that carry live Shuntdesk data:
   - Central Station's departures board shows the latest verdicts.
   - Crew Desk HQ shows the paper desk.
   - The Deployer Office shows fresh Pons graduations.
@@ -151,7 +154,7 @@ with no build step. You play the shunter.
   bus stops take you across town.
 - **Sound.** Every sound is synthesised in the browser with Web Audio; the game ships no audio files. N
   mutes it.
-- **Progress.** Sixteen missions sit in a journal (J), and the city has a map (M). XP and rank stay in your
+- **Progress.** Seventy missions sit in a journal (J), and the city has a map (M). XP and rank stay in your
   browser. Nothing can be won.
 - **City life.** You can talk to anyone in town, and each person has a name, a voice and replies to choose from. Game cash, which is not a token and has no value outside the game, comes from shifts, parcels, litter, golden tickets and bounties. You spend it on food, drink, fares and upgrades. P opens photo mode.
 - **Leaderboard.** The weekly board (L) is scored by the server. After a shift the page sends only which

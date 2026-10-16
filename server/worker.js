@@ -857,11 +857,13 @@ export class Desk {
 }
 export default {
   async fetch(request, env) {
+    const u = new URL(request.url), path = u.pathname;
+    // pages that moved: the manifesto became the docs, the fine print became privacy and terms
+    const moved = { '/manifesto': '/docs/', '/manifesto/': '/docs/', '/fine-print': '/terms/', '/fine-print/': '/terms/' }[path];
+    if (moved) return Response.redirect(new URL(moved, u).href, 301);
     if (!env.DESK) return api.fetch(request, env);   // local server: no Durable Object, a file stands in
     // one address: www and plain http both go to https://shuntdesk.com (a desk kept in the browser belongs to one origin)
-    const u = new URL(request.url);
     if (u.hostname === 'www.shuntdesk.com' || (u.hostname === 'shuntdesk.com' && u.protocol === 'http:')) return Response.redirect('https://shuntdesk.com' + u.pathname + u.search, 301);
-    const path = new URL(request.url).pathname;
     return path.startsWith('/api/') || path === '/mcp' ? env.DESK.get(env.DESK.idFromName('main')).fetch(request) : env.ASSETS.fetch(request);
   },
   scheduled(event, env) { return env.DESK ? undefined : api.scheduled(event, env); }

@@ -537,15 +537,9 @@ table.pos tr.det { background: none; } table.pos tr.det td { padding: 2px 0 16px
 .btn, .btn:hover, .btn:active { scale: 1; translate: none; transform: none; }
 .btn:active { filter: brightness(.86); }
 .mt:active, .quick button:active, .x:active, .chip:active, .tabs button:active { filter: brightness(.8); }
-/* ---------- manifesto and fine print ---------- */
+/* ---------- privacy and terms ---------- */
 .mani-h { font-size: min(15vw, 190px); margin: 18px 0 26px -0.04em; text-shadow: 0 0 70px rgba(6, 7, 8, .95); }
-.mani-h .o { color: transparent; -webkit-text-stroke: 1.5px var(--ink); }
-.mani-lede { max-width: 640px; font-size: 20px; line-height: 1.5; color: #cfcdc8; margin-bottom: 60px; }
-.mani { list-style: none; max-width: 1180px; }
-.mani li { display: grid; grid-template-columns: 150px 1fr; gap: 30px; padding: 40px 0; background: linear-gradient(90deg, rgba(237, 235, 230, .7), rgba(237, 235, 230, .2) 24%, rgba(237, 235, 230, .03)) top / 100% 1px no-repeat; }
-.mani li > span { font-family: var(--disp); font-weight: 900; font-size: 120px; line-height: .8; color: transparent; -webkit-text-stroke: 1px rgba(237, 235, 230, .45); }
-.mani h2 { font-family: var(--disp); font-weight: 900; font-size: min(7.4vw, 76px); line-height: .92; text-transform: uppercase; margin-bottom: 16px; }
-.mani p { font-size: 19px; line-height: 1.55; color: #c9c7c2; max-width: 62ch; }
+.mani-h .o, .doc-h .o { color: transparent; -webkit-text-stroke: 1.5px var(--ink); }
 .gist { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 10px 0 60px; }
 .gist div { padding: 18px 20px; background: rgba(237, 235, 230, .05); box-shadow: inset 2px 0 0 var(--ink); display: flex; flex-direction: column; gap: 8px; }
 .gist b { font-family: var(--disp); font-weight: 900; font-size: 30px; line-height: 1; text-transform: uppercase; }
@@ -554,7 +548,63 @@ table.pos tr.det { background: none; } table.pos tr.det td { padding: 2px 0 16px
 .legal h2 { font-family: var(--disp); font-weight: 900; font-size: 54px; line-height: 1; text-transform: uppercase; margin-bottom: 8px; padding-bottom: 16px; background: linear-gradient(90deg, rgba(237, 235, 230, .7), rgba(237, 235, 230, .03)) bottom / 100% 1px no-repeat; }
 .legal h3 { font-family: var(--mono); font-size: 11.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink); margin: 26px 0 8px; font-weight: 700; }
 .legal p { color: #bdbbb6; font-size: 16px; line-height: 1.6; max-width: 62ch; }
-@media (max-width: 1000px) { .mani li { grid-template-columns: 1fr; gap: 6px; padding: 28px 0; } .mani li > span { font-size: 64px; } .mani p, .mani-lede { font-size: 17px; } .gist { grid-template-columns: 1fr 1fr; } .legal { grid-template-columns: 1fr; gap: 30px; } .legal h2 { font-size: 40px; } }
+.legal a, .doc a:not(.btn) { color: var(--long); text-decoration: underline; text-decoration-color: rgba(46, 211, 160, .35); text-underline-offset: 3px; }
+.legal code, .doc code { font-family: var(--mono); font-size: .88em; background: rgba(237, 235, 230, .07); padding: 1px 6px; word-break: break-all; }
+@media (max-width: 1000px) { .gist { grid-template-columns: 1fr 1fr; } .legal { grid-template-columns: 1fr; gap: 30px; } .legal h2 { font-size: 40px; } }
+/* a narrow phone: the logo already goes home, so the Yard link makes room for Docs */
+@media (max-width: 480px) { .top nav a:first-child { display: none; } }
+/* ---------- the docs ---------- */
+/* body clips instead of hiding, so it is not a scroll container and the contents can stick */
+body.docpage { overflow-x: clip; }
+.doc-h { font-size: min(14vw, 170px); margin: 18px 0 22px -0.04em; text-shadow: 0 0 70px rgba(6, 7, 8, .95); }
+.doc-lede { max-width: 680px; font-size: 20px; line-height: 1.5; color: #cfcdc8; margin-bottom: 56px; }
+.docs { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 64px; align-items: start; max-width: 1240px; }
+.toc { position: sticky; top: 92px; max-height: calc(100vh - 110px); overflow-y: auto; scrollbar-width: thin; padding-right: 8px; }
+.toc summary { display: none; }
+.toc h5 { font-family: var(--mono); font-size: 10.5px; letter-spacing: .2em; text-transform: uppercase; color: var(--dim); margin: 18px 0 6px; font-weight: 700; }
+.toc h5:first-of-type { margin-top: 0; }
+.toc a { display: block; padding: 4px 0 4px 12px; font-size: 14.5px; color: var(--mut); box-shadow: inset 1px 0 0 var(--hair); transition: color .15s, box-shadow .15s; }
+.toc a:hover { color: var(--ink); }
+.toc a.on { color: var(--ink); box-shadow: inset 2px 0 0 var(--long); }
+.doc { min-width: 0; background: rgba(6, 7, 8, .72); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); padding: 8px 40px 40px; }
+.doc section { padding: 40px 0 8px; scroll-margin-top: 84px; }
+.doc section + section { background: linear-gradient(90deg, rgba(237, 235, 230, .5), rgba(237, 235, 230, .03)) top / 100% 1px no-repeat; }
+.doc h2 { font-family: var(--disp); font-weight: 900; font-size: min(9vw, 52px); line-height: .95; text-transform: uppercase; margin-bottom: 16px; }
+.doc p, .doc li, .doc dd { color: #c9c7c2; font-size: 16.5px; line-height: 1.62; max-width: 70ch; }
+.doc p + p, .doc p + ul, .doc ul + p, .doc .tbl + p, .doc pre + p, .doc .zones + p, .doc p + .tbl, .doc p + pre, .doc p + .zones, .doc ul + .tbl, .doc .tbl + .tbl { margin-top: 14px; }
+.doc b { color: var(--ink); font-weight: 600; }
+.doc ul { padding-left: 20px; } .doc ul li { margin: 6px 0; } .doc ul li::marker { color: var(--long); }
+.doc .steps { list-style: none; counter-reset: s; }
+.doc .steps li { counter-increment: s; position: relative; padding: 10px 0 10px 46px; }
+.doc .steps li::before { content: counter(s, decimal-leading-zero); position: absolute; left: 0; top: 9px; font: 900 24px/1 var(--disp); color: transparent; -webkit-text-stroke: 1px rgba(237, 235, 230, .55); }
+.doc .rules dt { font-family: var(--disp); font-weight: 900; font-size: 24px; text-transform: uppercase; line-height: 1.05; margin-top: 18px; }
+.doc .rules dt:first-child { margin-top: 4px; } .doc .rules dd { margin-top: 4px; }
+.doc .tbl { overflow-x: auto; margin: 4px 0; }
+.doc table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+.doc th { text-align: left; font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--mut); font-weight: 700; padding: 10px 12px; box-shadow: inset 0 -1px 0 var(--hair); white-space: nowrap; }
+.doc td { padding: 10px 12px; color: #c9c7c2; vertical-align: top; box-shadow: inset 0 -1px 0 var(--hair2); line-height: 1.45; }
+.doc td code { word-break: normal; white-space: nowrap; }
+.doc kbd { display: inline-block; min-width: 24px; padding: 1px 7px; background: var(--ink); color: var(--bg); font: 700 12px/1.5 var(--mono); text-align: center; }
+.doc pre { background: rgba(237, 235, 230, .05); box-shadow: inset 2px 0 0 var(--long); padding: 14px 18px; overflow-x: auto; font: 400 13.5px/1.6 var(--mono); color: var(--ink); }
+.doc pre code { background: none; padding: 0; font-size: inherit; word-break: normal; }
+.doc .flow { color: #cfcdc8; }
+.doc .zones { display: flex; flex-wrap: wrap; gap: 10px; }
+.doc .z { flex: 1 1 120px; padding: 14px 16px; background: rgba(237, 235, 230, .05); box-shadow: inset 2px 0 0 var(--warn); display: flex; flex-direction: column; gap: 4px; }
+.doc .z.g { box-shadow: inset 2px 0 0 var(--long); } .doc .z.r { box-shadow: inset 2px 0 0 var(--short); }
+.doc .z b { font: 900 30px/1 var(--disp); } .doc .z span { font: 700 11px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--mut); }
+@media (max-width: 900px) {
+  .docs { grid-template-columns: 1fr; gap: 18px; }
+  .toc { position: sticky; top: 72px; z-index: 6; max-height: none; overflow: visible; padding: 0; }
+  .toc details { background: rgba(6, 7, 8, .94); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); box-shadow: inset 0 0 0 1px var(--hair); }
+  .toc summary { display: block; cursor: pointer; padding: 12px 16px; font: 700 11px var(--mono); letter-spacing: .2em; text-transform: uppercase; }
+  .toc details[open] { max-height: 70vh; overflow-y: auto; padding-bottom: 12px; }
+  .toc details > :not(summary) { margin-left: 16px; margin-right: 16px; }
+  .doc { padding: 0 5vw 24px; margin: 0 -5vw; }
+  .doc section { scroll-margin-top: 128px; }
+  .doc-lede { font-size: 17px; margin-bottom: 30px; }
+  .doc p, .doc li, .doc dd { font-size: 15.5px; }
+  .doc .rules dt { font-size: 21px; }
+}
 /* ---------- a card opens in place ---------- */
 .zoomable { cursor: pointer; }
 .zhint { position: absolute !important; right: 16px; bottom: 12px; font-style: normal; font-family: var(--mono); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--mut); opacity: .75; transition: opacity .2s, color .2s; pointer-events: none; }

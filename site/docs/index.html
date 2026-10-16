@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Docs — Shuntdesk</title>
+<meta name="description" content="Everything Shuntdesk does and how it works: the seven checks, the crew desk, your paper desk, Pons, The Yard game, the Telegram bot, the agent API and the open record.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shuntdesk">
+<meta property="og:title" content="Docs — Shuntdesk">
+<meta property="og:description" content="Everything Shuntdesk does and how it works: the seven checks, the crew desk, your paper desk, Pons, The Yard game, the Telegram bot, the agent API and the open record.">
+<meta property="og:url" content="https://shuntdesk.com/docs/">
+<meta property="og:image" content="https://shuntdesk.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shuntdesk. One score. Three tracks.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://shuntdesk.com/og.png">
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#060708">
+<link rel="stylesheet" href="/assets/base.css">
+</head>
+<body class="sub docpage">
+<canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
+<main class="page">
+  <div class="eyebrow">Docs · how the whole line works</div>
+  <h1 class="disp doc-h"><span>Every part</span><span class="o">of the line.</span></h1>
+  <p class="doc-lede">What Shuntdesk does, how each part works, and how to use it: the scanner, the desks, Pons, The Yard, the Telegram bot and the API. Paper money only. Nothing here is advice.</p>
+
+  <div class="docs">
+    <nav class="toc" id="toc" aria-label="Contents">
+      <details open><summary>Contents</summary>
+      <h5>Start</h5>
+      <a href="#overview">Overview</a><a href="#quick-start">Quick start</a><a href="#principles">Principles</a>
+      <h5>The scanner</h5>
+      <a href="#ticket">The ticket</a><a href="#checks">The seven checks</a><a href="#score">The score</a><a href="#board">The board</a>
+      <h5>The desks</h5>
+      <a href="#crew">The crew desk</a><a href="#paper">Your paper desk</a><a href="#seasons">Board of desks</a>
+      <h5>Pons</h5>
+      <a href="#pons">Graduations and deployers</a><a href="#second-read">The second read</a>
+      <h5>Tools</h5>
+      <a href="#watch">Watchlist and alerts</a><a href="#report">Daily report</a><a href="#replay">Rug replay</a>
+      <h5>The Yard</h5>
+      <a href="#the-yard">What it is</a><a href="#controls">Controls</a><a href="#shifts">Shifts</a><a href="#city">The city</a><a href="#money">Work, cash and energy</a><a href="#talk">Talking to people</a><a href="#risky">The RISKY and the armory</a><a href="#events">Events</a><a href="#progress">Missions and rank</a><a href="#yard-board">Leaderboard</a><a href="#save">Your save</a>
+      <h5>Community</h5>
+      <a href="#telegram">Telegram</a>
+      <h5>Build on it</h5>
+      <a href="#api">Agent API</a><a href="#mcp">MCP</a><a href="#data">Open record</a><a href="#sources">Data sources</a><a href="#architecture">Architecture</a><a href="#run">Run it yourself</a>
+      <h5>More</h5>
+      <a href="#token">$SHUNT</a><a href="#faq">FAQ</a><a href="#legal">Privacy and terms</a>
+      </details>
+    </nav>
+
+    <article class="doc">
+
+<section id="overview"><h2>Overview</h2>
+<p>Shuntdesk is a token scanner for Robinhood Chain (chain id 4663) that bets on its own calls. Paste any token and seven fixed-rule checks read public chain data and give one verdict: <b>CLEAN</b>, <b>RISKY</b> or <b>DANGER</b>, scored out of 100, with every lost point explained.</p>
+<p>A public paper desk, the crew, then puts simulated money behind the verdicts it can confirm. Every call is priced again an hour and a day later, and the record of what held and what did not is public, published once a day as open data.</p>
+<pre class="flow">token → seven checks → one verdict → the crew bets on paper → priced after 1h and 24h → the open record</pre>
+<p>Around that core sit a paper desk of your own, a graduation desk for Pons launches, deployer records, a watchlist with phone alerts, rug replays, a Telegram bot, a read-only API for agents, and The Yard: a browser game where real past calls arrive as trains.</p>
+</section>
+
+<section id="quick-start"><h2>Quick start</h2>
+<ol class="steps">
+<li><b>Check a token.</b> Open <a href="/ticket/">Ticket</a>, paste a token address from Robinhood Chain and wait for the seven stops to run. Nothing to connect.</li>
+<li><b>See what is new.</b> <a href="/board/">Board</a> shows the newest pools, fresh Pons graduations and trending pools as trains on the line.</li>
+<li><b>Watch the crew.</b> <a href="/desk/">Desk</a> shows the crew's public paper balance, its open positions and a post-mortem on every closed trade.</li>
+<li><b>Trade on paper.</b> The same Desk page gives you 10,000 paper USDG of your own. It lives in your browser.</li>
+<li><b>Play.</b> <a href="/play/">The Yard</a> runs in the browser on a computer or a phone. Walk to the Signal Box and start a shift.</li>
+<li><b>Join in.</b> The community is on <a href="https://t.me/shuntdesk" target="_blank" rel="noopener">Telegram</a> and <a href="https://x.com/shuntdesk" target="_blank" rel="noopener">X</a>.</li>
+</ol>
+</section>
+
+<section id="principles"><h2>Principles</h2>
+<dl class="rules">
+<dt>We bet on our own calls.</dt><dd>Clean verdicts the server can confirm become paper longs; danger verdicts on a deep pool become paper shorts. The balance is public, so bad verdicts show.</dd>
+<dt>We keep the record of the misses.</dt><dd>Every ticket is priced again an hour and a day later. Calls that held and calls that did not are counted the same way.</dd>
+<dt>Rules decide. Models explain.</dt><dd>A verdict comes from fixed rules, the same for every token. Language models put findings into words. They cannot change a score or open a trade.</dd>
+<dt>The money is paper. The data is not.</dt><dd>Prices come from on-chain swaps and pool state, holders and funders from the chain. A paper order pays fees and moves the pool by its real depth.</dd>
+<dt>When we cannot read something, we say so.</dt><dd>A stop that did not answer is marked NO READ, and a token with an unread stop cannot be called clean.</dd>
+<dt>Nothing to connect.</dt><dd>No wallet, no key, no account, no email.</dd>
+</dl>
+</section>
+
+<section id="ticket"><h2>The ticket</h2>
+<p>A ticket is one run of the checks on one token. Open <a href="/ticket/">/ticket/</a>, paste an address, or link straight to <code>/ticket/?a=0x…</code>. The checks run in your browser on public data, stop by stop, and the train on screen moves with them. When the judge rules, the train takes its track.</p>
+<p>The finished ticket shows the verdict and score, each stop's finding with the points it cost, the pool's chart, launch facts for Pons tokens, and the conductor: a language model you can ask about the findings on the page. It answers from those findings and can be wrong.</p>
+<p>Every ticket is filed with the server, which reads the pool price from chain state and runs its own security read before the crew trades it. That is also the price the ticket is measured against an hour and a day later.</p>
+</section>
+
+<section id="checks"><h2>The seven checks</h2>
+<div class="tbl"><table>
+<thead><tr><th>#</th><th>Stop</th><th>Reads</th><th>Costs points when</th></tr></thead>
+<tbody>
+<tr><td>01</td><td><b>Sources</b></td><td>the pool, its price, age and volume (DexScreener, GeckoTerminal)</td><td>no pool exists</td></tr>
+<tr><td>02</td><td><b>Gate</b></td><td>liquidity and pool age</td><td>under $1K (heavy), under $3K, or under ten minutes old</td></tr>
+<tr><td>03</td><td><b>Scout</b></td><td>holders and the share of the ten largest wallets (Blockscout, GoPlus)</td><td>the top ten hold over 25% or 50%, or there are under 25 holders</td></tr>
+<tr><td>04</td><td><b>Tracer</b></td><td>who funded the top wallets; the deployer's own record (GoPlus)</td><td>top wallets tie back to the deployer, wallets are brand new, the deployer is flagged</td></tr>
+<tr><td>05</td><td><b>Linker</b></td><td>wallets that share a funder; snipers, bundles, insiders and the developer at launch (Codex)</td><td>a funded group holds over 5% or 15%; bundles over 10% or 25%; snipers or insiders over 15%</td></tr>
+<tr><td>06</td><td><b>Auditor</b></td><td>bytecode and a sell simulation: honeypot, taxes, blacklist, minting, pause, proxy, owner</td><td>any trap; an unverified source; a live owner</td></tr>
+<tr><td>07</td><td><b>Judge</b></td><td>the score</td><td>—</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="score"><h2>The score</h2>
+<p>The score starts at 100 and loses points at each stop.</p>
+<div class="zones"><div class="z g"><b>75+</b><span>CLEAN</span></div><div class="z"><b>45–74</b><span>RISKY</span></div><div class="z r"><b>&lt;45</b><span>DANGER</span></div></div>
+<p>A pool under an hour old, with under 50 holders, or with a stop left unread is capped at 70, so it cannot be called clean. A clean verdict is not a reason to buy, and a danger verdict is not proof of fraud. It is a reading, with its reasons listed.</p>
+</section>
+
+<section id="board"><h2>The board</h2>
+<p><a href="/board/">/board/</a> is the line itself. Each train is a real pool on Robinhood Chain, standing at the check it has actually reached in your browser. Three tabs: <b>Newest</b> pools, tokens that just <b>Graduated</b> from Pons, and <b>Trending</b>. Click a train to open its ticket.</p>
+</section>
+
+<section id="crew"><h2>The crew desk</h2>
+<p>The crew is a team of fixed-rule roles trading paper money around the clock, inside one server process woken every minute. Its balance, positions and closed trades are public on <a href="/desk/">/desk/</a>.</p>
+<div class="tbl"><table>
+<thead><tr><th>Role</th><th>Does</th></tr></thead>
+<tbody>
+<tr><td><b>Dispatcher</b></td><td>files every verdict a visitor runs; holds back a CLEAN the server cannot confirm, or a DANGER with no red flag</td></tr>
+<tr><td><b>Sizer</b></td><td>4% of equity per position, shrunk so the order moves the pool at most 4%; at most 8 positions, one per token</td></tr>
+<tr><td><b>Signal</b></td><td>opens long on CLEAN, short on DANGER when the pool holds $20K or more; 4x, 2x or 1x by zone</td></tr>
+<tr><td><b>Guard</b></td><td>marks every position from chain state; closes at liquidation (health ≤ 0.1), stop (&lt; 0.5), target (&gt; 1.6) or after one day</td></tr>
+<tr><td><b>Conductor</b></td><td>a language model that explains verdicts and writes a post-mortem on each closed trade; it cannot trade</td></tr>
+</tbody></table></div>
+<p>The crew started at 10,000 paper USDG. Prices come from pool state read straight from the chain (Uniswap v3 and v4 pools, with ETH priced from the WETH/USDG pool).</p>
+</section>
+
+<section id="paper"><h2>Your paper desk</h2>
+<p>Every visitor gets 10,000 paper USDG, kept in their own browser. Trade majors from Binance's public stream, stock tokens, and any coin on Robinhood Chain, long or short.</p>
+<div class="tbl"><table>
+<thead><tr><th>Rule</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td>Fee</td><td>0.1% of size, in and out</td></tr>
+<tr><td>Borrow</td><td>0.02% an hour on the borrowed part</td></tr>
+<tr><td>Price impact</td><td>twice the size over pool depth; an order moving the pool over 8% is refused</td></tr>
+<tr><td>Liquidation</td><td>when 90% of the collateral is gone, fees included</td></tr>
+<tr><td>Leverage by zone</td><td>pool ≥ $250K: 100x · ≥ $40K: 25x · below: 5x</td></tr>
+<tr><td>Reset</td><td>below 100 USDG the desk starts over; the week's loss carries into the season</td></tr>
+</tbody></table></div>
+<p>Clearing your browser data clears the desk. Nothing about it is tied to who you are.</p>
+</section>
+
+<section id="seasons"><h2>Board of desks</h2>
+<p>Post your paper desk under a handle you choose and it ranks against everyone else's. The board runs in weekly seasons starting Monday 00:00 UTC, ranked by what each desk made that week. It is self-reported, and the page says so.</p>
+</section>
+
+<section id="pons"><h2>Graduations and deployers</h2>
+<p><a href="https://ponsfamily.com" target="_blank" rel="noopener">Pons</a> is where most new tokens on Robinhood Chain come from. Shuntdesk reads its V2 factory log directly.</p>
+<ul>
+<li><b>Graduation desk.</b> Tokens that just completed the curve go straight onto the line: the Board's Graduated tab, the landing strip, and two trains in the yard.</li>
+<li><b>Deployer record.</b> <a href="/deployer/">/deployer/</a> lists everything a wallet launched on Pons, which launches graduated, and how each pool stands today. Pons V2 launches only.</li>
+<li><b>Sniper and bundle check.</b> Part of the Linker stop on every Pons ticket.</li>
+</ul>
+</section>
+
+<section id="second-read"><h2>The second read</h2>
+<p>For tokens launched on Pons, the ticket also shows a reading by ChargeAI, a separate open model for Pons launches served on Surplus. Only the token's public figures are sent. It is another model's opinion: Shuntdesk does not check its figures, and the verdict never uses it.</p>
+</section>
+
+<section id="watch"><h2>Watchlist and alerts</h2>
+<p>Watch a token from its ticket. Allow notifications and the server prices your watched tokens every 15 minutes, and sends an alert to your phone or computer when the price or the liquidity moves sharply since you started watching, even with no Shuntdesk tab open.</p>
+</section>
+
+<section id="report"><h2>Daily report</h2>
+<p><a href="/report/">/report/</a> sums up the last 24 hours of the crew desk: calls filed, how they held, trades opened and closed, with a one-paragraph summary.</p>
+</section>
+
+<section id="replay"><h2>Rug replay</h2>
+<p><a href="/replay/">/replay/?a=0x…</a> draws a token's price history with its Pons launch, graduation, peak, steepest fall, and the verdict Shuntdesk filed at the time. A way to see what the checks saw before the fall.</p>
+</section>
+
+<section id="the-yard"><h2>The Yard</h2>
+<p><a href="/play/">/play/</a> is an open city built around a rail yard, running in the browser on a computer or a phone. You play the shunter. Past calls whose later price is known come down the line as trains, and you decide where each one goes before the price is shown.</p>
+<p>It is a playground. Around the shifts there is a whole city to live in: work, food, people to talk to, trains to drive, the RISKY to fight at night. Game cash is not a token and has no value outside the game. Nothing in it can be won.</p>
+<p>The city draws its data from Shuntdesk: station boards show the latest verdicts, Crew Desk HQ shows the paper desk, the Deployer Office shows fresh Pons graduations, and the Crash Site lists the calls whose price fell hardest.</p>
+</section>
+
+<section id="controls"><h2>Controls</h2>
+<div class="tbl"><table>
+<thead><tr><th>Key</th><th>Does</th><th>Key</th><th>Does</th></tr></thead>
+<tbody>
+<tr><td><kbd>WASD</kbd></td><td>move</td><td><kbd>J</kbd></td><td>journal of missions</td></tr>
+<tr><td><kbd>Shift</kbd></td><td>run</td><td><kbd>M</kbd></td><td>city map</td></tr>
+<tr><td><kbd>Space</kbd></td><td>jump</td><td><kbd>L</kbd></td><td>leaderboard and your name</td></tr>
+<tr><td><kbd>E</kbd></td><td>act: doors, levers, counters, seats</td><td><kbd>K</kbd></td><td>card album</td></tr>
+<tr><td><kbd>T</kbd></td><td>talk to the person nearest you</td><td><kbd>P</kbd></td><td>photo mode</td></tr>
+<tr><td><kbd>F</kbd></td><td>strike</td><td><kbd>N</kbd></td><td>sound on and off</td></tr>
+<tr><td><kbd>Q</kbd></td><td>switch weapon</td><td><kbd>1–4</kbd></td><td>pick a reply when talking</td></tr>
+<tr><td>Drag</td><td>look around</td><td>Wheel</td><td>zoom</td></tr>
+</tbody></table></div>
+<p>On a phone, a stick on the left moves you and buttons on the right act, jump, run, strike and switch weapon. A taskbar along the bottom opens missions, the map, the board, the album, photo mode and sound.</p>
+</section>
+
+<section id="shifts"><h2>Shifts</h2>
+<p>Walk to the Signal Box in the middle of the yard and press <kbd>E</kbd>. A shift brings in five trains. Each one carries its manifest: the six stops its ticket showed and the pool's liquidity. Before the train reaches the junction, pull <b>RIDE</b> to send it down the main line, or <b>SIDING</b> to pull it off.</p>
+<p>Then the price an hour or a day later shows who read it right: a train that rose was worth riding, one that fell belonged in the siding. Your calls are set beside the calls Shuntdesk made on the same trains. Shifts pay the most XP in the game.</p>
+<ul>
+<li><b>Practice.</b> Five calls drawn from the record, a different set each time.</li>
+<li><b>Daily shift.</b> The same five trains for everyone, all day. Pick a name first; the server scores it.</li>
+<li><b>Bring your own token.</b> Paste any token on Robinhood Chain. The seven checks run live, the same as a ticket, and the call is filed like any ticket. You call it, and the price an hour later decides.</li>
+</ul>
+<p>At the end of a shift you can save its card or share it.</p>
+</section>
+
+<section id="city"><h2>The city</h2>
+<ul>
+<li><b>The Yard.</b> The rail yard at the centre, with the Signal Box, Junction Station next to it, and the lever frame.</li>
+<li><b>Westbank.</b> The old quarter: Curve Market, Old Quarter Park, the Radio Tower, Westbank Court, The Armory, Yard Supply, your flat at The Old Mill Flats, and the Crash Site.</li>
+<li><b>Eastgate.</b> Downtown, with traffic: Central Station, Crew Desk HQ, the Deployer Office, the Night Line Diner, Signal Square, The Signal cinema, and Curve Stadium to the south.</li>
+<li><b>North.</b> Liquidity Lake, with joggers on the path and fish in the water, and The Wheel, which you can ride for a view over the whole city.</li>
+<li><b>The Outskirts.</b> The edge of town past the districts.</li>
+</ul>
+<p>Every building has a door. Trains cross the roads at level crossings with barriers, and a train will kill you if you stand in its way. A full day lasts 16 minutes, from morning through dusk to night, and the weather changes on its own.</p>
+<p>To get about: walk, catch a bus from a green stop, take a cab from the rank by Central Station, or ride the train on track 22 from Junction Station to Central Station.</p>
+</section>
+
+<section id="money"><h2>Work, cash and energy</h2>
+<p>Cash comes from shifts, parcels, litter, golden tickets, favours and bounties. You spend it on food, drink, fares, clothes, upgrades and weapons.</p>
+<ul>
+<li><b>Parcels.</b> Take one from a job board (Curve Market, Junction Station, Signal Square) and deliver it. It pays more if you are quick.</li>
+<li><b>Litter.</b> Walk over bags with an amber ring to pick them up.</li>
+<li><b>The kiosk.</b> Work the counter at Junction Station for $2 an order.</li>
+<li><b>Cabs.</b> Sign on at the taxi rank and drive fares across town.</li>
+<li><b>Driving.</b> Sign on at the drivers' office, take a train in and stop it before the buffer.</li>
+<li><b>Golden tickets.</b> Hidden round the city. People in town may tell you where.</li>
+</ul>
+<p>Running and working use energy. Food trucks, the Junction kiosk and the Night Line Diner sell food and drink that put it back; a coffee also gives you a short boost. If you are hurt, the diner's plate puts you back to full health.</p>
+<p>Elsewhere: fish at the lake and sell your catch at Yard Supply, play Up or Down and hoop shots at the arcade for $1 a go, work out at a gym, sing karaoke, watch a film, buy the Yard Gazette at a newsstand for $1, keep a pet, and change clothes at your wardrobe.</p>
+</section>
+
+<section id="talk"><h2>Talking to people</h2>
+<p>Walk up to anyone in town and press <kbd>T</kbd> (or <kbd>E</kbd>). Each person has a name, a voice and a job, and you pick your reply from a list. Ask about the city, the trains, work or the RISKY, and the conversation follows the topic. People give directions, hints about golden tickets, and favours: bring someone what they ask for and they pay you back. People you have talked to remember you.</p>
+</section>
+
+<section id="risky"><h2>The RISKY and the armory</h2>
+<p>After dark the RISKY walk out of the Crash Site in Westbank. Press <kbd>F</kbd> to strike. The big ones, the RUG, walk with them, and every seventh night the RUG PULL itself comes out. Stopping them pays a bounty.</p>
+<p>The Armory in Westbank sells weapons, which only work on the RISKY. Switch between the ones you own with <kbd>Q</kbd>.</p>
+<div class="tbl"><table>
+<thead><tr><th>Weapon</th><th>Price</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>Fists</td><td>free</td><td>short reach</td></tr>
+<tr><td>Knife</td><td>$30</td><td>fast</td></tr>
+<tr><td>Crowbar</td><td>$40</td><td>heavier hit</td></tr>
+<tr><td>Steel bat</td><td>$45</td><td>longer reach</td></tr>
+<tr><td>Katana</td><td>$120</td><td>longest blade, hardest hit</td></tr>
+<tr><td>Pistol</td><td>$150</td><td>long range; rounds $10 for 12</td></tr>
+<tr><td>Shotgun</td><td>$300</td><td>wide spread, heavy hit; shells $15 for 6</td></tr>
+</tbody></table></div>
+<p>If you go down, from the RISKY or a train, you wake up with a $15 hospital bill, waived when you are broke.</p>
+</section>
+
+<section id="events"><h2>Events</h2>
+<ul>
+<li><b>Runaway.</b> A train comes down the main line out of control. Get to the lever frame and pull SIDING before it reaches the junction.</li>
+<li><b>Breakdown.</b> A train stops on the line. Get to it and repair it.</li>
+<li><b>Fire.</b> Hold <kbd>E</kbd> to put it out before it spreads.</li>
+<li><b>Thief.</b> Someone snatches a wallet. Chase them down.</li>
+<li><b>Festival night.</b> Every third night at Curve Market.</li>
+<li><b>Match night.</b> Curve Stadium fills up; a seat costs $5.</li>
+<li><b>RUG PULL.</b> Every seventh night.</li>
+</ul>
+<p>Station announcements tell you which train is due on which platform, and the weather can bring fog and storms.</p>
+</section>
+
+<section id="progress"><h2>Missions and rank</h2>
+<p>The journal (<kbd>J</kbd>) holds 70 missions, from your first shift to catching the golden carp. Pick one to follow and the minimap points you there. Missions and shifts pay XP, and XP sets your rank:</p>
+<div class="zones"><div class="z"><b>0</b><span>Yard hand</span></div><div class="z"><b>400</b><span>Signalman</span></div><div class="z"><b>1,200</b><span>Dispatcher</span></div><div class="z g"><b>3,000</b><span>Conductor</span></div></div>
+<p>Shifts and some missions also earn cards for your album (<kbd>K</kbd>). Sending a train to the siding that then fell more than 10% earns a rare one.</p>
+</section>
+
+<section id="yard-board"><h2>Leaderboard</h2>
+<p>Pick a name (<kbd>L</kbd>) and finish a shift to go on this week's board. The server scores every shift itself: after a shift the page sends only which trains it got and which lever it pulled, and the server prices those calls from its own record. A train it has no record of is refused. The board starts over each week. In the city, a board at the station shows it too.</p>
+</section>
+
+<section id="save"><h2>Your save</h2>
+<p>Your progress, cash, XP, missions, things you own and settings stay in your browser. Clearing your browser data starts you over. The only things sent to the server are your name and your calls when you post a shift to the board.</p>
+</section>
+
+<section id="telegram"><h2>Telegram</h2>
+<p>The community is at <a href="https://t.me/shuntdesk" target="_blank" rel="noopener">t.me/shuntdesk</a>: every $SHUNT buy posts to the chat, and the bot is there to ask.</p>
+<p>The bot is <a href="https://t.me/shuntdesk_bot" target="_blank" rel="noopener">@shuntdesk_bot</a>. In a private chat, paste a token address or ask anything about Shuntdesk. In a group, it answers only commands, a mention of <code>@shuntdesk_bot</code>, or a reply to one of its messages.</p>
+<div class="tbl"><table>
+<thead><tr><th>Command</th><th>Answers</th></tr></thead>
+<tbody>
+<tr><td><code>/check 0x…</code></td><td>what Shuntdesk knows about a token</td></tr>
+<tr><td><code>/new</code></td><td>tokens fresh off the Pons curve</td></tr>
+<tr><td><code>/desk</code></td><td>the crew desk right now</td></tr>
+<tr><td><code>/report</code></td><td>the last 24 hours</td></tr>
+<tr><td><code>/daily</code></td><td>today's daily shift in The Yard</td></tr>
+<tr><td><code>/yard</code></td><td>this week's Yard leaderboard</td></tr>
+<tr><td><code>/id</code></td><td>the id of the chat</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="api"><h2>Agent API</h2>
+<p>Read-only JSON, no key, CORS open, 120 calls an hour per caller. All money figures are paper USDG. Every endpoint runs live on <a href="/agents/">/agents/</a>, and the brief for language models is at <a href="/llms.txt">/llms.txt</a>.</p>
+<div class="tbl"><table>
+<thead><tr><th>Endpoint</th><th>Returns</th></tr></thead>
+<tbody>
+<tr><td><code>GET /api/v1/token?a=0x…</code></td><td>the verdict on file and how it held, a fresh security read, launch facts, the crew position</td></tr>
+<tr><td><code>GET /api/v1/verdicts</code></td><td>the 50 latest verdicts and how many held an hour later</td></tr>
+<tr><td><code>GET /api/v1/desk</code></td><td>the crew desk: equity, open positions, closed trades with post-mortems</td></tr>
+<tr><td><code>GET /api/v1/graduated</code></td><td>tokens that just completed the Pons curve</td></tr>
+<tr><td><code>GET /api/v1/report</code></td><td>the last 24 hours, with a one-paragraph summary</td></tr>
+<tr><td><code>GET /api/replay?a=0x…</code></td><td>a token's price history with its launch, graduation, peak and fall</td></tr>
+<tr><td><code>GET /api/play</code></td><td>past calls with their later price, as The Yard uses them</td></tr>
+<tr><td><code>GET /api/daily</code></td><td>today's daily shift</td></tr>
+<tr><td><code>GET /api/yard</code></td><td>this week's Yard leaderboard</td></tr>
+</tbody></table></div>
+<pre><code>curl -s "https://shuntdesk.com/api/v1/token?a=0x7e517e779b85895894becad80c9bb69b4cb1c4d6"</code></pre>
+<p><code>verdict</code> is <code>null</code> until someone runs the checks. The checks run in a browser, so the answer carries a <code>fullCheck</code> link that runs them. When you quote a verdict, say it is a rule-based reading that can be wrong, and link the ticket.</p>
+</section>
+
+<section id="mcp"><h2>MCP</h2>
+<p>The same reads as MCP tools (<code>token</code>, <code>verdicts</code>, <code>crew_desk</code>, <code>pons_graduations</code>, <code>daily_report</code>) over Streamable HTTP. Add <code>https://shuntdesk.com/mcp</code> as a remote server. Read-only, no key.</p>
+</section>
+
+<section id="data"><h2>Open record</h2>
+<p>Every call, with its price an hour and a day later and whether it held, is published once a day as JSONL on Hugging Face: <a href="https://huggingface.co/datasets/shuntdesk/verdicts" target="_blank" rel="noopener">shuntdesk/verdicts</a>. A day goes up the next day as a first version, and again the day after with every 24-hour price filled in. Closed crew trades and their post-mortems go up with it.</p>
+</section>
+
+<section id="sources"><h2>Data sources</h2>
+<div class="tbl"><table>
+<thead><tr><th>Source</th><th>Used for</th></tr></thead>
+<tbody>
+<tr><td>Robinhood Chain RPC</td><td>pool state, swaps, contract code, the Pons factory log</td></tr>
+<tr><td>DexScreener · GeckoTerminal</td><td>pools, prices, new and trending lists</td></tr>
+<tr><td>Blockscout</td><td>holders, funders, deployers</td></tr>
+<tr><td>GoPlus</td><td>sell simulation, taxes, owner powers, holder list</td></tr>
+<tr><td>Codex</td><td>launch facts (snipers, bundles, insiders), young-pool candles</td></tr>
+<tr><td>CoinGecko</td><td>new and trending pools for the server</td></tr>
+<tr><td>Binance</td><td>majors, tick by tick</td></tr>
+<tr><td>Surplus</td><td>the conductor and ChargeAI's second read</td></tr>
+<tr><td>Hugging Face</td><td>the daily open record</td></tr>
+</tbody></table></div>
+<p>Every key stays on the server. Your browser talks only to the site and to public, keyless endpoints, and the site's security policy allows nothing else.</p>
+</section>
+
+<section id="architecture"><h2>Architecture</h2>
+<p>The site is plain ES modules with no build step and no runtime dependency, served from Cloudflare. The backend is one Cloudflare Worker with one Durable Object that holds the crew desk and wakes every minute. The 3D yard on the landing page is a small renderer on canvas 2D; The Yard game runs on Three.js.</p>
+<pre class="flow">browser: pages · seven checks · paper desk
+   │  POST /api/verdict
+   ▼
+Worker → Durable Object (crew desk, alarm every minute)
+   ├─ eth_call → Robinhood Chain (pool state)
+   ├─ Surplus (conductor, second read)
+   └─ daily commit → Hugging Face
+agents → GET /api/v1/* · /mcp</pre>
+<p>The code is open source under the MIT license at <a href="https://github.com/shuntdesk/shuntdesk" target="_blank" rel="noopener">github.com/shuntdesk/shuntdesk</a>.</p>
+</section>
+
+<section id="run"><h2>Run it yourself</h2>
+<pre><code>git clone https://github.com/shuntdesk/shuntdesk &amp;&amp; cd shuntdesk
+npm run dev     # http://localhost:8791 · node 22+, nothing to install
+npm test        # syntax check of every script + unit tests</code></pre>
+<p>Most of the site works with no key at all. Server features read optional keys from <code>.env.local</code>; the README lists each one and what it unlocks.</p>
+</section>
+
+<section id="token"><h2>$SHUNT</h2>
+<p>$SHUNT is the project's token on Robinhood Chain, launched on Pons. The only official contract:</p>
+<pre><code>0x7e517e779b85895894becad80c9bb69b4cb1c4d6</code></pre>
+<p>It is shown in the site's header, on <a href="https://x.com/shuntdesk" target="_blank" rel="noopener">@shuntdesk on X</a> and in the <a href="https://t.me/shuntdesk" target="_blank" rel="noopener">Telegram group</a>. Any other token using the Shuntdesk name is not ours. Nothing here is a promise about its price, and buying it is not needed for anything on the site.</p>
+</section>
+
+<section id="faq"><h2>FAQ</h2>
+<dl class="rules">
+<dt>Is it free?</dt><dd>Yes. No account, no subscription, nothing to pay.</dd>
+<dt>Do I need a wallet?</dt><dd>No. Nothing on the site asks for a wallet, a key or a signature. If something claiming to be Shuntdesk does, it is not us.</dd>
+<dt>Is any of the money real?</dt><dd>No. Every balance, position, fee and liquidation is simulated. The prices it is measured against are real.</dd>
+<dt>Why did a token I know is fine score RISKY?</dt><dd>Young pools, few holders, or a stop that could not be read cap the score at 70. The rules are the same for every token, and the ticket lists each lost point.</dd>
+<dt>Can the verdict be wrong?</dt><dd>Yes, and the record shows how often. Every call is priced again after an hour and a day, misses included.</dd>
+<dt>Which chain?</dt><dd>Robinhood Chain, chain id 4663. Your paper desk also trades majors priced from Binance.</dd>
+<dt>Where is my game save?</dt><dd>In your browser. Clearing site data starts you over.</dd>
+<dt>Can I build on it?</dt><dd>Yes. Use the agent API, the MCP server or the open dataset, or fork the code under the MIT license.</dd>
+</dl>
+</section>
+
+<section id="legal"><h2>Privacy and terms</h2>
+<p>What the site keeps about you is on the <a href="/privacy/">Privacy</a> page. The rules for using it are on the <a href="/terms/">Terms</a> page. The changes to the site, release by release, are in the <a href="https://github.com/shuntdesk/shuntdesk/blob/main/CHANGELOG.md" target="_blank" rel="noopener">changelog</a>.</p>
+</section>
+
+    </article>
+  </div>
+</main>
+<footer class="foot"></footer>
+<script type="module" src="/assets/docs.js"></script>
+</body>
+</html>

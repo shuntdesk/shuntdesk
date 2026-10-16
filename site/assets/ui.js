@@ -8,7 +8,7 @@ export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;'
 
 const MARK = 'M136 456V297.7L292 173.7V90L326 56H376V214.3L220 338.3V422L186 456Z';   // the Shuntdesk mark: one stroke leaving its lane for the next
 const LOGO = `<svg viewBox="136 56 240 400" fill="currentColor" aria-hidden="true"><path d="${MARK}"/></svg>`;
-const NAV = [['Yard', '/'], ['Board', '/board/'], ['Desk', '/desk/'], ['Ticket', '/ticket/']];
+const NAV = [['Yard', '/'], ['Board', '/board/'], ['Desk', '/desk/'], ['Ticket', '/ticket/'], ['Docs', '/docs/']];
 // the project's X account, shown in the header and the footer; empty hides both links
 const X_HANDLE = 'shuntdesk';
 const X_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>';
@@ -47,7 +47,7 @@ export function mountChrome(active) {
     <div class="mq"><div>${phrase}${phrase}</div></div>
     <div class="fgrid">
       <div class="fbrand"><a class="logo" href="/">${LOGO}<b>SHUNTDESK</b></a><p>We check tokens on Robinhood Chain, then bet paper money on our own verdicts. The balance is public. So are the misses.</p><div class="pills"><span>PAPER ONLY</span><span>NO WALLET</span><span>NO KEY</span></div>${xLink('xlink xfoot')}</div>
-      <div class="fcol"><h5>The line</h5>${NAV.map(n => `<a href="${n[1]}">${n[0]}</a>`).join('')}<a href="/report/">Daily report</a><a href="/deployer/">Deployer record</a><a href="/replay/">Rug replay</a><a href="/play/">The Yard (game)</a><a href="/manifesto/">Manifesto</a><a href="/agents/">For agents</a><a href="https://t.me/shuntdesk_bot" target="_blank" rel="noopener">Telegram bot ↗</a><a href="https://huggingface.co/datasets/shuntdesk/verdicts" target="_blank" rel="noopener">Open data ↗</a><a href="/fine-print/">Fine print</a></div>
+      <div class="fcol"><h5>The line</h5>${NAV.map(n => `<a href="${n[1]}">${n[0]}</a>`).join('')}<a href="/report/">Daily report</a><a href="/deployer/">Deployer record</a><a href="/replay/">Rug replay</a><a href="/play/">The Yard (game)</a><a href="/agents/">For agents</a><a href="https://t.me/shuntdesk" target="_blank" rel="noopener">Telegram community ↗</a><a href="https://t.me/shuntdesk_bot" target="_blank" rel="noopener">Telegram bot ↗</a><a href="https://huggingface.co/datasets/shuntdesk/verdicts" target="_blank" rel="noopener">Open data ↗</a><a href="https://github.com/shuntdesk/shuntdesk" target="_blank" rel="noopener">Source code ↗</a><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a></div>
       <div class="fcol"><h5>Read from</h5><span>DexScreener</span><span>GeckoTerminal</span><span>Blockscout</span><span>GoPlus</span><span>Codex</span><span>Binance</span><span>Robinhood Chain RPC</span><span>Surplus · ChargeAI</span><span>Hugging Face</span></div>
       <div class="stub endplate"><div class="in"><div class="cap"><b>Terminus</b><span>end of the line</span></div><h4>Ride it again.</h4><a class="btn" href="/ticket/">Board with a token →</a></div></div>
     </div>

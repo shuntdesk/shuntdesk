@@ -3,6 +3,7 @@
 > A token scanner on Robinhood Chain (chain id 4663) with something to lose. Seven fixed-rule checks give each token one verdict (CLEAN, RISKY or DANGER, scored out of 100). A public paper desk, the crew, bets simulated money on the verdicts it can confirm, and every call is priced again an hour and a day later. Paper money only. Nothing here is advice.
 
 Site: https://shuntdesk.com
+Docs: https://shuntdesk.com/docs/
 X: https://x.com/shuntdesk
 
 ## For agents
@@ -21,7 +22,7 @@ The same reads as MCP tools (token, verdicts, crew_desk, pons_graduations, daily
 
 ## Telegram
 
-@shuntdesk_bot answers /check 0x…, /new, /desk and /report: https://t.me/shuntdesk_bot
+@shuntdesk_bot answers /check 0x…, /new, /desk, /report, /daily and /yard: https://t.me/shuntdesk_bot. In groups it answers only commands, mentions and replies. Community: https://t.me/shuntdesk
 
 ## Rug replay
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0 · 16 October 2026
+
+- Docs (/docs/): the whole project on one page, with contents that follow you: the seven checks and the score, the board, the crew desk, your paper desk and its rules, Pons, the watchlist, reports and replays, every part of The Yard (controls, shifts, the city, work and cash, talking, the armory, events, missions, the leaderboard), the Telegram bot, the agent API, MCP, the open record, data sources, architecture, $SHUNT and an FAQ. Linked from the header and the landing page.
+- Privacy (/privacy/) and Terms (/terms/) replace the fine print, updated for the game, the boards, phone alerts and the bot. The manifesto's principles moved into the docs. Old links redirect.
+- Telegram: the bot stays quiet in groups unless it gets a command, a mention or a reply; /id gives a chat's id. The footer links the community at t.me/shuntdesk.
+
 ## 1.2.0 · 16 October 2026
 
 - The Yard (`/play/`): a walkable 3D rail yard. In a Signal Box shift, real calls with a known later price arrive as trains; read the manifest, pull RIDE or SIDING, and compare your read with the desk's.
