@@ -888,3 +888,11 @@ html.simple.light ::selection { background: #2ed3a0; color: #060708; }
 @media (max-width: 1480px) and (min-width: 901px) { .top .xlink span, .chain span { display: none; } .top .xlink { padding: 8px 10px; } }
 @media (max-width: 1260px) and (min-width: 901px) { .chain { display: none; } .cachip i { display: none; } .top nav a { padding: 10px 7px; letter-spacing: .1em; } }
 @media (max-width: 1060px) and (min-width: 901px) { .top .xlink { display: none; } .cachip span { display: none; } }
+/* the phone header: the look button says one word, everything sits in one row */
+@media (max-width: 600px) {
+  .top { gap: 8px; padding: 0 12px; }
+  .top .uimode { padding: 7px 8px; font-size: 9.5px; letter-spacing: .08em; } .top .uimode span { display: none; }
+  .top nav a { padding: 10px 5px; font-size: 9.5px; letter-spacing: .06em; }
+  .logo b { font-size: 18px; }
+}
+@media (max-width: 430px) { .logo b { display: none; } .top nav a { padding: 10px 4px; } }

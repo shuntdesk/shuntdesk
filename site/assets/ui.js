@@ -22,7 +22,7 @@ export function mountChrome(active) {
     <a class="logo" href="/">${LOGO}<b>SHUNTDESK</b></a>
     <nav>${NAV.map(n => `<a href="${n[1]}"${n[0] === active ? ' class="on"' : ''}>${n[0]}</a>`).join('')}</nav>
     <div class="sp"></div>
-    <button class="uimode" type="button" title="Switch between the Yard UI and Simple UI">${document.documentElement.classList.contains('simple') ? 'Yard UI' : 'Simple UI'}</button>
+    <button class="uimode" type="button" title="Switch between the Yard UI and Simple UI">${document.documentElement.classList.contains('simple') ? 'Yard<span> UI</span>' : 'Simple<span> UI</span>'}</button>
     ${document.documentElement.classList.contains('simple') ? `<button class="uitheme" type="button" title="Light or dark">${document.documentElement.classList.contains('light') ? 'Dark' : 'Light'}</button>` : ''}
     ${caChip()}
     ${xLink('xlink')}
