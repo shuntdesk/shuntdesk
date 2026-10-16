@@ -15,6 +15,8 @@ Read-only JSON, no key, CORS open, 120 calls an hour per caller. All money figur
 - GET https://shuntdesk.com/api/v1/desk : the crew desk: equity, open positions, the last 20 closed trades, each with the conductor's post-mortem.
 - GET https://shuntdesk.com/api/v1/graduated : tokens that just completed the Pons bonding curve, read from the Pons V2 factory log.
 - GET https://shuntdesk.com/api/v1/report : the last 24 hours of the crew desk, with a one-paragraph summary.
+- GET https://shuntdesk.com/api/v1/lookalikes?a=0x… : Lookalikes. Tokens in Shuntdesk's hourly log (every new token with 25+ holders, read 30 to 90 minutes after launch) that looked closest to this one, and how they moved an hour and a day later. Past results of other tokens, not a forecast.
+- GET https://shuntdesk.com/api/v1/stocks : the stocks behind Robinhood Chain's stock tokens (Yahoo Finance): latest trade, last close, market session.
 
 ## MCP
 
@@ -23,6 +25,12 @@ The same reads as MCP tools (token, verdicts, crew_desk, pons_graduations, daily
 ## Telegram
 
 @shuntdesk_bot answers /check 0x…, /new, /desk, /report, /daily and /yard: https://t.me/shuntdesk_bot. In groups it answers only commands, mentions and replies. Community: https://t.me/shuntdesk
+
+## Tools
+
+- Exit Door: https://shuntdesk.com/exit/?a=0x…&usd=500 shows what a buy of that size gets back if sold straight away, and if the developer, a funded group, launch snipers and bundles, or the ten largest wallets sell first. An estimate from pool depth and sell tax.
+- Same Hand: https://shuntdesk.com/hand/?a=0x… follows a launcher's first funds back two steps and lists every Pons launch by the wallets on that trail, with how many pools are now under $1K. A shared funder is a link, not proof.
+- Stock gap: https://shuntdesk.com/stocks/ sets each stock token's chain price against the stock's latest trade and last close.
 
 ## Rug replay
 

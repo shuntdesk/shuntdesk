@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0 · 16 October 2026
+
+- Exit Door (/exit/): pick a size and see what comes back if you sell straight away, through the pool's depth, the sell tax and the swap fee, and again if the developer, the largest funded group, the launch snipers and bundles, or the ten largest wallets sell first. Every ticket shows the $500 case.
+- Same Hand (/hand/): the launcher's first funds followed back two steps, every wallet those funders paid, and every Pons launch by any of them with how its pool stands today. Fresh Pons graduations whose trail leads to dead launches are posted to the Telegram group, at most six a day. The money trail is read on the server from the keyed Blockscout index (/api/hand, /api/hand/launches).
+- Lookalikes: every hour the server logs each new token with 25+ holders as it stands 30 to 90 minutes after launch (Codex), and reads it again an hour and a day later. Every ticket shows how the closest ones went. GET /api/v1/lookalikes.
+- Stock gap (/stocks/): stock tokens against the stock's latest trade and last close, through nights and weekends (Yahoo Finance). GET /api/v1/stocks.
+- Tools (/tools/) gathers every tool; the header links it.
+
 ## 1.3.0 · 16 October 2026
 
 - Docs (/docs/): the whole project on one page, with contents that follow you: the seven checks and the score, the board, the crew desk, your paper desk and its rules, Pons, the watchlist, reports and replays, every part of The Yard (controls, shifts, the city, work and cash, talking, the armory, events, missions, the leaderboard), the Telegram bot, the agent API, MCP, the open record, data sources, architecture, $SHUNT and an FAQ. Linked from the header and the landing page.

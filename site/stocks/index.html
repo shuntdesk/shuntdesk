@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stock gap — Shuntdesk</title>
+<meta name="description" content="Stock tokens on Robinhood Chain against the stock itself: the gap to the latest trade and to the last close, live, including nights and weekends when the market is shut.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shuntdesk">
+<meta property="og:title" content="Stock gap — Shuntdesk">
+<meta property="og:description" content="Stock tokens on Robinhood Chain against the stock itself: the gap to the latest trade and to the last close, live, including nights and weekends when the market is shut.">
+<meta property="og:url" content="https://shuntdesk.com/stocks/">
+<meta property="og:image" content="https://shuntdesk.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shuntdesk. One score. Three tracks.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://shuntdesk.com/og.png">
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#060708">
+<link rel="stylesheet" href="/assets/base.css">
+</head>
+<body class="sub">
+<canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
+<main class="page">
+  <div class="ph">
+    <div><div class="eyebrow">Stock gap</div><h1 class="disp">The market closed.<br><span class="acc">The chain did not.</span></h1></div>
+    <div class="side">
+      <div class="stub stat"><div class="in"><div class="cap"><b>US market</b><span id="s-when">···</span></div><div class="v sm" id="s-state">···</div><small id="s-note">reading the stock prices…</small></div></div>
+    </div>
+  </div>
+  <div class="stub n"><div class="in">
+    <div class="cap"><b>Stock tokens on Robinhood Chain</b><span id="s-read">refreshes every 30 seconds</span></div>
+    <div class="dep slist" id="s-list"><div class="r h"><span>STOCK</span><span>ON CHAIN</span><span>LATEST TRADE</span><span>GAP</span><span>LAST CLOSE</span><span>VS CLOSE</span><span>POOL</span></div></div>
+  </div></div>
+  <p class="note" style="margin-top:14px">On chain: the last swap in the token's deepest pool (DexScreener). Latest trade and last close: Yahoo Finance's public feed, pre-market and after-hours included, which can lag by a few minutes. A gap is the chain's price over the stock's, minus one. A thin pool can sit away from the stock for a long time, and a token may not track one share exactly. Not advice.</p>
+</main>
+<footer class="foot"></footer>
+<script type="module" src="/assets/stocks.js"></script>
+</body>
+</html>

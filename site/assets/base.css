@@ -758,3 +758,56 @@ html.entering #hud, html.entering .top { animation: arrive 1.5s .7s both; }
 .tl li { display: grid; grid-template-columns: 160px 150px 1fr; gap: 16px; padding: 10px 0; font-size: 15px; background: linear-gradient(90deg, rgba(237,235,230,.35), rgba(237,235,230,.03)) top / 100% 1px no-repeat; }
 .tl time { font-family: var(--mono); font-size: 12px; color: var(--dim); } .tl b { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; } .tl span { color: #c9c7c2; }
 @media (max-width: 900px) { .tl li { grid-template-columns: 1fr; gap: 4px; } }
+
+/* ---------- Exit Door ---------- */
+.sizes { display: flex; align-items: center; gap: 6px; margin-top: 10px; flex-wrap: wrap; font-family: var(--mono); font-size: 11px; letter-spacing: .14em; color: var(--dim); }
+.sizes span { margin-right: 6px; }
+.sizes button { background: rgba(6, 7, 8, .85); border: 0; box-shadow: inset 0 0 0 1px var(--hair); padding: 8px 12px; font: 700 12px var(--mono); color: var(--mut); cursor: pointer; }
+.sizes button.on { color: var(--bg); background: var(--ink); box-shadow: none; }
+.sizes input { width: 90px; background: rgba(6, 7, 8, .85); border: 0; box-shadow: inset 0 0 0 1px var(--hair); padding: 8px 10px; font: 700 12px var(--mono); outline: 0; }
+.door-hero .in, .hand-hero .in { padding-bottom: 30px; }
+.door-big { display: flex; align-items: baseline; gap: 26px; flex-wrap: wrap; margin: 18px 0 8px; font-family: var(--disp); font-weight: 900; line-height: .86; }
+.door-big span { font-size: min(13vw, 150px); color: var(--mut); }
+.door-big i { font-style: normal; font-size: min(8vw, 90px); color: var(--dim); }
+.door-big b { font-size: min(13vw, 150px); }
+.door-big b.short, .stat .v.short, .dep .short { color: var(--short); }
+.door-line, .hand-line { font-size: 18px; line-height: 1.5; color: #cfcdc8; max-width: 70ch; }
+.doorlist .dr { display: grid; grid-template-columns: minmax(220px, 1.3fr) 1fr 120px; gap: 18px; align-items: center; padding: 14px 0; background: linear-gradient(90deg, rgba(237, 235, 230, .5), rgba(237, 235, 230, .03)) top / 100% 1px no-repeat; }
+.doorlist .dl b { display: block; font-size: 16px; } .doorlist .dl small { color: var(--mut); font: 400 11.5px/1.5 var(--mono); }
+.doorlist .db { height: 10px; background: rgba(237, 235, 230, .06); } .doorlist .db i { display: block; height: 100%; background: var(--long); box-shadow: 0 0 12px rgba(46, 211, 160, .4); }
+.doorlist .dr.warn .db i { background: var(--warn); box-shadow: none; } .doorlist .dr.bad .db i { background: var(--short); box-shadow: 0 0 12px rgba(255, 77, 94, .4); }
+.doorlist .dv { text-align: right; font: 900 30px/1 var(--disp); } .doorlist .dv small { display: block; font: 400 11px var(--mono); color: var(--mut); margin-top: 4px; }
+.doorlist .dr.bad .dv { color: var(--short); }
+/* ---------- Same Hand ---------- */
+.hand-hero .cap b { font-size: min(9vw, 44px); }
+.trail { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.trail .tn { flex: 1 1 220px; padding: 14px 16px; background: rgba(237, 235, 230, .05); box-shadow: inset 2px 0 0 var(--ink); display: flex; flex-direction: column; gap: 4px; font-family: var(--mono); }
+.trail .tn.end { box-shadow: inset 2px 0 0 var(--dim); }
+.trail .tn small { font-size: 10px; letter-spacing: .18em; color: var(--dim); } .trail .tn a { font: 900 28px/1 var(--disp); color: var(--ink); }
+.trail .tn span { font-size: 12px; color: var(--mut); } .trail .tn i { font-style: normal; font-size: 11px; color: var(--dim); }
+.trail .ar { align-self: center; color: var(--dim); font-size: 20px; }
+.hlist .r { grid-template-columns: 64px minmax(140px, 1.4fr) minmax(160px, 1.2fr) 110px 30px; }
+/* ---------- Stock gap ---------- */
+.slist .r { grid-template-columns: minmax(150px, 1.4fr) 110px 150px 100px 110px 100px 90px; }
+.slist .r small { display: block; color: var(--dim); font-size: 10.5px; } .slist .sy small { display: inline; }
+.slist .r b { font-weight: 700; }
+@media (max-width: 1000px) {
+  .doorlist .dr { grid-template-columns: 1fr 96px; } .doorlist .db { grid-column: 1 / -1; order: 3; }
+  .hlist .r { grid-template-columns: 52px 1fr 90px; } .hlist .r > * { display: none; } .hlist .r > :nth-child(1), .hlist .r > :nth-child(2), .hlist .r > :nth-child(4) { display: block; }
+  .slist .r { grid-template-columns: 1fr 96px 84px; } .slist .r > * { display: none; } .slist .r > :nth-child(1), .slist .r > :nth-child(2), .slist .r > :nth-child(4) { display: block; }
+  .trail .ar { transform: rotate(90deg); flex-basis: 100%; text-align: center; }
+}/* ---------- the ticket's Exit Door and Lookalikes ---------- */
+.tkx { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.tkx[hidden] { display: none; }
+.door-big.sm { margin: 12px 0 10px; gap: 16px; } .door-big.sm span, .door-big.sm b { font-size: 64px; } .door-big.sm i { font-size: 40px; }
+.lk-big { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin: 12px 0 10px; } .lk-big b { font: 900 64px/.86 var(--disp); } .lk-big b.short { color: var(--short); } .lk-big span { font: 700 11px var(--mono); letter-spacing: .16em; color: var(--mut); }
+.lk-row { display: flex; gap: 18px; flex-wrap: wrap; font: 400 11px var(--mono); letter-spacing: .1em; color: var(--mut); text-transform: uppercase; } .lk-row b { display: block; font: 900 26px/1.1 var(--disp); color: var(--ink); letter-spacing: 0; } .lk-row b.short { color: var(--short); } .lk-row b.long { color: var(--long); }
+.lk-list { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; } .lk-list a { font: 700 12px var(--mono); padding: 6px 10px; box-shadow: inset 0 0 0 1px var(--hair); display: flex; gap: 8px; } .lk-list b.short { color: var(--short); } .lk-list b.long { color: var(--long); }
+@media (max-width: 1000px) { .tkx { grid-template-columns: 1fr; } .door-big.sm span, .door-big.sm b, .lk-big b { font-size: 52px; } }/* ---------- the tools page ---------- */
+.tools { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; max-width: 1400px; }
+.tool .in { display: flex; flex-direction: column; gap: 10px; height: 100%; padding-bottom: 22px; }
+.tool .cap span { color: var(--long); }
+.tool h2 { font: 900 38px/.95 var(--disp); text-transform: uppercase; margin-top: 6px; }
+.tool p { color: #c9c7c2; font-size: 15.5px; line-height: 1.55; flex: 1; }
+.tool i { font: 700 11px var(--mono); letter-spacing: .14em; text-transform: uppercase; font-style: normal; color: var(--ink); }
+@media (max-width: 480px) { .top nav a:nth-child(6) { display: none; } }

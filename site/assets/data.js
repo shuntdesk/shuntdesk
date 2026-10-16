@@ -44,6 +44,8 @@ export async function rpc(method, params = []) {
   throw err;
 }
 export const blockNumber = async () => parseInt(await rpc('eth_blockNumber'), 16);
+// Blockscout's v2 API, path after /api/v2, kept for five minutes
+export const blockscout = path => getJSON(BS + path, 300, 8000);
 
 const ZERO = '0x0000000000000000000000000000000000000000', DEAD = '0x000000000000000000000000000000000000dead';
 export const isAddr = a => /^0x[0-9a-fA-F]{40}$/.test((a || '').trim());
@@ -262,7 +264,7 @@ export async function scan(address, onStep = () => {}) {
     const top10 = eoa.slice(0, 10).reduce((s, h) => s + h.share, 0), inContracts = holders.filter(h => h.c).reduce((s, h) => s + h.share, 0);
     res.holderSrc = src;
     const st = top10 > 50 ? 'bad' : top10 > 25 || count < 25 ? 'warn' : 'ok';
-    res.holders = count; res.top10 = top10;
+    res.holders = count; res.top10 = top10; res.topShares = eoa.slice(0, 10).map(h => Math.round(h.share * 1000) / 1000);
     // who provides the liquidity. Shown, not scored: on this chain positions are NFTs that are almost never
     // locked, for good tokens and bad ones alike, so "unlocked" says nothing by itself.
     const lps = (await pGp)?.lp_holders, lpFacts = [];
@@ -311,7 +313,7 @@ export async function scan(address, onStep = () => {}) {
     const big = multi[0], devShare = creator ? (holders.find(h => h.a === creator)?.share || 0) : 0;
     let st = big && big.share > 15 ? 'bad' : big && big.share > 5 || devShare > 10 ? 'warn' : 'ok';
     let cost = big && big.share > 15 ? 28 : big && big.share > 5 ? 12 : devShare > 10 ? 10 : 0;
-    res.group = big || null;
+    res.group = big || null; res.devShare = devShare;
     // who bought at launch: wallets in the first blocks (snipers), wallets buying together in one transaction (bundles)
     const L = await pLaunch, lf = [], said = [];
     if (L && L.ok && L.launchpad) {
@@ -341,6 +343,7 @@ export async function scan(address, onStep = () => {}) {
     const gpOwner = gp?.owner_address ? gp.owner_address.toLowerCase() : null;
     const owner = ownerRaw && ownerRaw.length >= 66 ? '0x' + ownerRaw.slice(-40) : gpOwner, ownerLive = !!owner && owner !== ZERO && owner !== DEAD;
     const sell = tax('sell_tax'), buy = tax('buy_tax');
+    res.sellTax = sell; res.buyTax = buy; res.noSell = on('is_honeypot') || on('cannot_sell_all');
     // each finding: [shown when true, points off, hard flag]
     const found = [
       [on('is_honeypot'), 'a sell that fails in simulation (honeypot)', 60, 1], [on('cannot_sell_all'), 'a block on selling everything', 30, 1],

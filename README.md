@@ -129,6 +129,15 @@ V2 factory log directly.
   model for Pons launches served on [Surplus](https://surplusllm.com), gives its own read beside the
   verdict. Shuntdesk does not check its figures, and the verdict never uses it.
 
+## Tools
+
+| Tool | Answers |
+| --- | --- |
+| [Exit Door](https://shuntdesk.com/exit/) | what a buy of a given size gets back, straight away and if the biggest wallets sell first |
+| [Same Hand](https://shuntdesk.com/hand/) | the money behind a launch, and every Pons launch by the wallets on that trail |
+| Lookalikes (on every ticket) | how tokens that looked like this one an hour after launch went a day later |
+| [Stock gap](https://shuntdesk.com/stocks/) | stock tokens on chain against the stock itself, nights and weekends included |
+
 ## The Yard
 
 The full guide (controls, shifts, work, the armory, events, missions) is in the [docs](https://shuntdesk.com/docs/#the-yard).

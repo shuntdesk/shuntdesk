@@ -3,6 +3,7 @@ import { mountChrome, $, $$, flap, esc, feedYard } from './ui.js';
 import { scan, cachedScan, recentScans, newPools, isAddr, compact, sig, fmtAge, ageShort, EXPLORER, api } from './data.js';
 import { saveCard, postUrl } from './share.js';
 import { mountWatch, watch, unwatch, watching } from './watch.js';
+import { exitDoor } from './door.js';
 
 mountChrome('Ticket');
 const paintWatch = mountWatch(document.getElementById('watch'));
@@ -45,10 +46,10 @@ function paintCard(res, done) {
   shown = res;
   const live = res.verdict !== 'NO POOL';
   $('#t-crew').textContent = !live || !res.crew ? '' : 'CREW DESK: ' + ({ offline: 'NOT ANSWERING', 'no answer': 'NO ANSWER YET' }[res.crew] || res.crew.toUpperCase());
-  second(res);
+  second(res); extras(res);
   $('#t-acts').innerHTML = (live ? `<a class="btn ${res.platform === 'short' ? 'r' : res.platform === 'long' ? 'g' : ''}" href="/desk/?a=${res.addr}">Trade it on paper →</a><button class="btn ghost" data-do="ask">Ask the conductor</button>` : '')
     + `<button class="btn ghost" data-do="card">Save the card</button><button class="btn ghost" data-do="x">Post on X</button><button class="btn ghost" data-do="link">Copy link</button><a class="btn ghost" href="${EXPLORER}/token/${res.addr}" target="_blank" rel="noopener">Explorer ↗</a>`
-    + (live ? `<button class="btn ghost" data-do="watch">${watching(res.addr) ? 'Watching' : 'Watch'}</button><a class="btn ghost" href="/deployer/?t=${res.addr}">Deployer record</a><a class="btn ghost" href="/replay/?a=${res.addr}">Replay</a>` : '');
+    + (live ? `<button class="btn ghost" data-do="watch">${watching(res.addr) ? 'Watching' : 'Watch'}</button><a class="btn ghost" href="/hand/?a=${res.addr}">Same Hand</a><a class="btn ghost" href="/deployer/?t=${res.addr}">Deployer record</a><a class="btn ghost" href="/replay/?a=${res.addr}">Replay</a>` : '');
 }
 // the conductor puts the verdict in plain words, typed out
 let shown = null, typing = 0;
@@ -79,7 +80,7 @@ async function ride(addr, fresh) {
   history.replaceState(null, '', '?a=' + addr);
   $('#a').value = addr; $('#tk').hidden = false;
   stops.forEach(n => { n.dataset.s = 'pending'; $('.tag', n).textContent = ''; $('.tag', n).className = 'tag'; $('p', n).textContent = ''; $('.fx', n).innerHTML = ''; });
-  $('#t-stamp').classList.remove('in'); $('#t-acts').innerHTML = ''; $('#t-zone').textContent = ''; $('#t-crew').textContent = ''; $('#cond').hidden = true; typing++;
+  $('#t-stamp').classList.remove('in'); $('#t-acts').innerHTML = ''; $('#tkx').hidden = true; $('#t-zone').textContent = ''; $('#t-crew').textContent = ''; $('#cond').hidden = true; typing++;
   $('#t-plat').className = 'plat'; $('#t-plat').firstElementChild.textContent = 'On the line'; $('#card').className = 'stub tkstub';
   paintCard({ addr }, false); moveCar(0);
   const cached = fresh ? null : cachedScan(addr);
@@ -146,4 +147,32 @@ async function second(res) {
   if (!r || !r.ok) { $('#sec-text').textContent = 'ChargeAI is not answering right now' + (r?.why ? ` (${r.why})` : '') + '.'; return; }
   $('#sec-text').textContent = r.text;
   $('#sec-by').textContent = `${r.model} via ${r.via}, read at ${new Date(r.t).toTimeString().slice(0, 5)}`;
+}
+// Exit Door and Lookalikes, under the verdict: what $500 gets back, and how tokens that looked like this one went
+const usd = v => v >= 100 ? '$' + Math.round(v).toLocaleString('en-US') : '$' + v.toFixed(2);
+const mv = v => v == null ? '···' : (v >= 0 ? '+' : '') + Math.round(v * 100) + '%';
+let extrasFor = '';
+async function extras(res) {
+  const box = $('#tkx');
+  if (res.verdict === 'NO POOL') { box.hidden = true; return; }
+  box.hidden = false;
+  const d = exitDoor(res, 500), top = d?.firsts.find(f => f.key === 'top10');
+  $('#dx').innerHTML = !d ? '<p class="note">No pool to sell into.</p>' : `<div class="door-big sm"><span>$500</span><i>→</i><b class="${d.now < 400 ? 'short' : ''}">${usd(d.now)}</b></div>
+    <p class="note" style="margin:0">${d.noSell ? 'A SELL FAILS IN SIMULATION: NOTHING COMES BACK.' : top ? `IF THE TEN LARGEST WALLETS SELL FIRST: ${usd(top.back)}` : 'THE HOLDER LIST COULD NOT BE READ'}</p>`;
+  $('#dx-a').href = `/exit/?a=${res.addr}&usd=500`;
+  if (extrasFor === res.addr) return; extrasFor = res.addr;
+  const lk = $('#lk'); lk.innerHTML = '<p class="note">READING THE LOG…</p>';
+  let r = null; try { r = await api('looks?a=' + res.addr); } catch (e) {}
+  if (extrasFor !== res.addr) return;
+  if (!r || !r.ok) { lk.innerHTML = `<p class="note">${esc((r?.why || 'not answering right now').toUpperCase())}.</p>`; return; }
+  const day = r.after24h, hr = r.after1h;
+  const at = iso => new Date(iso).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' }).toUpperCase();
+  if (!r.base.judged) { lk.innerHTML = `<p class="note">THE LOG STARTED ${r.base.since ? at(r.base.since) : 'JUST NOW'} AND HOLDS ${r.base.logged.toLocaleString('en-US')} TOKENS. THEIR FIRST RESULTS, AN HOUR ON, COME IN AROUND ${r.base.firstHour ? at(r.base.firstHour) : 'THE NEXT HOUR'}; A DAY ON, AROUND ${r.base.firstDay ? at(r.base.firstDay) : 'TOMORROW'}.</p>`; return; }
+  if (!r.matches || (!day && !hr)) { lk.innerHTML = `<p class="note">NO CLOSE MATCH YET IN ${r.base.judged.toLocaleString('en-US')} TOKENS WITH A KNOWN RESULT. THE LOG GROWS EVERY HOUR.</p>`; return; }
+  const s = day || hr, when = day ? 'A DAY LATER' : 'AN HOUR LATER';
+  lk.innerHTML = `<div class="lk-big"><b class="${s.fell50 / s.n >= 0.5 ? 'short' : ''}">${s.fell50} of ${s.n}</b><span>FELL MORE THAN HALF ${when}</span></div>
+    <div class="lk-row"><span>Median ${day ? 'a day' : 'an hour'} later<b class="${s.median < 0 ? 'short' : 'long'}">${mv(s.median)}</b></span><span>Rose over 10%<b>${s.rose}</b></span>${day ? `<span>Pool drained<b>${day.drained}</b></span>` : ''}</div>
+    <div class="lk-list">${r.closest.slice(0, 4).map(c => `<a href="/replay/?a=${c.token}">${esc(c.symbol || c.token.slice(0, 8))}<b class="${(c.move24h ?? c.move1h) < 0 ? 'short' : 'long'}">${mv(c.move24h ?? c.move1h)}</b></a>`).join('')}</div>
+    <p class="note" style="margin:8px 0 0">${!day && r.base.firstDay ? `RESULTS A DAY ON START AROUND ${at(r.base.firstDay)}. ` : ''}${r.ageMin != null && r.ageMin > 360 ? 'THIS TOKEN IS OLDER THAN THE ONES IT IS SET AGAINST, WHICH WERE READ 30 TO 90 MINUTES AFTER LAUNCH. ' : ''}PAST RESULTS OF OTHER TOKENS, NOT A FORECAST.</p>`;
+  $('#lk-by').textContent = `${r.matches} closest of ${r.base.judged.toLocaleString('en-US')} tokens logged since ${new Date(r.base.since).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
 }

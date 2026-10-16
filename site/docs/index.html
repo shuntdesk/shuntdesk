@@ -41,7 +41,7 @@
       <h5>Pons</h5>
       <a href="#pons">Graduations and deployers</a><a href="#second-read">The second read</a>
       <h5>Tools</h5>
-      <a href="#watch">Watchlist and alerts</a><a href="#report">Daily report</a><a href="#replay">Rug replay</a>
+      <a href="#exit-door">Exit Door</a><a href="#same-hand">Same Hand</a><a href="#lookalikes">Lookalikes</a><a href="#stock-gap">Stock gap</a><a href="#watch">Watchlist and alerts</a><a href="#report">Daily report</a><a href="#replay">Rug replay</a>
       <h5>The Yard</h5>
       <a href="#the-yard">What it is</a><a href="#controls">Controls</a><a href="#shifts">Shifts</a><a href="#city">The city</a><a href="#money">Work, cash and energy</a><a href="#talk">Talking to people</a><a href="#risky">The RISKY and the armory</a><a href="#events">Events</a><a href="#progress">Missions and rank</a><a href="#yard-board">Leaderboard</a><a href="#save">Your save</a>
       <h5>Community</h5>
@@ -59,7 +59,7 @@
 <p>Shuntdesk is a token scanner for Robinhood Chain (chain id 4663) that bets on its own calls. Paste any token and seven fixed-rule checks read public chain data and give one verdict: <b>CLEAN</b>, <b>RISKY</b> or <b>DANGER</b>, scored out of 100, with every lost point explained.</p>
 <p>A public paper desk, the crew, then puts simulated money behind the verdicts it can confirm. Every call is priced again an hour and a day later, and the record of what held and what did not is public, published once a day as open data.</p>
 <pre class="flow">token → seven checks → one verdict → the crew bets on paper → priced after 1h and 24h → the open record</pre>
-<p>Around that core sit a paper desk of your own, a graduation desk for Pons launches, deployer records, a watchlist with phone alerts, rug replays, a Telegram bot, a read-only API for agents, and The Yard: a browser game where real past calls arrive as trains.</p>
+<p>Around that core sit the tools: Exit Door (what a buy gets back on the way out), Same Hand (the money behind a launch), Lookalikes (how tokens that looked like this one went) and Stock gap (stock tokens against the stock). Then a paper desk of your own, a graduation desk for Pons launches, deployer records, a watchlist with phone alerts, rug replays, a Telegram bot, a read-only API for agents, and The Yard: a browser game where real past calls arrive as trains.</p>
 </section>
 
 <section id="quick-start"><h2>Quick start</h2>
@@ -160,8 +160,35 @@
 <p>For tokens launched on Pons, the ticket also shows a reading by ChargeAI, a separate open model for Pons launches served on Surplus. Only the token's public figures are sent. It is another model's opinion: Shuntdesk does not check its figures, and the verdict never uses it.</p>
 </section>
 
+<section id="exit-door"><h2>Exit Door</h2>
+<p><a href="/exit/">/exit/</a> answers the question a chart does not: if you buy this much, how much comes back when you sell? Pick a size and Exit Door works it through the pool's own depth, the token's buy and sell tax, and a 0.3% swap fee, then again with others selling before you:</p>
+<ul>
+<li>nobody sells first: your own round trip;</li>
+<li>the developer sells first;</li>
+<li>the largest group of top wallets that share a funder sells first;</li>
+<li>the launch snipers and bundles sell first;</li>
+<li>the ten largest wallets sell first.</li>
+</ul>
+<p>A sell that fails in simulation gives back nothing. The pool is treated as one constant-product pool holding its quoted liquidity; concentrated pools can be deeper near the price and thinner away from it, so the figures are an estimate of size, not a quote. Every ticket shows the $500 case under its verdict.</p>
+</section>
+
+<section id="same-hand"><h2>Same Hand</h2>
+<p><a href="/hand/">/hand/</a> follows the money behind a launch. It finds the launcher in the Pons log, follows the launcher's first funds back two steps, collects every other wallet those funders paid, and lists every token any of them launched on Pons with how its pool stands today. A launch is called <b>SAME HAND</b> when the trail leads to earlier launches, and <b>MOSTLY DEAD</b> when most of those pools now hold under $1K.</p>
+<p>A wallet with a hundred or more outgoing transfers is treated as an exchange, a bridge or a bot, and the trail stops there; so does a contract. Shared funding is a link, not proof that one person is behind every launch.</p>
+<p>Every fresh Pons graduation is also run through Same Hand on the server. When the trail leads to at least two earlier launches and some are dead, the <a href="https://t.me/shuntdesk" target="_blank" rel="noopener">Telegram group</a> gets an alert, at most six a day.</p>
+</section>
+
+<section id="lookalikes"><h2>Lookalikes</h2>
+<p>Every hour the server logs each new token on the chain with 25 holders or more as it stands 30 to 90 minutes after launch: liquidity, holders, the ten largest wallets' share, snipers, bundles, insiders, the developer's share and the launchpad (read from Codex). An hour and a day later it reads the same tokens again.</p>
+<p>Every ticket sets its token against that log, picks the closest ones, and shows what happened to them: how many fell more than half a day later, the median move, how many rose, and how many had their pool drained. The log started on 16 October 2026 and keeps about six days. These are past results of other tokens, not a forecast. JSON: <code>GET /api/v1/lookalikes?a=0x…</code>.</p>
+</section>
+
+<section id="stock-gap"><h2>Stock gap</h2>
+<p><a href="/stocks/">/stocks/</a> sets each stock token on Robinhood Chain against the stock itself: the chain's last swap against the stock's latest trade (pre-market and after-hours included) and against its last regular close. When the US market is shut, the chain keeps trading, and the gap shows where it has moved. Chain prices come from DexScreener; stock prices from Yahoo Finance's public feed, which can lag by a few minutes. A thin pool can sit away from the stock for a long time.</p>
+</section>
+
 <section id="watch"><h2>Watchlist and alerts</h2>
-<p>Watch a token from its ticket. Allow notifications and the server prices your watched tokens every 15 minutes, and sends an alert to your phone or computer when the price or the liquidity moves sharply since you started watching, even with no Shuntdesk tab open.</p>
+<p>Watch a token from its ticket. Allow notifications and the server prices your watched tokens every 30 minutes, and sends an alert to your phone or computer when the price or the liquidity moves sharply since you started watching, even with no Shuntdesk tab open.</p>
 </section>
 
 <section id="report"><h2>Daily report</h2>
@@ -309,6 +336,8 @@
 <tr><td><code>GET /api/play</code></td><td>past calls with their later price, as The Yard uses them</td></tr>
 <tr><td><code>GET /api/daily</code></td><td>today's daily shift</td></tr>
 <tr><td><code>GET /api/yard</code></td><td>this week's Yard leaderboard</td></tr>
+<tr><td><code>GET /api/v1/lookalikes?a=0x…</code></td><td>the closest tokens in the Lookalikes log, and how they went an hour and a day later</td></tr>
+<tr><td><code>GET /api/v1/stocks</code></td><td>the stocks behind the stock tokens: latest trade, last close, session</td></tr>
 </tbody></table></div>
 <pre><code>curl -s "https://shuntdesk.com/api/v1/token?a=0x7e517e779b85895894becad80c9bb69b4cb1c4d6"</code></pre>
 <p><code>verdict</code> is <code>null</code> until someone runs the checks. The checks run in a browser, so the answer carries a <code>fullCheck</code> link that runs them. When you quote a verdict, say it is a rule-based reading that can be wrong, and link the ticket.</p>
@@ -328,10 +357,11 @@
 <tbody>
 <tr><td>Robinhood Chain RPC</td><td>pool state, swaps, contract code, the Pons factory log</td></tr>
 <tr><td>DexScreener · GeckoTerminal</td><td>pools, prices, new and trending lists</td></tr>
-<tr><td>Blockscout</td><td>holders, funders, deployers</td></tr>
+<tr><td>Blockscout</td><td>holders, funders, deployers, the Same Hand money trail</td></tr>
 <tr><td>GoPlus</td><td>sell simulation, taxes, owner powers, holder list</td></tr>
-<tr><td>Codex</td><td>launch facts (snipers, bundles, insiders), young-pool candles</td></tr>
+<tr><td>Codex</td><td>launch facts (snipers, bundles, insiders), young-pool candles, the Lookalikes log</td></tr>
 <tr><td>CoinGecko</td><td>new and trending pools for the server</td></tr>
+<tr><td>Yahoo Finance</td><td>the stocks behind the stock tokens, for Stock gap</td></tr>
 <tr><td>Binance</td><td>majors, tick by tick</td></tr>
 <tr><td>Surplus</td><td>the conductor and ChargeAI's second read</td></tr>
 <tr><td>Hugging Face</td><td>the daily open record</td></tr>

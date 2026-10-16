@@ -56,4 +56,16 @@ test('Telegram in a group: quiet unless spoken to, and /id gives the chat id', a
 test('Telegram: the webhook refuses a wrong secret', async () => {
   const r = await worker.fetch(new Request('http://x/api/tg', { method: 'POST', headers: { 'x-telegram-bot-api-secret-token': 'nope' }, body: '{"message":{"chat":{"id":1},"text":"/start"}}' }), { ...env, TELEGRAM_SECRET: 'right' });
   assert.equal(r.status, 403);
+});test('Exit Door: a round trip loses only the swap fees; a failed sell gives nothing back; big sellers first leave less', async () => {
+  const { exitDoor } = await import('../site/assets/door.js');
+  const t = { price: 0.001, liq: 100000, fdv: 1000000, buyTax: 0, sellTax: 0, topShares: [10, 5, 5], group: { share: 8 } };
+  const d = exitDoor(t, 100);
+  assert.ok(d.now > 99 && d.now < 100);
+  const top = d.firsts.find(f => f.key === 'top10'), grp = d.firsts.find(f => f.key === 'group');
+  assert.ok(top.back < grp.back && grp.back < d.now);
+  assert.equal(exitDoor({ ...t, noSell: true }, 100).now, 0);
+  assert.equal(exitDoor({ ...t, liq: 0 }, 100), null);
+});
+test('Lookalikes and the money trail answer a bad address with 400', async () => {
+  for (const p of ['looks?a=nope', 'hand?w=nope', 'hand/launches?w=nope']) { const [s] = await call(p); assert.equal(s, 400); }
 });

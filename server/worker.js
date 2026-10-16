@@ -11,6 +11,7 @@
 // ticket can still be wrong about wallet groups. Paper money only, 4% of equity per position, one
 // position per token, rate-limited per address.
 import { FEE, MAX_IMPACT, impact, fill, value } from '../site/assets/trade.js';
+import { sameHand } from '../site/assets/hand.js';
 
 const DS = 'https://api.dexscreener.com';
 // some data services turn away requests that do not say who is asking
@@ -411,7 +412,7 @@ async function replay(st, env, addr) {
   const to = Math.floor(now / 1000), from = Math.max(to - 30 * 86400, ev.launch ? Math.floor(ev.launch.t / 1000) - 600 : to - 30 * 86400), span = to - from;
   const res = span <= 2 * 86400 ? '5' : span <= 7 * 86400 ? '15' : span <= 20 * 86400 ? '60' : '240';
   let bars = [];
-  try {
+  if (await codexOk(env, 'replay')) try {
     const q = `{ getBars(symbol: "${addr}:4663", from: ${from}, to: ${to}, resolution: "${res}", removeLeadingNullValues: true) { t o h l c v } }`;
     const r = await fetch('https://graph.codex.io/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: env.CODEX_API_KEY }, body: JSON.stringify({ query: q }) });
     const b = (await r.json()).data?.getBars;
@@ -515,7 +516,7 @@ function dailyShift(st, body) {
 }
 
 // ---------- phone alerts: Web Push for watched tokens, sent even when no Shuntdesk tab is open ----------
-// A browser subscribes with the site's VAPID key and names the tokens it watches. Every 15 minutes the server prices
+// A browser subscribes with the site's VAPID key and names the tokens it watches. Every 30 minutes the server prices
 // them all in one Codex read and compares with the price and liquidity it saw first. A move of 30% or more queues a
 // message and wakes the browser with an empty push; the service worker then fetches the message from the inbox.
 // No payload is sent, so nothing has to be encrypted, and the push service only ever sees that something changed.
@@ -548,10 +549,11 @@ function pushSubscribe(st, b) {
 }
 async function pushTick(st, env) {
   const P = st.push; if (!P || !env.VAPID_PRIVATE || !env.CODEX_API_KEY) return;
-  const now = Date.now(); if (now - (st.pushT || 0) < 15 * 60000) return; st.pushT = now;
+  const now = Date.now(); if (now - (st.pushT || 0) < 30 * 60000) return; st.pushT = now;
   const all = [...new Set(Object.values(P).flatMap(s => s.tokens.map(t => t.addr)))].slice(0, 200); if (!all.length) return;
   const px = {};
   for (let i = 0; i < all.length; i += 25) {
+    if (!(await codexOk(env, 'push'))) break;
     const q = `{ filterTokens(tokens: [${all.slice(i, i + 25).map(a => `"${a}:4663"`).join(',')}], limit: 25) { results { priceUSD liquidity token { address } } } }`;
     try { const r = await fetch('https://graph.codex.io/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: env.CODEX_API_KEY }, body: JSON.stringify({ query: q }) }); for (const x of (await r.json()).data?.filterTokens?.results || []) px[x.token.address.toLowerCase()] = { p: Number(x.priceUSD) || 0, l: Number(x.liquidity) || 0 }; } catch (e) {}
   }
@@ -646,6 +648,8 @@ async function agentData(st, env, p, a) {
   if (p === 'desk') return [200, { paper: true, start: START, equity: Math.round(equity(st) * 100) / 100, cash: Math.round(st.cash * 100) / 100, open: st.pos.map(x => ({ token: x.addr, symbol: x.sym, side: x.side, leverage: x.lev, entry: x.entry, mark: x.mark || x.entry, net: Math.round(worth(x).net * 100) / 100 })), closed: st.hist.slice(0, 20).map(h => ({ token: h.addr, symbol: h.sym, side: h.side, leverage: h.lev, entry: h.entry, exit: h.exit, pnl: Math.round(h.pnl * 100) / 100, why: h.why, postMortem: h.note?.text || null, at: new Date(h.t).toISOString() })) }];
   if (p === 'graduated') return [200, { launchpad: 'pons', tokens: (st.grads?.rows || []).map(r => ({ token: r.token, at: new Date(r.t).toISOString() })) }];
   if (p === 'report') { const r = report(st); r.note = await reportNote(st, env, r); return [200, r]; }
+  if (p === 'lookalikes') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a token address on Robinhood Chain' }]; return [200, await lookalikes(env, a)]; }
+  if (p === 'stocks') return [200, await stockRefs()];
   return [404, { error: 'unknown endpoint', see: 'https://shuntdesk.com/llms.txt' }];
 }
 
@@ -704,14 +708,25 @@ async function agentToken(st, env, addr) {
 
 // Candles from Codex, for pools too young for the free feed. The key stays here; answers are shared
 // between visitors for a minute, and a daily ceiling keeps the free allowance (10,000 a month) intact.
-const bars = new Map(); let codexDay = { day: '', n: 0 };
+// ---------- Codex: one daily allowance for every feature ----------
+// The free plan is 10,000 calls a month, about 330 a day. Each feature has its own share of a 320-call day, so a
+// busy page can never use up what the Lookalikes log and the alerts need. The counts live in the desk's state,
+// so a restart of the server does not hand the day out a second time.
+const CODEX_SHARE = { looks: 80, launch: 90, candles: 60, replay: 40, push: 50 };
+async function codexOk(env, kind) {
+  if (!env.CODEX_API_KEY) return false;
+  const st = await load(env), day = new Date().toISOString().slice(0, 10);
+  if (st.codex?.day !== day) st.codex = { day, n: {} };
+  const n = st.codex.n[kind] || 0; if (n >= CODEX_SHARE[kind]) return false;
+  st.codex.n[kind] = n + 1; return true;
+}
+const bars = new Map();
 async function candles(env, addr) {
   const hit = bars.get(addr), now = Date.now();
   if (hit && now - hit.t < 60000) return hit.v;
-  const day = new Date().toISOString().slice(0, 10); if (codexDay.day !== day) codexDay = { day, n: 0 };
-  if (!env.CODEX_API_KEY || codexDay.n >= 300) return { rows: [], res: 1 };
+  if (!env.CODEX_API_KEY) return { rows: [], res: 1 };
   const ask = async (res, secs) => {
-    codexDay.n++;
+    if (!(await codexOk(env, 'candles'))) return [];
     const to = Math.floor(now / 1000), q = `{ getBars(symbol: "${addr}:4663", from: ${to - secs}, to: ${to}, resolution: "${res}", removeLeadingNullValues: true) { t o h l c } }`;
     const r = await fetch('https://graph.codex.io/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: env.CODEX_API_KEY }, body: JSON.stringify({ query: q }) });
     const b = (await r.json()).data?.getBars; if (!b) return [];
@@ -779,30 +794,206 @@ async function gradScan(st, env) {
   for (const l of logs.slice(-30)) {
     const token = wordAddr(l.topics[1]); if (g.rows.some(r => r.token === token)) continue;   // the graduation names the token itself
     let t = l.timeStamp ? parseInt(l.timeStamp, 16) * 1000 : 0; if (!t) try { t = parseInt((await rpc('eth_getBlockByNumber', [l.blockNumber, false])).timestamp, 16) * 1000; } catch (e) {}
-    if (isAddr(token)) g.rows.push({ token, block: parseInt(l.blockNumber, 16), t: t || now });
+    if (isAddr(token)) { g.rows.push({ token, block: parseInt(l.blockNumber, 16), t: t || now }); if (now - (t || now) < 30 * 60000) (st.handQ = st.handQ || []).push(token); }   // fresh ones go to Same Hand
   }
   g.block = to; g.rows = g.rows.sort((a, b) => b.block - a.block).slice(0, 40);
 }
 
 // Launch facts from Codex for launchpad tokens: snipers, bundles, insiders, the developer's share, curve progress.
 // Shared by every visitor for ten minutes, with its own daily ceiling inside the same free allowance.
-const launches = new Map(); let launchDay = { day: '', n: 0 };
+const launches = new Map();
 async function launch(env, addr) {
   const hit = launches.get(addr), now = Date.now();
-  if (hit && now - hit.t < 600000) return hit.v;
-  const day = new Date().toISOString().slice(0, 10); if (launchDay.day !== day) launchDay = { day, n: 0 };
-  if (!env.CODEX_API_KEY || launchDay.n >= 150) return { ok: false, why: 'not available right now' };
-  launchDay.n++;
+  if (hit && now - hit.t < 30 * 60000) return hit.v;
+  if (!(await codexOk(env, 'launch'))) return hit ? hit.v : { ok: false, why: 'not available right now' };
   let v = { ok: false, why: 'no answer' };
   try {
-    const q = `{ filterTokens(tokens: ["${addr}:4663"], limit: 1) { results { holders sniperCount sniperHeldPercentage bundlerCount bundlerHeldPercentage insiderCount insiderHeldPercentage devHeldPercentage token { launchpad { launchpadName graduationPercent completed completedAt } } } } }`;
+    const q = `{ filterTokens(tokens: ["${addr}:4663"], limit: 1) { results { priceUSD liquidity holders top10HoldersPercent createdAt sniperCount sniperHeldPercentage bundlerCount bundlerHeldPercentage insiderCount insiderHeldPercentage devHeldPercentage token { symbol launchpad { launchpadName graduationPercent completed completedAt } } } } }`;
     const r = await fetch('https://graph.codex.io/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: env.CODEX_API_KEY }, body: JSON.stringify({ query: q }) });
     const x = (await r.json()).data?.filterTokens?.results?.[0];
     if (x) { const lp = x.token?.launchpad; v = { ok: true, launchpad: lp?.launchpadName || null, progress: lp?.graduationPercent ?? null, graduated: lp ? !!lp.completed : null,
-      snipers: x.sniperCount, sniperPct: x.sniperHeldPercentage, bundlers: x.bundlerCount, bundlerPct: x.bundlerHeldPercentage, insiders: x.insiderCount, insiderPct: x.insiderHeldPercentage, devPct: x.devHeldPercentage }; }
+      snipers: x.sniperCount, sniperPct: x.sniperHeldPercentage, bundlers: x.bundlerCount, bundlerPct: x.bundlerHeldPercentage, insiders: x.insiderCount, insiderPct: x.insiderHeldPercentage, devPct: x.devHeldPercentage,
+      symbol: x.token?.symbol || null, price: Number(x.priceUSD) || 0, liquidity: Number(x.liquidity) || 0, holders: x.holders ?? null, top10Pct: x.top10HoldersPercent ?? null, created: x.createdAt ? x.createdAt * 1000 : null }; }
     else v = { ok: true, launchpad: null };
   } catch (e) {}
   launches.set(addr, { t: now, v }); if (launches.size > 400) launches.delete(launches.keys().next().value);
+  return v;
+}
+
+// ---------- Lookalikes: how tokens that looked like this one turned out ----------
+// Every hour the server reads from Codex every token on the chain that turned 30 to 90 minutes old in that
+// window with 25 holders or more, and keeps how it looked then: liquidity, holders, the ten largest wallets'
+// share, snipers, bundles, insiders, the developer's share, the launchpad. An hour and a day later it reads the
+// same tokens again. A token asked about is set against that log: the closest ones, and what happened to them.
+// The log lives under its own key, apart from the desk, and keeps the newest 6,000 tokens.
+const LOOKS = 'looks-v1', LOOK_MAX = 6000, CODEX = 'https://graph.codex.io/graphql';
+const LOOK_FIELDS = 'priceUSD liquidity holders top10HoldersPercent sniperHeldPercentage bundlerHeldPercentage insiderHeldPercentage devHeldPercentage createdAt token { address symbol launchpad { launchpadName completed } }';
+let looksMem = null;
+const looksLoad = async env => looksMem || (looksMem = await env.KV.get(LOOKS).then(s => s ? JSON.parse(s) : { rows: [], cur: 0, t: 0, day: '', n: 0 }));
+async function codexAsk(env, L, q) {
+  if (!(await codexOk(env, 'looks'))) throw new Error('daily Codex share used up');
+  const r = await fetch(CODEX, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: env.CODEX_API_KEY }, body: JSON.stringify({ query: q }) });
+  const j = await r.json(); if (j.errors?.length) throw new Error(String(j.errors[0].message).slice(0, 100));
+  return j.data?.filterTokens?.results || [];
+}
+const lookFeat = x => [Number(x.liquidity) || 0, x.holders | 0, Number(x.top10HoldersPercent) || 0, Number(x.sniperHeldPercentage) || 0, Number(x.bundlerHeldPercentage) || 0, Number(x.insiderHeldPercentage) || 0, Number(x.devHeldPercentage) || 0].map(v => Math.round(v * 100) / 100);
+// Three reads an hour whatever the traffic: the tokens born in one window, read as they are now, then the same
+// window an hour later and a day later. A window is one hour of launches; at most 200 come back per read.
+async function looksTick(env) {
+  if (!env.CODEX_API_KEY) return;
+  const L = await looksLoad(env), now = Date.now(); if (now - L.t < 60 * 60000) return; L.t = now;
+  const win = (lo, hi, holders) => codexAsk(env, L, `{ filterTokens(filters: { network: [4663], createdAt: { gt: ${lo}, lte: ${hi} }, holders: { gt: ${holders} } }, rankings: [{ attribute: holders, direction: DESC }], limit: 200) { results { ${LOOK_FIELDS} } } }`);
+  try {
+    // the newest window: from where the last read stopped to 30 minutes ago, at most three hours back (the very first
+    // read takes all three, so the log starts with a few hours of launches). Tokens with 25 holders or more: below
+    // that it is mostly test launches nobody bought.
+    const hi = Math.floor(now / 1000) - 1800, lo = Math.max(L.cur || hi - 3 * 3600, hi - 3 * 3600);
+    if (hi > lo) {
+      const have = new Set(L.rows.map(r => r.a));
+      for (const x of await win(lo, hi, 24)) {
+        const a = String(x.token?.address || '').toLowerCase(), p0 = Number(x.priceUSD) || 0; if (!isAddr(a) || !p0 || have.has(a)) continue;
+        L.rows.push({ a, s: word(x.token.symbol, 12), c: (x.createdAt || 0) * 1000, t: now, f: lookFeat(x), pad: word(x.token.launchpad?.launchpadName || '', 12), g: !!x.token.launchpad?.completed, p0, l0: Math.round(Number(x.liquidity) || 0) });
+      }
+      // follow-ups: the windows read an hour and a day ago, read again now. A token Codex no longer returns is
+      // left without a result rather than counted as gone.
+      for (const [k, back] of [['1', HOUR], ['24', 24 * HOUR]]) {
+        const rows = L.rows.filter(r => r['p' + k] === undefined && now - r.t >= back - 10 * 60000 && now - r.t < back + 3 * HOUR); if (!rows.length) continue;
+        const c0 = Math.min(...rows.map(r => r.c)) / 1000 - 1, c1 = Math.max(...rows.map(r => r.c)) / 1000;
+        const m = new Map((await win(Math.floor(c0), Math.ceil(c1), 4)).map(x => [String(x.token?.address || '').toLowerCase(), x]));
+        for (const r of rows) { const x = m.get(r.a); if (x) { r['p' + k] = Number(x.priceUSD) || 0; r['l' + k] = Math.round(Number(x.liquidity) || 0); } }
+      }
+      L.cur = hi;
+    }
+    L.rows = L.rows.filter(r => now - r.t < 60 * 24 * HOUR).slice(-LOOK_MAX); L.err = null;
+  } catch (e) { L.err = String(e.message || e).slice(0, 120); }
+  await env.KV.put(LOOKS, JSON.stringify(L));
+}
+// distance between two tokens as they looked: liquidity and holders on a log scale, shares in points
+const lg = v => Math.log10(Math.max(1, v));
+function lookDist(a, ap, b, bp) {
+  return Math.abs(lg(a[0]) - lg(b[0])) / 0.35 + Math.abs(lg(a[1] + 1) - lg(b[1] + 1)) / 0.3 + Math.abs(a[2] - b[2]) / 12
+    + Math.abs(a[3] - b[3]) / 8 + Math.abs(a[4] - b[4]) / 8 + Math.abs(a[5] - b[5]) / 8 + Math.abs(a[6] - b[6]) / 8 + (ap !== bp ? 1.5 : 0);
+}
+const median = xs => { const s = [...xs].sort((a, b) => a - b), n = s.length; return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : null; };
+const lookCache = new Map();
+async function lookalikes(env, addr) {
+  const hit = lookCache.get(addr), now = Date.now(); if (hit && now - hit.t < 10 * 60000) return hit.v;
+  const L = await looksLoad(env), x = await launch(env, addr);
+  const judged = L.rows.filter(r => r.p1 !== undefined || r.p24 !== undefined);
+  const first = L.rows.length ? Math.min(...L.rows.map(r => r.t)) : null, day1 = L.rows.filter(r => r.p24 !== undefined).length;
+  const base = { since: first ? new Date(first).toISOString() : null, logged: L.rows.length, judged: judged.length, judgedDay: day1,
+    // when the first results come in: an hour after the first read for the hour, a day after it for the day
+    firstHour: first && !judged.length ? new Date(first + HOUR + 10 * 60000).toISOString() : null, firstDay: first && !day1 ? new Date(first + 24 * HOUR + 10 * 60000).toISOString() : null };
+  if (!x?.ok || x.price == null || !x.symbol) return { ok: false, why: 'Codex has no reading of this token right now', base };
+  const me = [x.liquidity || 0, x.holders || 0, x.top10Pct || 0, x.sniperPct || 0, x.bundlerPct || 0, x.insiderPct || 0, x.devPct || 0].map(v => Math.round(Number(v) * 100) / 100), pad = String(x.launchpad || '');
+  const near = judged.filter(r => r.a !== addr).map(r => ({ r, d: lookDist(me, pad, r.f, r.pad) })).filter(o => o.d <= 4).sort((a, b) => a.d - b.d).slice(0, 30);
+  const mv = (r, k) => r[k] !== undefined && r.p0 ? (r[k] ? r[k] / r.p0 - 1 : -1) : null;
+  const day = near.map(o => mv(o.r, 'p24')).filter(v => v != null), hour = near.map(o => mv(o.r, 'p1')).filter(v => v != null);
+  const drained = near.filter(o => o.r.l24 !== undefined && o.r.l0 && o.r.l24 < o.r.l0 * 0.2).length;
+  const v = {
+    ok: true, token: addr, symbol: x.symbol, ageMin: x.created ? Math.round((now - x.created) / 60000) : null,
+    looks: { liquidity: me[0], holders: me[1], top10Pct: me[2], sniperPct: me[3], bundlerPct: me[4], insiderPct: me[5], devPct: me[6], launchpad: pad || null },
+    matches: near.length, base,
+    after1h: hour.length ? { n: hour.length, median: median(hour), fell50: hour.filter(m => m <= -0.5).length, fell: hour.filter(m => m < -0.1).length, rose: hour.filter(m => m > 0.1).length } : null,
+    after24h: day.length ? { n: day.length, median: median(day), fell50: day.filter(m => m <= -0.5).length, fell: day.filter(m => m < -0.1).length, rose: day.filter(m => m > 0.1).length, doubled: day.filter(m => m >= 1).length, drained } : null,
+    closest: near.slice(0, 8).map(o => ({ token: o.r.a, symbol: o.r.s, read: new Date(o.r.t).toISOString(), liquidity: o.r.l0, holders: o.r.f[1], top10Pct: o.r.f[2], move1h: mv(o.r, 'p1'), move24h: mv(o.r, 'p24'), liquidity24h: o.r.l24 ?? null, distance: Math.round(o.d * 100) / 100 })),
+    note: 'Compared with tokens as they stood 30 to 90 minutes after launch, read from Codex. Past results of other tokens, not a forecast. Not advice.'
+  };
+  lookCache.set(addr, { t: now, v }); if (lookCache.size > 300) lookCache.delete(lookCache.keys().next().value);
+  return v;
+}
+
+// ---------- Same Hand: the money behind a wallet ----------
+// The browser walks the Pons log itself; the money trail comes from here, from the keyed Blockscout index, because
+// the public explorer API turns scripts away. For one wallet: who sent it its first funds (a plain transfer or
+// one made inside a contract call, whichever came first), and which wallets it sent funds to. A wallet with a
+// hundred or more outgoing transfers is marked busy: an exchange, a bridge or a bot, not one person's launches.
+const handCache = new Map();
+async function handWallet(env, w, wantCreator) {
+  const key = w + (wantCreator ? ':c' : ''), hit = handCache.get(key), now = Date.now(); if (hit && now - hit.t < 10 * 60000) return hit.v;
+  if (!env.BLOCKSCOUT_API_KEY) return { ok: false, why: 'not available right now' };
+  const bs = async q => { const r = await fetch(`https://api.blockscout.com/4663/api?${q}&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA }); const j = await r.json(); return Array.isArray(j.result) ? j.result : []; };
+  const [first, inner, out, made] = await Promise.all([
+    bs(`module=account&action=txlist&address=${w}&sort=asc&page=1&offset=10`), bs(`module=account&action=txlistinternal&address=${w}&sort=asc&page=1&offset=10`),
+    bs(`module=account&action=txlist&address=${w}&sort=desc&page=1&offset=100`), wantCreator ? bs(`module=contract&action=getcontractcreation&contractaddresses=${w}`) : Promise.resolve([])]);
+  const inc = [...first.filter(t => String(t.to).toLowerCase() === w && BigInt(t.value || '0') > 0n).map(t => ({ ...t, via: 'transfer' })), ...inner.filter(t => String(t.to).toLowerCase() === w && BigInt(t.value || '0') > 0n).map(t => ({ ...t, via: 'contract call' }))].sort((a, b) => a.timeStamp - b.timeStamp)[0];
+  const sent = [...new Set(out.filter(t => String(t.from).toLowerCase() === w && BigInt(t.value || '0') > 0n && !t.contractAddress && t.input === '0x').map(t => String(t.to).toLowerCase()).filter(isAddr))].filter(a => a !== w);
+  const v = { ok: true, wallet: w, first: inc ? { from: String(inc.from).toLowerCase(), eth: Number(BigInt(inc.value) / 10n ** 12n) / 1e6, at: Number(inc.timeStamp) * 1000, via: inc.via } : null,
+    sent: sent.slice(0, 60), busy: out.length >= 100, creator: made[0]?.contractCreator ? String(made[0].contractCreator).toLowerCase() : null };
+  handCache.set(key, { t: now, v }); if (handCache.size > 500) handCache.delete(handCache.keys().next().value);
+  return v;
+}
+
+// every Pons launch by each of a list of wallets, from the keyed index. The log is read from the wallet's own first
+// transaction on, which keeps each query short: over the factory's whole life one query takes about a minute.
+const launchesBy = new Map();
+async function handLaunches(env, wallets) {
+  if (!env.BLOCKSCOUT_API_KEY) return { ok: false, why: 'not available right now' };
+  const now = Date.now(), out = {}, todo = wallets.filter(w => { const h = launchesBy.get(w); if (h && now - h.t < 10 * 60000) { out[w] = h.v; return false; } return true; });
+  let i = 0;
+  await Promise.all([0, 1, 2, 3, 4].map(async () => {
+    while (i < todo.length) {
+      const w = todo[i++];
+      try {
+        const first = await fetch(`https://api.blockscout.com/4663/api?module=account&action=txlist&address=${w}&sort=asc&page=1&offset=1&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA }).then(r => r.json());
+        const fb = Number(first.result?.[0]?.blockNumber) || 0;
+        if (!fb) { if (Array.isArray(first.result)) { out[w] = []; launchesBy.set(w, { t: now, v: [] }); } continue; }
+        const r = await fetch(`https://api.blockscout.com/4663/api?module=logs&action=getLogs&address=${PONS}&fromBlock=${Math.max(39100000, fb)}&toBlock=latest&topic0=${T_LAUNCH}&topic3=0x${w.slice(2).padStart(64, '0')}&topic0_3_opr=and&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA, signal: AbortSignal.timeout(20000) });
+        const j = await r.json(), rows = Array.isArray(j.result) ? j.result.map(l => ({ token: wordAddr(l.topics[1]), block: parseInt(l.blockNumber, 16), t: l.timeStamp ? parseInt(l.timeStamp, 16) * 1000 : null })) : j.message === 'No records found' ? [] : null;
+        if (rows) { out[w] = rows; launchesBy.set(w, { t: now, v: rows }); if (launchesBy.size > 2000) launchesBy.delete(launchesBy.keys().next().value); }
+      } catch (e) {}
+    }
+  }));
+  return { ok: true, launches: out };
+}
+
+// Each new Pons graduation is run through Same Hand on the server. When the money behind it leads to wallets that
+// launched at least two tokens before and some of them are dead, the community group on Telegram hears about it.
+// At most six a day, one per minute, so the group is never flooded.
+async function handAlert(st, env) {
+  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_GROUP) return;
+  const q = st.handQ = st.handQ || [], day = new Date().toISOString().slice(0, 10);
+  if (st.handDay?.day !== day) st.handDay = { day, n: 0 };
+  if (!q.length || st.handDay.n >= 6) return;
+  const token = q.shift();
+  const L = await looksLoad(env);
+  const io = {
+    rpc, wallet: (w, c) => handWallet(env, w, c), launches: async ws => (await handLaunches(env, ws)).launches || {},
+    // the aggregators turn the server away, so the pools come from Codex, at most 25 of them
+    pools: async list => { const out = {}; const got = await codexAsk(env, L, `{ filterTokens(tokens: [${list.slice(0, 25).map(a => `"${a}:4663"`).join(',')}], limit: 25) { results { liquidity token { address symbol } } } }`); for (const x of got) out[String(x.token.address).toLowerCase()] = { sym: x.token.symbol, liq: Number(x.liquidity) || 0 }; return out; },
+  };
+  const r = await sameHand(token, io).catch(e => ({ ok: false, why: String(e.message || e) }));
+  st.handLast = { t: Date.now(), token, ok: r.ok, launched: r.launched ?? null, dead: r.dead ?? null, why: r.why || null };
+  if (!r.ok || r.launched < 2 || !r.dead) return;
+  const checked = Math.min(r.launched, 25), dead = r.rows.slice(0, 25).filter(x => x.liq < 1000).length, short = a => a.slice(0, 6) + '…' + a.slice(-4);
+  const sym = (await launch(env, token).catch(() => null))?.symbol;
+  const text = `<b>Same Hand</b> · ${tgEsc(sym ? '$' + sym : short(token))} just graduated on Pons.\n\nThe money behind its launcher leads to wallets that launched ${r.launched} token${r.launched > 1 ? 's' : ''} on Pons before. ${dead} of the ${checked} checked now ${dead === 1 ? 'holds' : 'hold'} under $1K.\n\n${r.chain.map(c => `${c.role} <code>${short(c.addr)}</code>${c.contract ? ' (a contract)' : c.busy ? ' (busy wallet)' : ''}`).join(' ← ')}\n\nshuntdesk.com/hand/?a=${token}\n\n<i>A shared funder is a link, not proof. Not advice.</i>`;
+  const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: env.TELEGRAM_GROUP, text, parse_mode: 'HTML', disable_web_page_preview: true }) });
+  if (res.ok) st.handDay.n++; else st.handLast.why = 'telegram said ' + res.status;
+}
+
+// ---------- stock tokens against the stock itself ----------
+// The reference is Yahoo Finance's public chart feed: the last regular close and the latest trade in any session
+// (pre-market and after-hours included). It can lag by a few minutes. The chain prices are read in the browser.
+const STOCK_SYMS = ['NVDA', 'TSLA', 'AAPL', 'META', 'GOOGL', 'AMZN', 'MSFT', 'AMD', 'COIN', 'PLTR', 'MSTR', 'SPY', 'QQQ'];
+let stockMem = { t: 0, v: null };
+async function stockRefs() {
+  const now = Date.now(); if (stockMem.v && now - stockMem.t < 60000) return stockMem.v;
+  const rows = {};
+  await Promise.all(STOCK_SYMS.map(async s => {
+    try {
+      // two hosts serve the same feed; the second answers when the first turns a request away
+      let res = null;
+      for (const host of ['query1', 'query2']) { try { const r = await fetch(`https://${host}.finance.yahoo.com/v8/finance/chart/${s}?interval=1m&range=1d&includePrePost=true`, { headers: { Accept: 'application/json', ...UA } }); res = (await r.json()).chart?.result?.[0]; if (res?.meta) break; } catch (e) {} }
+      const m = res?.meta; if (!m) return;
+      const ts = res.timestamp || [], c = res.indicators?.quote?.[0]?.close || []; let i = c.length - 1; while (i >= 0 && c[i] == null) i--;
+      const P = m.currentTradingPeriod || {}, n = now / 1000, inP = k => P[k] && n >= P[k].start && n < P[k].end;
+      const session = inP('regular') ? 'regular' : inP('pre') ? 'pre' : inP('post') ? 'post' : 'closed';
+      rows[s] = { last: i >= 0 ? c[i] : m.regularMarketPrice, lastAt: i >= 0 ? ts[i] * 1000 : (m.regularMarketTime || 0) * 1000, close: session === 'regular' ? m.previousClose ?? m.chartPreviousClose : m.regularMarketPrice, closeAt: session === 'regular' ? null : (m.regularMarketTime || 0) * 1000, session };
+    } catch (e) {}
+  }));
+  const v = { source: 'Yahoo Finance', read: now, rows };
+  if (Object.keys(rows).length) stockMem = { t: now, v }; else if (stockMem.v) return stockMem.v;
   return v;
 }
 
@@ -879,12 +1070,17 @@ const api = {
     try {
       // what the server itself can reach right now: one read of each outside service, nothing stored
       if (url.pathname === '/api/health') {
+        const st0 = await load(env).catch(() => null);
         const T = '0x39dbed3a2bd333467115de45665cc57f813c4571', probe = async (u, h) => { try { const r = await fetch(u, { headers: { Accept: 'application/json', ...UA, ...h } }); return r.status; } catch (e) { return 'unreachable'; } };
-        return json({ dexscreener: await probe(DS + '/tokens/v1/robinhood/' + T), dexscreenerNoAgent: await (async () => { try { return (await fetch(DS + '/tokens/v1/robinhood/' + T)).status; } catch (e) { return 'unreachable'; } })(), goplus: await probe('https://api.gopluslabs.io/api/v1/token_security/4663?contract_addresses=' + T), geckoterminal: await probe('https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/' + T), rpc: await (async () => { try { return (await fetch('https://rpc.mainnet.chain.robinhood.com', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' })).status; } catch (e) { return 'unreachable'; } })(), chain: await (async () => { const o = { nodes: RPCS.length }; for (const [k, fn] of [['ethUsd', () => poolRatio(ETH_REF)], ['decimals', () => rpc('eth_call', [{ to: T, data: '0x313ce567' }, 'latest'])]]) { try { o[k] = String(await fn()).slice(0, 12); } catch (e) { o[k] = 'ERR ' + String(e.message || e).slice(0, 60); } } return o; })(), keys: { openrouter: !!env.OPENROUTER_API_KEY, goplus: !!env.GOPLUS_APP_KEY, codex: !!env.CODEX_API_KEY, coingecko: !!env.COINGECKO_API_KEY } });
+        return json({ dexscreener: await probe(DS + '/tokens/v1/robinhood/' + T), dexscreenerNoAgent: await (async () => { try { return (await fetch(DS + '/tokens/v1/robinhood/' + T)).status; } catch (e) { return 'unreachable'; } })(), goplus: await probe('https://api.gopluslabs.io/api/v1/token_security/4663?contract_addresses=' + T), geckoterminal: await probe('https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/' + T), yahoo: await probe('https://query1.finance.yahoo.com/v8/finance/chart/TSLA?interval=1m&range=1d'), looks: await looksLoad(env).then(L => ({ logged: L.rows.length, judged: L.rows.filter(r => r.p1 !== undefined).length, err: L.err || null })).catch(e => String(e.message || e)), handLast: st0?.handLast || null, codexToday: st0?.codex || null, rpc: await (async () => { try { return (await fetch('https://rpc.mainnet.chain.robinhood.com', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' })).status; } catch (e) { return 'unreachable'; } })(), chain: await (async () => { const o = { nodes: RPCS.length }; for (const [k, fn] of [['ethUsd', () => poolRatio(ETH_REF)], ['decimals', () => rpc('eth_call', [{ to: T, data: '0x313ce567' }, 'latest'])]]) { try { o[k] = String(await fn()).slice(0, 12); } catch (e) { o[k] = 'ERR ' + String(e.message || e).slice(0, 60); } } return o; })(), keys: { openrouter: !!env.OPENROUTER_API_KEY, goplus: !!env.GOPLUS_APP_KEY, codex: !!env.CODEX_API_KEY, coingecko: !!env.COINGECKO_API_KEY } });
       }
       if (url.pathname === '/api/candles') { const a = (url.searchParams.get('a') || '').toLowerCase(); return isAddr(a) ? json(await candles(env, a)) : json({ rows: [], res: 1 }, 400); }
       if (url.pathname === '/api/pools') return json(await pools(env, url.searchParams.get('kind') === 'new' ? 'new' : 'trending'));
       if (url.pathname === '/api/launch') { const a = (url.searchParams.get('a') || '').toLowerCase(); return isAddr(a) ? json(await launch(env, a)) : json({ ok: false, why: 'bad address' }, 400); }
+      if (url.pathname === '/api/stocks') return json(await stockRefs());
+      if (url.pathname === '/api/hand/launches') { const ws = [...new Set((url.searchParams.get('w') || '').toLowerCase().split(',').filter(isAddr))].slice(0, 40); return ws.length ? json(await handLaunches(env, ws)) : json({ ok: false, why: 'pass ?w= up to 40 wallets, comma separated' }, 400); }
+      if (url.pathname === '/api/hand') { const w = (url.searchParams.get('w') || '').toLowerCase(); return isAddr(w) ? json(await handWallet(env, w, url.searchParams.get('creator') === '1')) : json({ ok: false, why: 'bad address' }, 400); }
+      if (url.pathname === '/api/looks') { const a = (url.searchParams.get('a') || '').toLowerCase(); return isAddr(a) ? json(await lookalikes(env, a)) : json({ ok: false, why: 'bad address' }, 400); }
       const st = await load(env);
       const body = request.method === 'POST' ? await request.json().catch(() => ({})) : null;
       if (url.pathname === '/api/desk') {
@@ -945,6 +1141,9 @@ const api = {
     try { await pushTick(st, env); } catch (e) { st.pushLast = { t: Date.now(), error: String(e.message || e).slice(0, 120) }; }
     try { if (new Date().getUTCHours() >= 1) { const r = await hfPublish(st, env); if (r.final || r.first || r.today) st.hfLast = { t: Date.now(), ...r }; } } catch (e) { st.hfLast = { t: Date.now(), error: String(e.message || e).slice(0, 160) }; }   // once a day, after 01:00 UTC
     try { await gradScan(st, env); } catch (e) { st.grads = { ...(st.grads || { rows: [] }), err: String(e.message || e).slice(0, 120) }; }   // the graduation feed is extra: a failed read never stops the desk
+    try { await looksTick(env); } catch (e) {}
+    try { await handAlert(st, env); } catch (e) { st.handLast = { t: Date.now(), why: String(e.message || e).slice(0, 120) }; }
+    if (st.handQ?.length > 20) st.handQ = st.handQ.slice(-20);
     seasonRoll(st); await save(env, st);
   }
 };
