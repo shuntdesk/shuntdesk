@@ -46,6 +46,13 @@ test('the daily shift: same trains for the day, all of them must be called', asy
   for (const t of d.trains) assert.equal(t.move1h, undefined);
   const [s2] = await call('daily', { handle: 'tester', calls: [] }); assert.equal(s2, 400);
 });
+test('Telegram in a group: quiet unless spoken to, and /id gives the chat id', async () => {
+  const tg = async text => { const r = await worker.fetch(new Request('http://x/api/tg', { method: 'POST', headers: { 'x-telegram-bot-api-secret-token': 'right' }, body: JSON.stringify({ message: { message_id: 1, chat: { id: -100123, type: 'supergroup', title: 'Yard' }, text } }) }), { ...env, TELEGRAM_SECRET: 'right' }); return r.headers.get('content-type')?.includes('json') ? (await r.json()).text : await r.text(); };
+  assert.equal(await tg('follow @shuntdesk on X'), 'ok');
+  assert.equal(await tg('gm everyone'), 'ok');
+  assert.equal(await tg('/start@SkeletonPriceBot'), 'ok');
+  assert.match(await tg('/id'), /-100123/);
+});
 test('Telegram: the webhook refuses a wrong secret', async () => {
   const r = await worker.fetch(new Request('http://x/api/tg', { method: 'POST', headers: { 'x-telegram-bot-api-secret-token': 'nope' }, body: '{"message":{"chat":{"id":1},"text":"/start"}}' }), { ...env, TELEGRAM_SECRET: 'right' });
   assert.equal(r.status, 403);

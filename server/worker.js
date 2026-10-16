@@ -592,11 +592,15 @@ async function telegram(st, env, request, body) {
   const msg = body?.message || body?.channel_post; const text = String(msg?.text || '').trim(), chat = msg?.chat?.id;
   if (!chat || !text) return new Response('ok');
   const reply = (html, extra = {}) => new Response(JSON.stringify({ method: 'sendMessage', chat_id: chat, text: html.slice(0, 4000), parse_mode: 'HTML', disable_web_page_preview: true, reply_to_message_id: msg.message_id, ...extra }), { headers: { 'Content-Type': 'application/json' } });
-  const me = String(env.TELEGRAM_BOT_NAME || 'shuntdesk_bot').toLowerCase(), group = msg.chat.type !== 'private';
-  const mentioned = text.toLowerCase().includes('@' + me) || msg.reply_to_message?.from?.username?.toLowerCase() === me;
-  const clean = text.replace(new RegExp('@' + me, 'ig'), '').trim();
+  // the bot's own username, exactly: a loose match on 'shuntdesk' would answer every message that names the X account
+  const me = /bot$/i.test(env.TELEGRAM_BOT_NAME || '') ? env.TELEGRAM_BOT_NAME.toLowerCase().replace(/^@/, '') : 'shuntdesk_bot', group = msg.chat.type !== 'private';
+  const mentioned = new RegExp('@' + me + '(?![a-z0-9_])', 'i').test(text) || msg.reply_to_message?.from?.username?.toLowerCase() === me;
+  const clean = text.replace(new RegExp('@' + me + '(?![a-z0-9_])', 'ig'), '').trim();
   const found = clean.match(/0x[0-9a-fA-F]{40}/), cmd = (clean.match(/^\/(\w+)/)?.[1] || '').toLowerCase();
   if (group && !cmd && !mentioned) return new Response('ok');   // in groups, only speak when spoken to
+  // a command meant for another bot (/start@otherbot) is not ours
+  const to = clean.match(/^\/\w+@(\w+)/)?.[1]; if (group && cmd && !mentioned && to && to.toLowerCase() !== me) return new Response('ok');
+  if (cmd === 'id') return reply(`This chat: <code>${chat}</code> (${tgEsc(msg.chat.type)}${msg.chat.title ? ', ' + tgEsc(msg.chat.title) : ''})`);
   if (!allow(st, 'tg:' + chat, 'tg', 40)) return reply('Slow down a little: 40 questions an hour per chat.');
   const site = 'https://shuntdesk.com', footer = '\n\n<i>A rule-based reading of public data. It can be wrong. Not advice.</i>';
   if (cmd === 'start' || cmd === 'help') return reply(`<b>Shuntdesk</b> · every token rides the line\n\nAsk anything about Shuntdesk, a token, the crew desk or what just launched. Or use:\n\n/check <code>0x…</code> what Shuntdesk knows about a Robinhood Chain token\n/daily today's daily shift in the Yard\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
