@@ -13,17 +13,6 @@ const word = a => '0x' + a.slice(2).toLowerCase().padStart(64, '0'), fromWord = 
 const ZERO = '0x0000000000000000000000000000000000000000';
 export const DEAD_LIQ = 1000;   // a pool under $1K has next to nothing left to sell into
 
-// the log in windows of ten million blocks (the node's limit per query), newest first
-async function logs(io, head, topics) {
-  const out = [];
-  for (let to = head; to >= PONS_FROM; to -= 9999999) {
-    const from = Math.max(PONS_FROM, to - 9999998);
-    out.push(...await io.rpc('eth_getLogs', [{ address: PONS, topics, fromBlock: '0x' + from.toString(16), toBlock: '0x' + to.toString(16) }]));
-    if (io.pause) await io.pause();
-  }
-  return out;
-}
-
 // a contract has code; a wallet does not
 const isContract = async (io, a) => { try { const c = await io.rpc('eth_getCode', [a, 'latest']); return !!c && c !== '0x'; } catch (e) { return false; } };
 
@@ -33,10 +22,11 @@ export async function sameHand(input, io, onStep = () => {}) {
   onStep('launcher');
   // a token: its launcher from the log, or its creator when it did not come from Pons. A wallet: itself.
   let token = null, launcher = null, viaPons = false;
-  const own = await logs(io, head, [T_LAUNCH, word(input)]);
-  if (own.length) { token = input; launcher = fromWord(own[0].topics[3]); viaPons = true; }
-  else if (await isContract(io, input)) { token = input; launcher = (await io.wallet(input, true).catch(() => null))?.creator || null; }
-  else launcher = input;
+  if (await isContract(io, input)) {
+    token = input;
+    const w = await io.wallet(input, true).catch(() => null);
+    launcher = w?.ponsBy || w?.creator || null; viaPons = !!w?.ponsBy;
+  } else launcher = input;
   if (!launcher) return { ok: false, why: 'the creator of this contract could not be read' };
 
   // the money behind the launcher, two steps back. A busy wallet (an exchange, a bridge, a bot) ends the trail:

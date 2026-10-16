@@ -918,7 +918,13 @@ async function handWallet(env, w, wantCreator) {
     bs(`module=account&action=txlist&address=${w}&sort=desc&page=1&offset=100`), wantCreator ? bs(`module=contract&action=getcontractcreation&contractaddresses=${w}`) : Promise.resolve([])]);
   const inc = [...first.filter(t => String(t.to).toLowerCase() === w && BigInt(t.value || '0') > 0n).map(t => ({ ...t, via: 'transfer' })), ...inner.filter(t => String(t.to).toLowerCase() === w && BigInt(t.value || '0') > 0n).map(t => ({ ...t, via: 'contract call' }))].sort((a, b) => a.timeStamp - b.timeStamp)[0];
   const sent = [...new Set(out.filter(t => String(t.from).toLowerCase() === w && BigInt(t.value || '0') > 0n && !t.contractAddress && t.input === '0x').map(t => String(t.to).toLowerCase()).filter(isAddr))].filter(a => a !== w);
-  const v = { ok: true, wallet: w, first: inc ? { from: String(inc.from).toLowerCase(), eth: Number(BigInt(inc.value) / 10n ** 12n) / 1e6, at: Number(inc.timeStamp) * 1000, via: inc.via } : null,
+  // asked about a token: who launched it on Pons, from the launch log read from the token's own first block on
+  let ponsBy = null;
+  if (wantCreator) try {
+    const fb = Number(made[0]?.blockNumber) || Math.min(...[first[0]?.blockNumber, inner[0]?.blockNumber].map(Number).filter(n => n > 0));   // the block the token was made in: a Pons token is made inside the launch call
+    if (Number.isFinite(fb)) { const r = await fetch(`https://api.blockscout.com/4663/api?module=logs&action=getLogs&address=${PONS}&fromBlock=${Math.max(39100000, fb - 5)}&toBlock=${fb + 200}&topic0=${T_LAUNCH}&topic1=0x${w.slice(2).padStart(64, '0')}&topic0_1_opr=and&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA, signal: AbortSignal.timeout(15000) }); const j = await r.json(); if (Array.isArray(j.result) && j.result[0]) ponsBy = wordAddr(j.result[0].topics[3]); }
+  } catch (e) {}
+  const v = { ok: true, wallet: w, ponsBy, first: inc ? { from: String(inc.from).toLowerCase(), eth: Number(BigInt(inc.value) / 10n ** 12n) / 1e6, at: Number(inc.timeStamp) * 1000, via: inc.via } : null,
     sent: sent.slice(0, 60), busy: out.length >= 100, creator: made[0]?.contractCreator ? String(made[0].contractCreator).toLowerCase() : null };
   handCache.set(key, { t: now, v }); if (handCache.size > 500) handCache.delete(handCache.keys().next().value);
   return v;
