@@ -27,6 +27,10 @@ The same reads as MCP tools (token, verdicts, crew_desk, pons_graduations, daily
 
 https://shuntdesk.com/replay/?a=0x… shows a token's price history with its Pons launch, graduation, peak, steepest fall and the verdict Shuntdesk filed at the time. JSON: GET https://shuntdesk.com/api/replay?a=0x…
 
+## The Yard
+
+https://shuntdesk.com/play/ is a browser game: past calls whose later price is known arrive as trains, and the player sends each one down the line or to the siding before the price is shown. JSON: GET https://shuntdesk.com/api/play (token, symbol, liquidity, the six stops the ticket showed, the verdict, and the move an hour and a day later). Daily shift (the same five trains for everyone): GET https://shuntdesk.com/api/daily. Weekly leaderboard: GET https://shuntdesk.com/api/yard (the server scores each shift itself from its own record).
+
 ## Open record
 
 Every call with its price an hour and a day later, published daily as JSONL: https://huggingface.co/datasets/shuntdesk/verdicts

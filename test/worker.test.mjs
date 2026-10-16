@@ -32,6 +32,20 @@ test('MCP: initialize, list the five tools, refuse a bad address', async () => {
   const l = await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' }); assert.equal(l.result.tools.length, 5);
   const c = await rpc({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'token', arguments: { address: 'x' } } }); assert.equal(c.result.isError, true);
 });
+test('the yard game gets only calls whose later price is known', async () => {
+  const [s, j] = await call('play'); assert.equal(s, 200); assert.ok(Array.isArray(j.trains));
+  for (const t of j.trains) assert.ok(t.move1h != null || t.move24h != null);
+});
+test('the yard leaderboard scores shifts itself and refuses trains it has no record of', async () => {
+  const [s0, v] = await call('yard'); assert.equal(s0, 200); assert.ok(Array.isArray(v.rows));
+  const [s1, bad] = await call('yard', { handle: 'x' }); assert.equal(s1, 400); assert.equal(bad.ok, false);
+  const [s2, none] = await call('yard', { handle: 'tester', calls: [{ token: '0x' + '1'.repeat(40), call: 'RIDE' }] }); assert.equal(s2, 400); assert.match(none.why, /on file/);
+});
+test('the daily shift: same trains for the day, all of them must be called', async () => {
+  const [s, d] = await call('daily'); assert.equal(s, 200); assert.ok(d.no >= 1); assert.ok(Array.isArray(d.trains));
+  for (const t of d.trains) assert.equal(t.move1h, undefined);
+  const [s2] = await call('daily', { handle: 'tester', calls: [] }); assert.equal(s2, 400);
+});
 test('Telegram: the webhook refuses a wrong secret', async () => {
   const r = await worker.fetch(new Request('http://x/api/tg', { method: 'POST', headers: { 'x-telegram-bot-api-secret-token': 'nope' }, body: '{"message":{"chat":{"id":1},"text":"/start"}}' }), { ...env, TELEGRAM_SECRET: 'right' });
   assert.equal(r.status, 403);

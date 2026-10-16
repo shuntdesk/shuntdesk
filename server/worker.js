@@ -437,6 +437,83 @@ function rugs(st) {
     .filter(x => x && x.fall <= -0.5).sort((a, b) => a.fall - b.fall).slice(0, 12);
 }
 
+// the yard game's trains: calls on file whose later price is known, with what the ticket showed when it was filed
+function playTrains(st) {
+  return st.verdicts.filter(v => v.p0 && (v.p1h || v.p24h)).slice(0, 80).map(v => ({ token: v.addr, symbol: v.sym, liq: v.liq, zone: v.zone, score: v.score, verdict: v.verdict, stops: v.tags || [],
+    at: new Date(v.t).toISOString(), move1h: v.p1h ? v.p1h / v.p0 - 1 : null, move24h: v.p24h ? v.p24h / v.p0 - 1 : null }));
+}
+
+// ---------- the Yard's leaderboard: each shift is scored here, from the calls on file ----------
+// The page only says which trains it got and which lever it pulled; the price after comes from the record, so a
+// shift cannot claim a read it did not make. Weekly, like the board of desks.
+function yardScore(v, call) {
+  const later = v.p24h || v.p1h, m = later / v.p0 - 1, fell = m <= -0.02, rose = m >= 0.02;
+  const desk = v.verdict === 'CLEAN' ? rose : !rose;
+  if (call === 'RIDE') return { right: rose, pts: rose ? 100 : !fell ? 20 : 0, desk };
+  if (call === 'SIDING') return { right: !rose, pts: fell ? 100 + Math.round(Math.min(1, -m) * 80) : !rose ? 40 : 0, desk };
+  return { right: false, pts: 0, desk };
+}
+function yardRoll(st) {
+  const id = seasonId();
+  if (!st.yard) st.yard = { id, rows: {}, past: [] };
+  if (st.yard.id !== id) {
+    const top = Object.entries(st.yard.rows).sort((a, b) => b[1].pts - a[1].pts)[0];
+    st.yard = { id, rows: {}, past: [{ id: st.yard.id, handle: top ? top[0] : null, pts: top ? top[1].pts : 0 }, ...(st.yard.past || [])].slice(0, 8) };
+  }
+}
+function yardView(st, me) {
+  yardRoll(st);
+  const rows = Object.entries(st.yard.rows).map(([handle, r]) => ({ handle, ...r })).sort((a, b) => b.pts - a.pts || a.t - b.t);
+  return { season: st.yard.id, ends: st.yard.id + 7 * 24 * HOUR, rows: rows.slice(0, 30), past: st.yard.past, rank: me ? rows.findIndex(r => r.handle === me) + 1 || null : null, players: rows.length };
+}
+function yardShift(st, body) {
+  const h = String(body?.handle || '').trim().toLowerCase();
+  if (!/^[a-z0-9_]{2,16}$/.test(h)) return [400, { ok: false, why: 'handle must be 2 to 16 letters, digits or _' }];
+  const calls = Array.isArray(body.calls) ? body.calls.slice(0, 5) : [], seen = new Set();
+  let pts = 0, right = 0, read = 0, desk = 0;
+  for (const c of calls) {
+    const a = String(c?.token || '').toLowerCase(); if (!isAddr(a) || seen.has(a)) continue; seen.add(a);
+    const v = st.verdicts.find(x => x.addr === a && x.p0 && (x.p1h || x.p24h)); if (!v) continue;
+    const s = yardScore(v, c.call === 'RIDE' || c.call === 'SIDING' ? c.call : null);
+    pts += s.pts; read++; if (s.right) right++; if (s.desk) desk++;
+  }
+  if (!read) return [400, { ok: false, why: 'none of those trains is on file' }];
+  yardRoll(st);
+  const r = st.yard.rows[h] || { pts: 0, right: 0, read: 0, shifts: 0, beat: 0, best: 0 };
+  Object.assign(r, { pts: r.pts + pts, right: r.right + right, read: r.read + read, shifts: r.shifts + 1, beat: r.beat + (right > desk ? 1 : 0), best: Math.max(r.best, pts), t: Date.now() });
+  st.yard.rows[h] = r;
+  const all = Object.entries(st.yard.rows); if (all.length > 500) all.sort((a, b) => a[1].pts - b[1].pts).slice(0, 100).forEach(([k]) => delete st.yard.rows[k]);
+  return [200, { ok: true, shift: { pts, right, read, desk }, ...yardView(st, h) }];
+}
+
+// ---------- the Yard's daily shift: the same five trains for everyone, one go each, a board for the day ----------
+const YARD_DAY0 = Date.UTC(2026, 9, 16);
+function yardDaily(st) {
+  const day = new Date().toISOString().slice(0, 10);
+  if (st.daily?.day !== day) {
+    // a fixed pick for the day, made the first time anyone asks: shuffled with the date as the seed
+    const pool = playTrains(st); let seed = [...day].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
+    const rnd = () => (seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296;
+    const pick = pool.map(t => [rnd(), t]).sort((a, b) => a[0] - b[0]).slice(0, 5).map(x => x[1].token);
+    st.daily = { day, tokens: pick, rows: {} };
+  }
+  return st.daily;
+}
+function dailyView(st, me) {
+  const d = yardDaily(st), trains = playTrains(st).filter(t => d.tokens.includes(t.token)).map(({ move1h, move24h, ...t }) => t);
+  const rows = Object.entries(d.rows).map(([handle, r]) => ({ handle, ...r })).sort((a, b) => b.right - a.right || b.pts - a.pts || a.t - b.t);
+  return { day: d.day, no: Math.floor((Date.UTC(...d.day.split('-').map((v, i) => i === 1 ? v - 1 : +v)) - YARD_DAY0) / 864e5) + 1, trains, rows: rows.slice(0, 30), players: rows.length, rank: me ? rows.findIndex(r => r.handle === me) + 1 || null : null, played: me ? !!d.rows[me] : false };
+}
+function dailyShift(st, body) {
+  const h = String(body?.handle || '').trim().toLowerCase(); if (!/^[a-z0-9_]{2,16}$/.test(h)) return [400, { ok: false, why: 'handle must be 2 to 16 letters, digits or _' }];
+  const d = yardDaily(st); if (d.rows[h]) return [409, { ok: false, why: 'already played today', ...dailyView(st, h) }];
+  const calls = (Array.isArray(body.calls) ? body.calls : []).filter(c => d.tokens.includes(String(c?.token || '').toLowerCase()));
+  if (calls.length < d.tokens.length) return [400, { ok: false, why: 'a daily shift has to call all of today\'s trains' }];
+  const [code, out] = yardShift(st, { handle: h, calls }); if (code !== 200) return [code, out];
+  d.rows[h] = { pts: out.shift.pts, right: out.shift.right, read: out.shift.read, desk: out.shift.desk, t: Date.now() };
+  return [200, { ok: true, shift: out.shift, weekly: { rank: out.rank }, ...dailyView(st, h) }];
+}
+
 // ---------- phone alerts: Web Push for watched tokens, sent even when no Shuntdesk tab is open ----------
 // A browser subscribes with the site's VAPID key and names the tokens it watches. Every 15 minutes the server prices
 // them all in one Codex read and compares with the price and liquidity it saw first. A move of 30% or more queues a
@@ -522,7 +599,7 @@ async function telegram(st, env, request, body) {
   if (group && !cmd && !mentioned) return new Response('ok');   // in groups, only speak when spoken to
   if (!allow(st, 'tg:' + chat, 'tg', 40)) return reply('Slow down a little: 40 questions an hour per chat.');
   const site = 'https://shuntdesk.com', footer = '\n\n<i>A rule-based reading of public data. It can be wrong. Not advice.</i>';
-  if (cmd === 'start' || cmd === 'help') return reply(`<b>Shuntdesk</b> · every token rides the line\n\nAsk anything about Shuntdesk, a token, the crew desk or what just launched. Or use:\n\n/check <code>0x…</code> what Shuntdesk knows about a Robinhood Chain token\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
+  if (cmd === 'start' || cmd === 'help') return reply(`<b>Shuntdesk</b> · every token rides the line\n\nAsk anything about Shuntdesk, a token, the crew desk or what just launched. Or use:\n\n/check <code>0x…</code> what Shuntdesk knows about a Robinhood Chain token\n/daily today's daily shift in the Yard\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
   // anything that is not a command, or a token address with a question around it, goes to the conductor
   const question = clean.replace(/^\/\w+\s*/, '').replace(/0x[0-9a-fA-F]{40}/, '').trim();
   if (!cmd && (!found || question.length > 3)) return reply(await tgAsk(st, env, chat, clean, found ? found[0].toLowerCase() : null));
@@ -533,6 +610,11 @@ async function telegram(st, env, request, body) {
   if (cmd === 'report') {
     const [, r] = await agentData(st, env, 'report', '');
     return reply(`<b>Daily report</b>\n\nCrew desk ${money(r.equity)} (${r.change >= 0 ? '+' : ''}${money(r.change)} in 24h)\nVerdicts ${r.verdicts.CLEAN} clean · ${r.verdicts.RISKY} risky · ${r.verdicts.DANGER} danger\nHeld an hour later: ${r.judged ? `${r.held} of ${r.judged}` : 'none checked yet'}${r.note?.text ? `\n\n${tgEsc(r.note.text)}` : ''}\n\n${site}/report/`);
+  }
+  if (cmd === 'daily' || cmd === 'yard') {
+    const d = dailyView(st), w = yardView(st);
+    const top = (rows, f) => rows.slice(0, 5).map((r, i) => `${i + 1}. ${tgEsc(r.handle)} · ${f(r)}`).join('\n') || 'Nobody yet.';
+    return reply(`<b>The Yard · daily #${d.no}</b>\nFive trains, the same for everyone today. ${d.players} played.\n\n${top(d.rows, r => `${r.right}/${r.read} right, ${r.pts} pts`)}\n\n<b>This week</b>\n${top(w.rows, r => `${r.pts} pts`)}\n\nPlay: ${site}/play/`);
   }
   if (cmd === 'new' || cmd === 'graduated') {
     const rows = (st.grads?.rows || []).slice(0, 6);
@@ -819,6 +901,15 @@ const api = {
       if (url.pathname === '/mcp' || url.pathname === '/api/mcp') return mcp(st, env, request, body, ip);
       if (url.pathname === '/api/replay') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); if (!allow(st, ip, 'replay', 30)) return json({ ok: false, why: 'slow down' }, 429); const r = await replay(st, env, a); await save(env, st); return json(r); }
       if (url.pathname === '/api/rugs') return json({ rows: rugs(st) });
+      if (url.pathname === '/api/play') return json({ trains: playTrains(st) });
+      if (url.pathname === '/api/daily') {
+        if (body) { if (!allow(st, ip, 'daily', 10)) return json({ ok: false, why: 'slow down' }, 429); const [code, out] = dailyShift(st, body); if (code === 200) await save(env, st); return json(out, code); }
+        const v = dailyView(st, String(url.searchParams.get('me') || '').toLowerCase()); await save(env, st); return json(v);
+      }
+      if (url.pathname === '/api/yard') {
+        if (body) { if (!allow(st, ip, 'yard', 20)) return json({ ok: false, why: 'slow down: 20 shifts an hour' }, 429); const [code, out] = yardShift(st, body); if (code === 200) await save(env, st); return json(out, code); }
+        return json(yardView(st, String(url.searchParams.get('me') || '').toLowerCase()));
+      }
       if (url.pathname === '/api/push/key') return json({ key: env.VAPID_PUBLIC || null });
       if (url.pathname === '/api/push/sub' && body) { if (!allow(st, ip, 'push', 30)) return json({ ok: false, why: 'slow down' }, 429); const [code, out] = pushSubscribe(st, body); await save(env, st); return json(out, code); }
       if (url.pathname === '/api/push/inbox') { const s = st.push?.[url.searchParams.get('id') || '']; if (!s) return json({ messages: [] }); const out = s.inbox; s.inbox = []; await save(env, st); return json({ messages: out }); }

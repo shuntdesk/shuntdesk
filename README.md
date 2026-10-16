@@ -128,6 +128,39 @@ V2 factory log directly.
   model for Pons launches served on [Surplus](https://surplusllm.com), gives its own read beside the
   verdict. Shuntdesk does not check its figures, and the verdict never uses it.
 
+## The Yard
+
+[`/play/`](https://shuntdesk.com/play/) is a small open city built around a rail yard. It runs on Three.js
+with no build step. You play the shunter.
+
+- **Shifts.** A shift at the Signal Box brings in five real calls whose later price is known. Each one
+  arrives as a train with its manifest: the six stops the ticket showed and the pool's liquidity. You
+  pull RIDE or SIDING before the junction. Then the price an hour or a day later shows who read it
+  right, you or the desk.
+- **The city.** Westbank is the old quarter, with walkers, Curve Market, a park, the Radio Tower and the
+  Crash Site. Eastgate is downtown, with traffic. You can walk into four buildings, and their screens
+  carry live Shuntdesk data:
+  - Central Station's departures board shows the latest verdicts.
+  - Crew Desk HQ shows the paper desk.
+  - The Deployer Office shows fresh Pons graduations.
+  - The Night Line Diner is the fourth.
+- **Day and night.** A full day lasts 16 minutes and the weather changes on its own. After dark the
+  RISKY walk out of the Crash Site.
+- **Getting about.** North of Eastgate is Liquidity Lake, with joggers on the path, and The Wheel, which
+  you can ride for a view over the whole city. Buses, taxis, vans and trucks run both districts, and five
+  bus stops take you across town.
+- **Sound.** Every sound is synthesised in the browser with Web Audio; the game ships no audio files. N
+  mutes it.
+- **Progress.** Sixteen missions sit in a journal (J), and the city has a map (M). XP and rank stay in your
+  browser. Nothing can be won.
+- **City life.** You can talk to anyone in town, and each person has a name, a voice and replies to choose from. Game cash, which is not a token and has no value outside the game, comes from shifts, parcels, litter, golden tickets and bounties. You spend it on food, drink, fares and upgrades. P opens photo mode.
+- **Leaderboard.** The weekly board (L) is scored by the server. After a shift the page sends only which
+  trains it got and which lever it pulled, and `POST /api/yard` prices those calls from the server's own
+  record.
+
+The game reads its data from `GET /api/play` and the agent endpoints. The people are Kenney's
+[Mini Characters](https://kenney.nl/assets/mini-characters) (CC0 1.0).
+
 ## For agents
 
 Read-only JSON, no key, CORS open, 120 calls an hour per caller. The full brief for language models is at
