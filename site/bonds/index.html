@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bond Watch — Shuntdesk</title>
+<meta name="description" content="Every token on the Pons curve, read from the curves themselves: how far each one is to bonding, how fast it is moving, and how few make it.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shuntdesk">
+<meta property="og:title" content="Bond Watch — Shuntdesk">
+<meta property="og:description" content="Every token on the Pons curve, read from the curves themselves: how far each one is to bonding, how fast it is moving, and how few make it.">
+<meta property="og:url" content="https://shuntdesk.com/bonds/">
+<meta property="og:image" content="https://shuntdesk.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shuntdesk. One score. Three tracks.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://shuntdesk.com/og.png">
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#060708">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/simple.css">
+<script src="/assets/ui-mode.js"></script>
+</head>
+<body class="sub">
+<canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
+<main class="page">
+  <div class="ph">
+    <div><div class="eyebrow">Bond Watch</div><h1 class="disp">Most never bond.<br><span class="acc">Watch the ones that might.</span></h1></div>
+    <div class="side bw-odds">
+      <div class="stub stat"><div class="in"><div class="cap"><b>Bond rate</b><span id="bw-days">···</span></div><div class="v" id="bw-rate">···</div><small id="bw-rate2">of Pons launches complete the curve</small></div></div>
+    </div>
+  </div>
+  <div class="stats">
+    <div class="stub stat"><div class="in"><div class="cap"><b>On the curve</b></div><div class="v" id="bw-on">···</div><small>still raising, read just now</small></div></div>
+    <div class="stub stat"><div class="in"><div class="cap"><b>Reached 50%</b></div><div class="v sm" id="bw-50">···</div><small id="bw-50b">and then bonded</small></div></div>
+    <div class="stub stat"><div class="in"><div class="cap"><b>Reached 75%</b></div><div class="v sm" id="bw-75">···</div><small id="bw-75b">and then bonded</small></div></div>
+    <div class="stub stat"><div class="in"><div class="cap"><b>Last bond</b></div><div class="v sm" id="bw-last">···</div><small id="bw-last2">···</small></div></div>
+  </div>
+  <div class="stub n"><div class="in">
+    <div class="cap"><b>Closest to bonding</b><span id="bw-read">read from each curve on chain, every ten minutes</span></div>
+    <div class="dep bwlist" id="bw-list"><div class="r h"><span>TOKEN</span><span>PROGRESS</span><span>RAISED</span><span>LAST HOUR</span><span>AT THIS PACE</span><span>AGE</span><span></span></div></div>
+  </div></div>
+  <div class="stub n" style="margin-top:16px"><div class="in">
+    <div class="cap"><b>Just bonded</b><span>the last two days</span></div>
+    <div class="bw-done" id="bw-done"></div>
+  </div></div>
+  <p class="note" style="margin-top:14px">Progress is the ETH a curve has raised against the ETH it needs to bond, read from the curve contract itself. The pace is the change over the last hour, and "at this pace" only carries that pace on; curves stall and fall back far more often than they finish. Launches that raised under 1% in their first six hours are dropped from the board. Not advice.</p>
+</main>
+<footer class="foot"></footer>
+<script type="module" src="/assets/bonds.js"></script>
+</body>
+</html>

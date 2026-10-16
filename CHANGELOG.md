@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.5.0 · 17 October 2026
+
+- Radar (`/radar/`): every new token with 25+ holders scanned on its own soon after launch (Agent Scan, a GoPlus read, the launcher's trail), with its price an hour and a day later. The record the next verdict will be tested against.
+- Bond Watch (`/bonds/`): every token on the Pons curve, read from the curve contracts in one Multicall3 call every ten minutes: progress, pace over the last hour, an estimate at that pace, and daily launch and bond counts. `GET /api/v1/bonds`.
+- Wallet X-ray (`/wallet/`): any wallet, read only: its tokens, what each would fetch if sold now, copies of real tokens flagged, Agent Scan on the largest. `GET /api/v1/wallet`.
+- Tripwire on Telegram: `/watch 0x…` in a DM, an alert when a power function is called or the launcher or a top holder moves 0.5%+ of supply out. `/watching`, `/unwatch`.
+- The daily line: the site's own numbers posted to the community group once a day.
+- Same Hand and Agent Scan look at the same wallets off this chain: a Webacy risk read and their history on Ethereum and Arbitrum (Etherscan). `/api/intel`.
+- Tripwire by email (Resend), after a confirmation email, with a stop link in every alert.
+- Site Check: a token's website and links (from its contract or its listing) through Google Safe Browsing, RDAP, urlscan.io and Jina Reader; on every ticket, on Agent Scan and in the radar. `GET /api/v1/site`.
+- Two looks: the Yard UI (the 3D night yard) and Simple UI (the clean terminal, dark or light), switched from the header or the entrance and kept per browser; Simple UI has its own landing at `/simple/`.
+- Agent Scan (/scan/): a token contract read from its bytecode, verified or not. Every function the dispatcher exposes, named through OpenChain and 4byte; the powers among them; owner or admin roles; proxies followed to the contract behind them (EIP-1967, beacon, EIP-1167); read-only calls for the state now; Sourcify for verified source; a plain-words write-up by Cloudflare Workers AI, with fixed rules as the fallback. On every ticket, as `/scan` on the bot, and run on every fresh Pons graduation with a group alert when a high-risk power is live (six a day at most). `GET /api/v1/xray`.
+
 ## 1.4.0 · 16 October 2026
 
 - Exit Door (/exit/): pick a size and see what comes back if you sell straight away, through the pool's depth, the sell tax and the swap fee, and again if the developer, the largest funded group, the launch snipers and bundles, or the ten largest wallets sell first. Every ticket shows the $500 case.

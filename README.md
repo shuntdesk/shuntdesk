@@ -133,6 +133,11 @@ V2 factory log directly.
 
 | Tool | Answers |
 | --- | --- |
+| [Radar](https://shuntdesk.com/radar/) | every new token scanned on its own, and what its price did next |
+| [Bond Watch](https://shuntdesk.com/bonds/) | every token on the Pons curve, how far and how fast, and how few bond |
+| [Wallet X-ray](https://shuntdesk.com/wallet/) | what a wallet's tokens would really fetch, and the copies of real tokens in it |
+| Tripwire (Telegram `/watch`) | a private alarm when the owner or the big wallets move |
+| [Agent Scan](https://shuntdesk.com/scan/) | what a contract lets its owner do, read from the bytecode even when the source is not verified |
 | [Exit Door](https://shuntdesk.com/exit/) | what a buy of a given size gets back, straight away and if the biggest wallets sell first |
 | [Same Hand](https://shuntdesk.com/hand/) | the money behind a launch, and every Pons launch by the wallets on that trail |
 | Lookalikes (on every ticket) | how tokens that looked like this one an hour after launch went a day later |

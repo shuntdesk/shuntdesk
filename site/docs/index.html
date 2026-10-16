@@ -21,6 +21,8 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#060708">
 <link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/simple.css">
+<script src="/assets/ui-mode.js"></script>
 </head>
 <body class="sub docpage">
 <canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
@@ -41,7 +43,7 @@
       <h5>Pons</h5>
       <a href="#pons">Graduations and deployers</a><a href="#second-read">The second read</a>
       <h5>Tools</h5>
-      <a href="#exit-door">Exit Door</a><a href="#same-hand">Same Hand</a><a href="#lookalikes">Lookalikes</a><a href="#stock-gap">Stock gap</a><a href="#watch">Watchlist and alerts</a><a href="#report">Daily report</a><a href="#replay">Rug replay</a>
+      <a href="#radar">Radar</a><a href="#agent-scan">Agent Scan</a><a href="#site-check">Site Check</a><a href="#bond-watch">Bond Watch</a><a href="#wallet-xray">Wallet X-ray</a><a href="#tripwire">Tripwire</a><a href="#exit-door">Exit Door</a><a href="#same-hand">Same Hand</a><a href="#lookalikes">Lookalikes</a><a href="#stock-gap">Stock gap</a><a href="#watch">Watchlist and alerts</a><a href="#report">Daily report</a><a href="#replay">Rug replay</a>
       <h5>The Yard</h5>
       <a href="#the-yard">What it is</a><a href="#controls">Controls</a><a href="#shifts">Shifts</a><a href="#city">The city</a><a href="#money">Work, cash and energy</a><a href="#talk">Talking to people</a><a href="#risky">The RISKY and the armory</a><a href="#events">Events</a><a href="#progress">Missions and rank</a><a href="#yard-board">Leaderboard</a><a href="#save">Your save</a>
       <h5>Community</h5>
@@ -160,6 +162,38 @@
 <p>For tokens launched on Pons, the ticket also shows a reading by ChargeAI, a separate open model for Pons launches served on Surplus. Only the token's public figures are sent. It is another model's opinion: Shuntdesk does not check its figures, and the verdict never uses it.</p>
 </section>
 
+<section id="radar"><h2>Radar</h2>
+<p><a href="/radar/">/radar/</a> is Shuntdesk running on its own. Every new token on Robinhood Chain with 25 or more holders is read 30 to 90 minutes after launch and scanned without anyone opening a ticket: Agent Scan for the contract's powers, a GoPlus security read for the sell test and tax, and Same Hand for the launcher's trail. Each token's price an hour and a day later is kept beside what the scan found, and the page counts how often flagged and unflagged tokens fell by half. That record is what the next version of the verdict will be tested against before it changes. JSON: <code>GET /api/v1/radar</code>.</p>
+</section>
+
+<section id="agent-scan"><h2>Agent Scan</h2>
+<p><a href="/scan/">/scan/</a> reads a token contract down to its functions, whether or not its source is verified. It pulls the bytecode from Robinhood Chain, finds every function the contract exposes, and names each one through the public signature databases OpenChain and 4byte. A function nobody has named is shown as unknown, never guessed.</p>
+<ul>
+<li><b>Powers.</b> Functions that can mint, freeze transfers, block wallets, change the tax, change limits, switch trading, pull funds, hand over control, or swap the code, each marked high, medium or low.</li>
+<li><b>Control.</b> Who holds it: a live owner, a renounced one, admin roles, or nothing visible from the bytecode.</li>
+<li><b>The code.</b> Whether it sits behind a proxy (EIP-1967, a beacon, or a minimal proxy) and so can be replaced; the scan reads the contract behind it.</li>
+<li><b>The state now.</b> Read-only calls made at scan time: owner, taxes, limits, whether trading is paused.</li>
+<li><b>Source.</b> Whether Sourcify holds the verified source.</li>
+</ul>
+<p>The write-up is by a language model on Cloudflare Workers AI from these findings, or by fixed rules when it does not answer. A function that exists may still be guarded, and an owner may not be the only role. Every ticket shows a short Agent Scan, the bot answers <code>/scan 0x…</code>, and every fresh Pons graduation is scanned on its own: when a high-risk power is live, the Telegram group hears about it, at most six a day. JSON: <code>GET /api/v1/xray?a=0x…</code>.</p>
+</section>
+
+<section id="site-check"><h2>Site Check</h2>
+<p>Every ticket and every Agent Scan also checks the token's website and links. A Pons token keeps its links in its own contract (<code>socials()</code>); other links come from its DexScreener listing. Each link goes to Google Safe Browsing, which lists known phishing and malware. The website then gets three more checks: RDAP for the date its domain was registered, urlscan.io for what the page loads and whether it is judged malicious (with a screenshot and the full report), and Jina Reader for what the page says, flagging a request for a seed phrase, a wallet connection to claim tokens, or a page with next to nothing on it. A short summary of the page is written by Workers AI. The radar runs the same checks on every new token, without the summary. JSON: <code>GET /api/v1/site?a=0x…</code>.</p>
+</section>
+
+<section id="bond-watch"><h2>Bond Watch</h2>
+<p><a href="/bonds/">/bonds/</a> shows every token still on the Pons curve, nearest to bonding first. Each Pons curve keeps its own state on chain: the ETH it has raised and the ETH it needs to bond. The server reads every curve in one call through Multicall3 every ten minutes, so the page shows how far each token is, how fast it moved in the last hour, and when it would bond if that pace held. It also shows the plain numbers: how many tokens launched on Pons each day, how many bonded, and of the ones that reached 50% or 75%, how many went on to bond. Launches that raised under 1% in their first six hours are dropped from the board. JSON: <code>GET /api/v1/bonds</code>.</p>
+</section>
+
+<section id="wallet-xray"><h2>Wallet X-ray</h2>
+<p><a href="/wallet/">/wallet/</a> reads any wallet on Robinhood Chain, with nothing connected or signed. It lists every ERC-20 token in it, what the holding is marked at, and what it would fetch if sold now through the token's deepest pool. It flags copies of real tokens (a USDG, WETH, stock ticker or $SHUNT from the wrong address), shows the verdict on file and the curve progress where Shuntdesk has them, and asks Agent Scan about the largest holdings.</p>
+</section>
+
+<section id="tripwire"><h2>Tripwire</h2>
+<p>A private alarm on Telegram. Send <code>/watch 0x…</code> to <a href="https://t.me/shuntdesk_bot" target="_blank" rel="noopener">@shuntdesk_bot</a> in a direct message. Every three minutes the server checks what happened to that token since the last check, and messages you when one of its power functions was called (the ones Agent Scan found, such as setting a fee or pausing), or when the launcher or one of the ten largest holders moved 0.5% of supply or more out of their wallet. The same alerts can come by email from the Agent Scan page, after one confirmation email. Five tokens per chat. <code>/watching</code> lists yours, <code>/unwatch 0x…</code> stops one.</p>
+</section>
+
 <section id="exit-door"><h2>Exit Door</h2>
 <p><a href="/exit/">/exit/</a> answers the question a chart does not: if you buy this much, how much comes back when you sell? Pick a size and Exit Door works it through the pool's own depth, the token's buy and sell tax, and a 0.3% swap fee, then again with others selling before you:</p>
 <ul>
@@ -174,7 +208,7 @@
 
 <section id="same-hand"><h2>Same Hand</h2>
 <p><a href="/hand/">/hand/</a> follows the money behind a launch. It finds the launcher in the Pons log, follows the launcher's first funds back two steps, collects every other wallet those funders paid, and lists every token any of them launched on Pons with how its pool stands today. A launch is called <b>SAME HAND</b> when the trail leads to earlier launches, and <b>MOSTLY DEAD</b> when most of those pools now hold under $1K.</p>
-<p>A wallet with a hundred or more outgoing transfers is treated as an exchange, a bridge or a bot, and the trail stops there; so does a contract. Shared funding is a link, not proof that one person is behind every launch.</p>
+<p>A wallet with a hundred or more outgoing transfers is treated as an exchange, a bridge or a bot, and the trail stops there; so does a contract. Shared funding is a link, not proof that one person is behind every launch. Each wallet on the trail also gets a risk read from Webacy (drainers, hacks, mixers, sanctions) and its history on Ethereum and Arbitrum from Etherscan.</p>
 <p>Every fresh Pons graduation is also run through Same Hand on the server. When the trail leads to at least two earlier launches and some are dead, the <a href="https://t.me/shuntdesk" target="_blank" rel="noopener">Telegram group</a> gets an alert, at most six a day.</p>
 </section>
 
@@ -313,6 +347,8 @@
 <thead><tr><th>Command</th><th>Answers</th></tr></thead>
 <tbody>
 <tr><td><code>/check 0x…</code></td><td>what Shuntdesk knows about a token</td></tr>
+<tr><td><code>/scan 0x…</code></td><td>Agent Scan: what the contract lets its owner do</td></tr>
+<tr><td><code>/watch 0x…</code></td><td>Tripwire, in a direct message: an alarm when the owner or the big wallets move</td></tr>
 <tr><td><code>/new</code></td><td>tokens fresh off the Pons curve</td></tr>
 <tr><td><code>/desk</code></td><td>the crew desk right now</td></tr>
 <tr><td><code>/report</code></td><td>the last 24 hours</td></tr>
@@ -337,6 +373,9 @@
 <tr><td><code>GET /api/daily</code></td><td>today's daily shift</td></tr>
 <tr><td><code>GET /api/yard</code></td><td>this week's Yard leaderboard</td></tr>
 <tr><td><code>GET /api/v1/lookalikes?a=0x…</code></td><td>the closest tokens in the Lookalikes log, and how they went an hour and a day later</td></tr>
+<tr><td><code>GET /api/v1/xray?a=0x…</code></td><td>Agent Scan: the contract's functions, powers, proxy, owner and state</td></tr>
+<tr><td><code>GET /api/v1/bonds</code></td><td>Bond Watch: every token on the Pons curve, its progress and pace, and the daily bond counts</td></tr>
+<tr><td><code>GET /api/v1/wallet?a=0x…</code></td><td>Wallet X-ray: the tokens in a wallet, with copies of real tokens flagged</td></tr>
 <tr><td><code>GET /api/v1/stocks</code></td><td>the stocks behind the stock tokens: latest trade, last close, session</td></tr>
 </tbody></table></div>
 <pre><code>curl -s "https://shuntdesk.com/api/v1/token?a=0x7e517e779b85895894becad80c9bb69b4cb1c4d6"</code></pre>
@@ -365,6 +404,13 @@
 <tr><td>Binance</td><td>majors, tick by tick</td></tr>
 <tr><td>Surplus</td><td>the conductor and ChargeAI's second read</td></tr>
 <tr><td>Hugging Face</td><td>the daily open record</td></tr>
+<tr><td>OpenChain · 4byte · Sourcify</td><td>function names and verified source, for Agent Scan</td></tr>
+<tr><td>Cloudflare Workers AI</td><td>the Agent Scan write-up</td></tr>
+<tr><td>Multicall3 on Robinhood Chain</td><td>every Pons curve in one read, for Bond Watch</td></tr>
+<tr><td>Webacy</td><td>risk reads on the wallets in a money trail and on contract owners</td></tr>
+<tr><td>Etherscan</td><td>the same wallets' history on Ethereum and Arbitrum</td></tr>
+<tr><td>Resend</td><td>Tripwire alerts by email</td></tr>
+<tr><td>Google Safe Browsing · urlscan.io · RDAP · Jina Reader</td><td>the token's website and links, for Site Check</td></tr>
 </tbody></table></div>
 <p>Every key stays on the server. Your browser talks only to the site and to public, keyless endpoints, and the site's security policy allows nothing else.</p>
 </section>

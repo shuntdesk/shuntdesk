@@ -22,11 +22,26 @@ export function mountChrome(active) {
     <a class="logo" href="/">${LOGO}<b>SHUNTDESK</b></a>
     <nav>${NAV.map(n => `<a href="${n[1]}"${n[0] === active ? ' class="on"' : ''}>${n[0]}</a>`).join('')}</nav>
     <div class="sp"></div>
+    <button class="uimode" type="button" title="Switch between the Yard UI and Simple UI">${document.documentElement.classList.contains('simple') ? 'Yard UI' : 'Simple UI'}</button>
+    ${document.documentElement.classList.contains('simple') ? `<button class="uitheme" type="button" title="Light or dark">${document.documentElement.classList.contains('light') ? 'Dark' : 'Light'}</button>` : ''}
     ${caChip()}
     ${xLink('xlink')}
     <div class="chain"><i></i><span>ROBINHOOD CHAIN</span><b id="blk">······</b></div>
   </header>`);
   document.body.prepend(top);
+  // the look: Simple UI is the clean terminal, kept per browser; the landing has its own page in each look
+  $('.uimode', top).addEventListener('click', () => {
+    const simple = !document.documentElement.classList.contains('simple');
+    try { localStorage.setItem('sd.ui', simple ? 'simple' : 'full'); } catch (e) {}
+    const p = location.pathname;
+    if (simple && p === '/') location.href = '/simple/'; else if (!simple && p.startsWith('/simple')) location.href = '/'; else location.reload();
+  });
+  const th = $('.uitheme', top);
+  if (th) th.addEventListener('click', () => {
+    const light = document.documentElement.classList.toggle('light');
+    try { localStorage.setItem('sd.theme', light ? 'light' : 'dark'); } catch (e) {}
+    th.textContent = light ? 'Dark' : 'Light';
+  });
   const chip = $('.cachip', top);
   if (chip) chip.addEventListener('click', async () => {
     let ok = false;
@@ -52,7 +67,7 @@ export function mountChrome(active) {
       </div>
       <div class="f2-cols">
         <div><h5>Product</h5>${NAV.map(n => `<a href="${n[1]}">${n[0]}</a>`).join('')}<a href="/play/">The Yard</a></div>
-        <div><h5>Tools</h5><a href="/exit/">Exit Door</a><a href="/hand/">Same Hand</a><a href="/stocks/">Stock gap</a><a href="/deployer/">Deployer record</a><a href="/replay/">Rug replay</a><a href="/report/">Daily report</a></div>
+        <div><h5>Tools</h5><a href="/radar/">Radar</a><a href="/scan/">Agent Scan</a><a href="/bonds/">Bond Watch</a><a href="/wallet/">Wallet X-ray</a><a href="/exit/">Exit Door</a><a href="/hand/">Same Hand</a><a href="/stocks/">Stock gap</a><a href="/deployer/">Deployer record</a><a href="/replay/">Rug replay</a><a href="/report/">Daily report</a></div>
         <div><h5>Community</h5>${X_HANDLE ? `<a href="https://x.com/${X_HANDLE}" target="_blank" rel="noopener">X ↗</a>` : ''}<a href="https://t.me/shuntdesk" target="_blank" rel="noopener">Telegram ↗</a><a href="https://t.me/shuntdesk_bot" target="_blank" rel="noopener">Telegram bot ↗</a><a href="/agents/">For agents</a><a href="https://huggingface.co/datasets/shuntdesk/verdicts" target="_blank" rel="noopener">Open data ↗</a><a href="https://github.com/shuntdesk/shuntdesk" target="_blank" rel="noopener">Source code ↗</a></div>
         <div><h5>Legal</h5><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><a href="/docs/#faq">FAQ</a></div>
       </div>

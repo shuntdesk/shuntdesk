@@ -1,0 +1,136 @@
+/* Simple UI: the clean terminal, switched on with the header button (html.simple). */
+/* Shuntdesk v2: the clean terminal. Loaded after base.css on every page. It keeps the identity (the mark, black,
+   ink, the rail green, Big Shoulders and JetBrains Mono) and drops the weight: no 3D yard behind the pages, no
+   grain, no cut corners, no cards that lean toward the pointer. Plain cards with a hairline, rounded corners,
+   solid buttons, a quiet header. */
+
+html.simple { --card: #0c0d0f; --card2: #111215; --line: rgba(237, 235, 230, .1); --line2: rgba(237, 235, 230, .18); --r: 14px; --sans: "Barlow", system-ui, sans-serif; }
+
+html.simple, html.simple body { background: #060708; }
+
+html.simple #yard, html.simple .vig, html.simple .grain, html.simple .ret, html.simple .burst, html.simple .mq, html.simple .zhint { display: none !important; }
+
+html.simple body { font-size: 16px; }
+
+/* header */
+
+html.simple .top { height: 62px !important; gap: 22px !important; padding: 0 28px !important; background: rgba(6, 7, 8, .82) !important; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border-bottom: 1px solid var(--line); }
+
+html.simple .logo b { font-size: 24px !important; }
+
+html.simple .top nav { gap: 2px !important; }
+
+html.simple .top nav a { font-family: var(--sans) !important; font-weight: 600; font-size: 14.5px !important; letter-spacing: 0 !important; text-transform: none !important; padding: 7px 12px !important; border-radius: 8px; color: var(--mut); }
+
+html.simple .top nav a:hover { color: var(--ink); background: rgba(237, 235, 230, .05); }
+
+html.simple .top nav a.on { color: var(--ink); background: rgba(237, 235, 230, .08); }
+
+html.simple .top nav a.on::after { display: none !important; }
+
+html.simple .chain, html.simple .xlink, html.simple .cachip { clip-path: none !important; border-radius: 999px !important; background: transparent !important; border-color: var(--line) !important; }
+
+html.simple .chain i { box-shadow: none !important; }
+
+/* pages */
+
+html.simple .page { padding-top: 112px !important; max-width: 1240px !important; }
+
+html.simple .eyebrow { color: var(--long) !important; letter-spacing: .2em !important; font-size: 11px !important; }
+
+html.simple .eyebrow::before { display: none !important; }
+
+html.simple .ph { margin-bottom: 28px !important; align-items: flex-end; }
+
+html.simple .ph h1.disp, html.simple h1.disp.mani-h, html.simple h1.disp.doc-h { font-size: clamp(42px, 6.2vw, 86px) !important; line-height: .92 !important; margin: 14px 0 6px !important; text-shadow: none !important; }
+
+html.simple .ph h1.disp .acc, html.simple h1.disp .o, html.simple .doc-h .o, html.simple .mani-h .o { color: var(--mut) !important; -webkit-text-stroke: 0 !important; text-shadow: none !important; }
+
+html.simple .doc-lede, html.simple .lede { color: #bdbbb6 !important; }
+
+/* cards */
+
+html.simple .stub { clip-path: none !important; background: var(--line) !important; border-radius: var(--r) !important; padding: 1px !important; transform: none !important; animation: none !important; box-shadow: none !important; }
+
+html.simple .stub > .in { clip-path: none !important; background: var(--card) !important; border-radius: calc(var(--r) - 1px) !important; }
+
+html.simple .stub > .in::before, html.simple .stub > .in::after, html.simple .stub::before, html.simple .stub::after { display: none !important; }
+
+html.simple .stub.g { background: rgba(46, 211, 160, .4) !important; }
+
+html.simple .stub.r { background: rgba(255, 77, 94, .4) !important; }
+
+html.simple .stub.n { background: var(--line) !important; }
+
+html.simple .cap { letter-spacing: .14em !important; }
+
+html.simple .zoomable { cursor: default; }
+
+/* buttons and fields */
+
+html.simple .btn { clip-path: none !important; border-radius: 10px !important; font-family: var(--sans) !important; font-weight: 600 !important; font-size: 15px !important; letter-spacing: 0 !important; text-transform: none !important; padding: 12px 18px !important; transform: none !important; }
+
+html.simple .btn:hover { filter: brightness(.92) !important; }
+
+html.simple .btn.ghost { background: transparent !important; box-shadow: inset 0 0 0 1px var(--line2) !important; }
+
+html.simple .btn.ghost:hover { background: rgba(237, 235, 230, .05) !important; filter: none !important; }
+
+html.simple .field { clip-path: none !important; border-radius: 12px !important; background: var(--card) !important; box-shadow: inset 0 0 0 1px var(--line2) !important; overflow: hidden; }
+
+html.simple .field:focus-within { box-shadow: inset 0 0 0 1px rgba(46, 211, 160, .7), 0 0 0 4px rgba(46, 211, 160, .12) !important; }
+
+html.simple .field .btn { border-radius: 0 !important; }
+
+html.simple .chip, html.simple .tabs button, html.simple .sizes button, html.simple .sizes input, html.simple .x, html.simple .mt, html.simple .tag, html.simple .plat, html.simple .pills span { clip-path: none !important; border-radius: 8px !important; }
+
+html.simple .tabs button { box-shadow: inset 0 0 0 1px var(--line) !important; }
+
+/* rows and tables */
+
+html.simple .dep .r, html.simple .rows .r, html.simple table.pos td, html.simple .doorlist .dr, html.simple table.pos tr + tr { background-image: none !important; }
+
+html.simple .dep .r, html.simple .rows .r, html.simple .doorlist .dr { border-top: 1px solid var(--line); }
+
+html.simple .dep .r.h { border-top: 0; }
+
+html.simple table.pos tr + tr td { border-top: 1px solid var(--line); }
+
+html.simple .dep .r:hover { background-color: rgba(237, 235, 230, .04) !important; }
+
+/* the board and the ticket no longer have a 3D stage above them */
+
+html.simple body.b3d::before { display: none !important; }
+
+html.simple .stage { height: auto !important; min-height: 0 !important; padding: 112px 5vw 10px !important; max-width: 1240px; margin: 0 auto; box-sizing: content-box; gap: 22px; }
+
+html.simple .stage h1 { text-shadow: none !important; }
+
+html.simple body.b3d .page { padding-top: 10px !important; }
+
+html.simple body.tk3d .page { padding-top: 112px !important; }
+
+/* docs and legal */
+
+html.simple .doc { background: transparent !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; padding: 0 0 40px !important; }
+
+html.simple .gist div { border-radius: 12px; box-shadow: inset 0 0 0 1px var(--line) !important; background: var(--card) !important; }
+
+/* the footer: plain */
+
+html.simple .foot { background: #060708 !important; padding-top: 0 !important; border-top: 1px solid var(--line) !important; }
+
+@media (max-width: 1000px) {
+
+  html.simple .top { padding: 0 16px !important; gap: 12px !important; }
+
+  html.simple .top nav a { font-size: 13.5px !important; padding: 6px 8px !important; }
+
+  html.simple .page { padding-top: 92px !important; }
+}
+@media (max-width: 480px) {
+
+  html.simple .top nav a { font-size: 12.5px !important; padding: 6px 6px !important; }
+
+  html.simple .logo b { font-size: 20px !important; }
+}

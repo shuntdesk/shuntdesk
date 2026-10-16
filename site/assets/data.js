@@ -61,7 +61,8 @@ function fromGtPool(d, inc) {
 }
 function fromDsPair(p) {
   const t = p.txns?.h24 || {};
-  return { pool: p.pairAddress, addr: p.baseToken.address.toLowerCase(), sym: p.baseToken.symbol, name: p.baseToken.name, created: p.pairCreatedAt || 0, liq: p.liquidity?.usd || 0, fdv: p.fdv || 0, price: Number(p.priceUsd) || 0, tx24: (t.buys || 0) + (t.sells || 0), buyers: t.buys || 0, sellers: t.sells || 0, chg: p.priceChange?.h24 || 0, vol24: p.volume?.h24 || 0, url: p.url, dex: p.dexId, quote: p.quoteToken.address.toLowerCase(), quoteSym: p.quoteToken.symbol, native: Number(p.priceNative) || 0 };
+  const links = [...(p.info?.websites || []).map(w => w.url), ...(p.info?.socials || []).map(s => s.url)].filter(u => /^https?:\/\//.test(u || '')).slice(0, 6);
+  return { links, pool: p.pairAddress, addr: p.baseToken.address.toLowerCase(), sym: p.baseToken.symbol, name: p.baseToken.name, created: p.pairCreatedAt || 0, liq: p.liquidity?.usd || 0, fdv: p.fdv || 0, price: Number(p.priceUsd) || 0, tx24: (t.buys || 0) + (t.sells || 0), buyers: t.buys || 0, sellers: t.sells || 0, chg: p.priceChange?.h24 || 0, vol24: p.volume?.h24 || 0, url: p.url, dex: p.dexId, quote: p.quoteToken.address.toLowerCase(), quoteSym: p.quoteToken.symbol, native: Number(p.priceNative) || 0 };
 }
 
 // newest pools on the chain; falls back to DexScreener's latest profiles when GeckoTerminal says no
@@ -239,7 +240,7 @@ export async function scan(address, onStep = () => {}) {
     return res;
   }
   const ageMin = pair.created ? (Date.now() - pair.created) / 60000 : null;
-  Object.assign(res, { sym: pair.sym, name: pair.name, price: pair.price, liq: pair.liq, pool: pair.pool, ageMin, url: pair.url, fdv: pair.fdv });
+  Object.assign(res, { sym: pair.sym, name: pair.name, price: pair.price, liq: pair.liq, pool: pair.pool, ageMin, url: pair.url, fdv: pair.fdv, links: pair.links || [] });
   push({ key: 'sources', name: 'Sources', status: 'ok', tag: 'FOUND', detail: `${pair.sym} trades on ${pair.dex || 'a DEX'}, pool ${ageMin == null ? 'age unknown' : fmtAge(ageMin) + ' old'}.`, facts: [['Price', '$' + sig(pair.price)], ['24h trades', pair.tx24], ['24h volume', '$' + compact(pair.vol24 || 0)]] });
 
   // 2. Gate
@@ -408,3 +409,4 @@ const sub = z => String(z).split('').map(d => '₀₁₂₃₄₅₆₇₈₉'[d
 export function fmtAge(min) { return min < 1 ? 'under a minute' : min < 60 ? Math.round(min) + ' min' : min < 1440 ? (min / 60).toFixed(1) + ' h' : Math.round(min / 1440) + ' d'; }
 export function ageShort(ts) { if (!ts) return '--'; const m = (Date.now() - ts) / 60000; return m < 60 ? Math.max(1, Math.round(m)) + 'm' : m < 1440 ? Math.round(m / 60) + 'h' : Math.round(m / 1440) + 'd'; }
 export { short as shortAddr };
+export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

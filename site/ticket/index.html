@@ -21,6 +21,8 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#060708">
 <link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/simple.css">
+<script src="/assets/ui-mode.js"></script>
 </head>
 <body class="sub">
 <canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
@@ -59,6 +61,16 @@
       <div class="stub n"><div class="in">
         <div class="cap"><b>Lookalikes</b><span id="lk-by">tokens that looked like this one, and what happened to them</span></div>
         <div id="lk"></div>
+      </div></div>
+      <div class="stub n" style="grid-column:1/-1"><div class="in">
+        <div class="cap"><b>Agent Scan</b><span id="xs-by">the contract, read down to its functions</span></div>
+        <p class="xr-sum" id="xs-sum" style="font-size:16px">Reading the bytecode…</p>
+        <div class="xr-pw xscan-mini" id="xs-pw"></div>
+        <a class="note" id="xs-a" href="/scan/">THE FULL SCAN: EVERY FUNCTION, THE STATE NOW, THE PROXY →</a>
+      </div></div>
+      <div class="stub n" style="grid-column:1/-1"><div class="in">
+        <div class="cap"><b>Site Check</b><span id="sc-by">the website and links, checked</span></div>
+        <div id="sc"></div>
       </div></div>
     </div>
     <div class="stub n second" id="second" hidden style="grid-column:1/-1"><div class="in">

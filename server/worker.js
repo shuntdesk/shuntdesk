@@ -605,10 +605,29 @@ async function telegram(st, env, request, body) {
   if (cmd === 'id') return reply(`This chat: <code>${chat}</code> (${tgEsc(msg.chat.type)}${msg.chat.title ? ', ' + tgEsc(msg.chat.title) : ''})`);
   if (!allow(st, 'tg:' + chat, 'tg', 40)) return reply('Slow down a little: 40 questions an hour per chat.');
   const site = 'https://shuntdesk.com', footer = '\n\n<i>A rule-based reading of public data. It can be wrong. Not advice.</i>';
-  if (cmd === 'start' || cmd === 'help') return reply(`<b>Shuntdesk</b> · every token rides the line\n\nAsk anything about Shuntdesk, a token, the crew desk or what just launched. Or use:\n\n/check <code>0x…</code> what Shuntdesk knows about a Robinhood Chain token\n/daily today's daily shift in the Yard\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
+  if (cmd === 'start' || cmd === 'help') return reply(`<b>Shuntdesk</b> · every token rides the line\n\nAsk anything about Shuntdesk, a token, the crew desk or what just launched. Or use:\n\n/check <code>0x…</code> what Shuntdesk knows about a Robinhood Chain token\n/scan <code>0x…</code> Agent Scan: what the contract lets its owner do\n/watch <code>0x…</code> Tripwire: a private alarm when the owner or the big wallets move\n/daily today's daily shift in the Yard\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
   // anything that is not a command, or a token address with a question around it, goes to the conductor
   const question = clean.replace(/^\/\w+\s*/, '').replace(/0x[0-9a-fA-F]{40}/, '').trim();
   if (!cmd && (!found || question.length > 3)) return reply(await tgAsk(st, env, chat, clean, found ? found[0].toLowerCase() : null));
+  if (cmd === 'watch' || cmd === 'unwatch' || cmd === 'watching') {
+    if (group) return reply('Tripwire works in a private chat: open @shuntdesk_bot and send /watch there.');
+    const T = st.trip || {}, mine = Object.entries(T).filter(([, w]) => w.chats.includes(chat));
+    if (cmd === 'watching') return reply(mine.length ? `<b>Tripwire</b> · watching ${mine.length} of 5\n\n${mine.map(([a, w]) => `• ${tgEsc(w.sym ? '$' + w.sym : a.slice(0, 8))} <code>${a}</code>`).join('\n')}` : 'Nothing on the tripwire. Send /watch <code>0x…</code>');
+    if (!found) return reply(`Send /${cmd} followed by a token address: /${cmd} <code>0x…</code>`);
+    const a = found[0].toLowerCase();
+    if (cmd === 'unwatch') return reply(tripDrop(st, chat, a) ? 'Off the tripwire.' : 'That token was not on your tripwire.');
+    const r = await tripAdd(st, env, chat, a);
+    if (!r.ok) return reply(tgEsc(r.why));
+    if (!r.w) return reply('Already on your tripwire.');
+    return reply(`<b>Tripwire set</b> · ${tgEsc(r.w.sym ? '$' + r.w.sym : a.slice(0, 8))}\n\nYou will hear from me when:\n• one of its ${Object.keys(r.w.sels).length} power functions is called (${Object.values(r.w.sels).slice(0, 4).map(tgEsc).join(', ') || 'none found, so this one stays quiet'})\n• the launcher or one of the ${r.w.watch.length} wallets watched moves 0.5% of supply or more out\n\nChecked every three minutes. /watching to see your list, /unwatch <code>${a}</code> to stop.`);
+  }
+  if (cmd === 'scan' || cmd === 'xray') {
+    if (!found) return reply('Send /scan followed by a token address: /scan <code>0x…</code>');
+    const a = found[0].toLowerCase(), v = await xray(st, env, a).catch(() => null);
+    if (!v?.ok) return reply(tgEsc(v?.why || 'The chain did not answer. Try again in a minute.'));
+    const hp = v.powers.filter(p => p.level !== 'info' && p.level !== 'low');
+    return reply(`<b>Agent Scan</b> · <code>${a.slice(0, 6)}…${a.slice(-4)}</code>\n${v.functions} functions, ${v.named} named${v.proxy ? ` · behind a ${tgEsc(v.proxy.kind)}` : ''}\n${v.owner ? (v.owner.live ? `Owner <code>${v.owner.address.slice(0, 6)}…${v.owner.address.slice(-4)}</code>` : 'Ownership renounced') : 'No owner() found'} · source ${v.source.verified ? 'verified' : v.source.verified === false ? 'not verified' : 'unknown'}\n\n${hp.length ? hp.slice(0, 8).map(p => `• <code>${tgEsc(p.fn)}</code>: ${tgEsc(p.what)}`).join('\n') : 'No function found that mints, pauses, blocks wallets or changes the tax.'}\n\n${tgEsc(v.summary.text)}\n\n${site}/scan/?a=${a}<i>\nRead from the bytecode. A function that exists may still be guarded. Not advice.</i>`);
+  }
   if (cmd === 'desk') {
     const [, d] = await agentData(st, env, 'desk', ''), last = d.closed[0];
     return reply(`<b>Crew desk</b> · paper USDG\n\nEquity <b>${money(d.equity)}</b> (${d.equity >= d.start ? '+' : ''}${money(d.equity - d.start)} since ${money(d.start)})\nOpen positions: ${d.open.length}\n${last ? `Last closed: ${tgEsc(last.symbol)} ${last.side} <b>${last.pnl >= 0 ? '+' : ''}${last.pnl}</b> (${tgEsc(last.why)})` : 'No trade closed yet.'}${last?.postMortem ? `\n\n<i>${tgEsc(last.postMortem)}</i>` : ''}\n\n${site}/desk/`);
@@ -650,6 +669,11 @@ async function agentData(st, env, p, a) {
   if (p === 'report') { const r = report(st); r.note = await reportNote(st, env, r); return [200, r]; }
   if (p === 'lookalikes') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a token address on Robinhood Chain' }]; return [200, await lookalikes(env, a)]; }
   if (p === 'stocks') return [200, await stockRefs()];
+  if (p === 'bonds') return [200, await bondView(env)];
+  if (p === 'site') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a token address' }]; return [200, await siteCheck(st, env, a)]; }
+  if (p === 'radar') return [200, await radarView(env)];
+  if (p === 'wallet') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a wallet address' }]; return [200, await walletView(st, env, a)]; }
+  if (p === 'xray' || p === 'scan') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a token address on Robinhood Chain' }]; return [200, await xray(st, env, a)]; }
   return [404, { error: 'unknown endpoint', see: 'https://shuntdesk.com/llms.txt' }];
 }
 
@@ -712,7 +736,7 @@ async function agentToken(st, env, addr) {
 // The free plan is 10,000 calls a month, about 330 a day. Each feature has its own share of a 320-call day, so a
 // busy page can never use up what the Lookalikes log and the alerts need. The counts live in the desk's state,
 // so a restart of the server does not hand the day out a second time.
-const CODEX_SHARE = { looks: 80, launch: 90, candles: 60, replay: 40, push: 50 };
+const CODEX_SHARE = { looks: 70, launch: 130, candles: 40, replay: 30, push: 40 };   // launch facts feed every ticket, so they get the largest share
 async function codexOk(env, kind) {
   if (!env.CODEX_API_KEY) return false;
   const st = await load(env), day = new Date().toISOString().slice(0, 10);
@@ -794,7 +818,7 @@ async function gradScan(st, env) {
   for (const l of logs.slice(-30)) {
     const token = wordAddr(l.topics[1]); if (g.rows.some(r => r.token === token)) continue;   // the graduation names the token itself
     let t = l.timeStamp ? parseInt(l.timeStamp, 16) * 1000 : 0; if (!t) try { t = parseInt((await rpc('eth_getBlockByNumber', [l.blockNumber, false])).timestamp, 16) * 1000; } catch (e) {}
-    if (isAddr(token)) { g.rows.push({ token, block: parseInt(l.blockNumber, 16), t: t || now }); if (now - (t || now) < 30 * 60000) (st.handQ = st.handQ || []).push(token); }   // fresh ones go to Same Hand
+    if (isAddr(token)) { g.rows.push({ token, block: parseInt(l.blockNumber, 16), t: t || now }); if (now - (t || now) < 30 * 60000) { (st.handQ = st.handQ || []).push(token); (st.xrayQ = st.xrayQ || []).push(token); } }   // fresh ones go to Same Hand and Agent Scan
   }
   g.block = to; g.rows = g.rows.sort((a, b) => b.block - a.block).slice(0, 40);
 }
@@ -868,6 +892,38 @@ async function looksTick(env) {
   } catch (e) { L.err = String(e.message || e).slice(0, 120); }
   await env.KV.put(LOOKS, JSON.stringify(L));
 }
+// ---------- Radar: every logged token read in full, on its own ----------
+// Each token the Lookalikes log takes in is also run through Agent Scan, the server's security read (GoPlus) and
+// the launcher's trail (Same Hand), a few a minute, newest first. Nobody has to open a ticket. What it finds is kept
+// beside the token's launch figures and its later price, so the rules that make a verdict can be tested against
+// what really happened, and the board at /radar/ shows it as it comes in.
+async function radarTick(st, env) {
+  const L = await looksLoad(env), now = Date.now();
+  if (now - (L.rt || 0) < 60000) return; L.rt = now;
+  const todo = L.rows.filter(r => r.x === undefined && now - r.t < 6 * HOUR).sort((a, b) => b.t - a.t).slice(0, 3);
+  if (!todo.length) return;
+  const io = { rpc, wallet: (w, c) => handWallet(env, w, c), launches: async ws => (await handLaunches(env, ws)).launches || {}, pools: async () => ({}) };
+  await Promise.all(todo.map(async r => {
+    const [x, gp, h, sc] = await Promise.all([xray(st, env, r.a).catch(() => null), goplus(env, r.a).catch(() => null), sameHand(r.a, io).catch(() => null), siteCheck(st, env, r.a, [], { summary: false }).catch(() => null)]);
+    r.sc = sc?.ok ? { f: sc.flags.filter(f => f.level !== 'low').map(f => f.text.slice(0, 80)), w: sc.website ? 1 : 0 } : null;
+    r.x = x?.ok ? { h: [...new Set(x.powers.filter(p => p.level === 'high').map(p => p.kind))], m: [...new Set(x.powers.filter(p => p.level === 'medium').map(p => p.kind))], o: x.owner ? (x.owner.live ? 1 : 0) : x.roles ? 2 : -1, p: x.proxy ? 1 : 0, n: x.functions } : null;
+    const sr = gp ? serverRead(gp) : null;
+    r.g = gp ? { hp: gp.is_honeypot === '1' ? 1 : 0, st: gp.sell_tax !== undefined && gp.sell_tax !== '' ? Math.round(Number(gp.sell_tax) * 1000) / 10 : null, red: sr?.red.length || 0, os: gp.is_open_source === '1' ? 1 : gp.is_open_source === '0' ? 0 : null } : null;
+    r.sh = h?.ok ? { n: h.launched, w: h.launchers } : null;
+  }));
+  await env.KV.put(LOOKS, JSON.stringify(L));
+}
+async function radarView(env) {
+  const L = await looksLoad(env), now = Date.now(), mv = (r, k) => r[k] !== undefined && r.p0 ? (r[k] ? r[k] / r.p0 - 1 : -1) : null;
+  const flags = r => [...(r.x?.h || []).map(k => ({ mint: 'can mint', upgrade: 'code can be swapped', pause: 'can freeze transfers', block: 'can block wallets', tax: 'can change the tax' }[k] || k)), r.x?.p ? 'proxy' : null, r.g?.hp ? 'sell fails' : null, r.g?.st >= 10 ? `sell tax ${r.g.st}%` : null, r.sh?.n ? `launcher trail: ${r.sh.n} earlier launch${r.sh.n > 1 ? 'es' : ''}` : null, r.f[4] >= 10 ? `bundles ${r.f[4]}%` : null, r.f[3] >= 10 ? `snipers ${r.f[3]}%` : null, r.f[2] >= 50 ? `top 10 hold ${Math.round(r.f[2])}%` : null, ...(r.sc?.f || [])].filter(Boolean);
+  const rows = L.rows.filter(r => r.x !== undefined).sort((a, b) => b.t - a.t).slice(0, 80).map(r => ({ token: r.a, symbol: r.s, read: new Date(r.t).toISOString(), launchpad: r.pad || null, liquidity: r.l0, holders: r.f[1], flags: flags(r), move1h: mv(r, 'p1'), move24h: mv(r, 'p24') }));
+  const scanned = L.rows.filter(r => r.x !== undefined), withFlag = scanned.filter(r => flags(r).length), judged = s => s.filter(r => r.p1 !== undefined);
+  const fell = s => judged(s).filter(r => mv(r, 'p1') <= -0.5).length;
+  return { ok: true, logged: L.rows.length, scanned: scanned.length, flagged: withFlag.length,
+    record: { flagged: { n: judged(withFlag).length, fellHalf1h: fell(withFlag) }, clean: { n: judged(scanned.filter(r => !flags(r).length)).length, fellHalf1h: fell(scanned.filter(r => !flags(r).length)) } },
+    rows, note: 'Every new token on Robinhood Chain with 25 or more holders, read 30 to 90 minutes after launch and scanned on its own: Agent Scan, a GoPlus security read and the launcher trail. Flags are findings, not a verdict. Not advice.' };
+}
+
 // distance between two tokens as they looked: liquidity and holders on a log scale, shares in points
 const lg = v => Math.log10(Math.max(1, v));
 function lookDist(a, ap, b, bp) {
@@ -978,6 +1034,465 @@ async function handAlert(st, env) {
   if (res.ok) st.handDay.n++; else st.handLast.why = 'telegram said ' + res.status;
 }
 
+// ---------- Agent Scan: the contract read down to its functions ----------
+// The bytecode comes from the chain, so it works whether or not the source is verified. Every function the
+// dispatcher compares against (PUSH4 sel EQ, or PUSH4 sel DUP2 EQ) is a function the contract exposes. Names come
+// from the public signature databases (OpenChain, then 4byte); a selector nobody has named stays unknown. A proxy
+// is followed to its implementation (EIP-1967, its beacon, EIP-1167). Read-only functions that take no argument
+// are called to show the state now. Sourcify says whether the source is verified. Workers AI writes it up; when it
+// does not answer, fixed rules do.
+const X_IMPL = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc', X_BEACON = '0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50';
+export function dispatcher(code) {
+  const b = (code || '').replace(/^0x/, ''), out = new Set(), at = i => parseInt(b.substr(i * 2, 2), 16), n = b.length / 2;
+  for (let i = 0; i < n; i++) {
+    const op = at(i);
+    if (op === 0x63 && i + 5 < n) {
+      const sel = b.substr((i + 1) * 2, 8), nx = at(i + 5), nx2 = at(i + 6);
+      if ((nx === 0x14 || (nx >= 0x80 && nx <= 0x8f && nx2 === 0x14)) && sel !== 'ffffffff' && sel !== '00000000') out.add(sel);
+    }
+    if (op >= 0x60 && op <= 0x7f) i += op - 0x5f;   // skip push data
+  }
+  return [...out];
+}
+const sigCache = new Map();
+async function sigNames(sels) {
+  const want = sels.filter(s => !sigCache.has(s));
+  for (let i = 0; i < want.length; i += 60) {
+    const part = want.slice(i, i + 60);
+    try {
+      const j = await (await fetch(`https://api.openchain.xyz/signature-database/v1/lookup?function=${part.map(s => '0x' + s).join(',')}&filter=true`, { headers: UA, signal: AbortSignal.timeout(8000) })).json();
+      for (const s of part) { const c = j.result?.function?.['0x' + s] || []; const best = c.find(x => x.hasVerifiedContract) || c[0]; if (best) sigCache.set(s, best.name); }
+    } catch (e) {}
+  }
+  // what OpenChain does not know, 4byte may; a few at most, it is slow
+  for (const s of want.filter(s => !sigCache.has(s)).slice(0, 8)) {
+    try { const j = await (await fetch(`https://www.4byte.directory/api/v1/signatures/?hex_signature=0x${s}`, { headers: UA, signal: AbortSignal.timeout(6000) })).json(); const r = (j.results || []).sort((a, b) => a.id - b.id)[0]; sigCache.set(s, r ? r.text_signature : null); } catch (e) {}
+  }
+  if (sigCache.size > 5000) sigCache.clear();
+  return Object.fromEntries(sels.map(s => [s, sigCache.get(s) || null]));
+}
+const STANDARD = /^(name|symbol|decimals|totalSupply|balanceOf|transfer|transferFrom|approve|allowance|increaseAllowance|decreaseAllowance|permit|nonces|DOMAIN_SEPARATOR|eip712Domain|supportsInterface|owner|getOwner)\(/;
+const POWERS = [
+  ['mint', /^(mint|mintTo|_mint|issue|airdropMint)\w*\(/i, 'high', 'print new tokens'],
+  ['upgrade', /^(upgradeTo|upgradeToAndCall|setImplementation|changeImplementation)\(/i, 'high', 'swap the contract for another'],
+  ['pause', /^(pause|unpause|setPaused|freeze|unfreeze|setPause)\w*\(/i, 'high', 'freeze or unfreeze transfers'],
+  ['block', /(blacklist|blocklist|setBot|addBot|bots?\b|ban\w*|blockAddress|setSniper|addSniper|isBlocked|setBlock)/i, 'high', 'block wallets from selling'],
+  ['tax', /^(set|update|change)\w*(fee|tax)\w*\(/i, 'high', 'change the tax'],
+  ['limit', /^(set|update|change|remove)\w*(max|limit)\w*\(/i, 'medium', 'change the transaction or wallet limit'],
+  ['trading', /^(enable|open|start|set|toggle|disable)\w*trading\w*\(/i, 'medium', 'switch trading on or off'],
+  ['drain', /^(withdraw|rescue|sweep|recover|emergency|claimStuck|clearStuck)\w*\(/i, 'medium', 'pull tokens or ETH out of the contract'],
+  ['exempt', /^(exclude|include|setExcluded|setExempt|setIsFeeExempt|setWhitelist|whitelist)\w*\(/i, 'medium', 'exempt chosen wallets from fees or limits'],
+  ['router', /^(set|update|change)\w*(router|pair|swap|marketing|wallet|receiver)\w*\(/i, 'low', 'change where swaps and fees go'],
+  ['ownership', /^(transferOwnership|setOwner|changeOwner)\(/i, 'medium', 'hand control to another wallet'],
+  ['renounce', /^renounceOwnership\(/i, 'info', 'give up control for good'],
+];
+const READS = /^(owner|getOwner|paused|tradingEnabled|tradingOpen|tradingActive|swapEnabled|limitsInEffect|\w*(buy|sell)\w*(fee|tax)\w*|\w*(fee|tax)\w*|max\w*|_max\w*|\w*Limit\w*)\(\)$/i;
+async function contractCall(to, sel) { try { const r = await rpc('eth_call', [{ to, data: '0x' + sel }, 'latest']); return r && r.length >= 66 ? r : null; } catch (e) { return null; } }
+function decodeWord(hex, name) {
+  const w = hex.slice(2, 66), v = BigInt('0x' + w);
+  // an address fills most of its 20 bytes; a balance or a count does not, even a large one
+  if (/^0{24}/.test(w) && v >= (1n << 120n) && v < (1n << 160n)) return { kind: 'address', v: '0x' + w.slice(24) };
+  if ((v === 0n || v === 1n) && /paused|enabled|open|active|effect/i.test(name)) return { kind: 'bool', v: v === 1n };
+  return { kind: 'uint', v: v.toString() };
+}
+const xrays = new Map();
+async function xray(st, env, addr) {
+  const hit = xrays.get(addr), now = Date.now(); if (hit && now - hit.t < 30 * 60000) return hit.v;
+  const code = await rpc('eth_getCode', [addr, 'latest']).catch(() => null);
+  if (!code || code === '0x') return { ok: false, why: 'no contract at this address on Robinhood Chain' };
+  // a proxy: read the contract behind it
+  let impl = null, proxyKind = null;
+  const m1167 = code.match(/^0x363d3d373d3d3d363d73([0-9a-f]{40})5af4/i);
+  if (m1167) { impl = '0x' + m1167[1].toLowerCase(); proxyKind = 'minimal proxy (EIP-1167)'; }
+  if (!impl) { const s = await rpc('eth_getStorageAt', [addr, X_IMPL, 'latest']).catch(() => null); if (s && BigInt(s) !== 0n) { impl = '0x' + s.slice(-40); proxyKind = 'upgradeable proxy (EIP-1967)'; } }
+  if (!impl) { const s = await rpc('eth_getStorageAt', [addr, X_BEACON, 'latest']).catch(() => null); if (s && BigInt(s) !== 0n) { const r = await contractCall('0x' + s.slice(-40), '5c60da1b'); if (r) { impl = '0x' + r.slice(-40); proxyKind = 'beacon proxy'; } } }
+  const implCode = impl ? await rpc('eth_getCode', [impl, 'latest']).catch(() => null) : null;
+  const sels = [...new Set([...dispatcher(code), ...dispatcher(implCode)])];
+  const names = await sigNames(sels);
+  const fns = sels.map(s => ({ sel: s, name: names[s] })).sort((a, b) => (a.name || '~').localeCompare(b.name || '~'));
+  // state now: owner and the no-argument reads
+  const readable = fns.filter(f => f.name && READS.test(f.name)).slice(0, 24);
+  const state = [];
+  for (const f of readable) { const r = await contractCall(addr, f.sel); if (r) state.push({ fn: f.name, ...decodeWord(r, f.name) }); }
+  const ownerRead = state.find(s => /^(owner|getOwner)\(\)$/.test(s.fn) && s.kind === 'address');
+  const owner = ownerRead ? ownerRead.v : null, ownerLive = !!owner && !/^0x0{40}$/.test(owner) && !owner.endsWith('dead');
+  const powers = [];
+  for (const f of fns) {
+    if (!f.name || STANDARD.test(f.name)) continue;
+    const p = POWERS.find(([, re]) => re.test(f.name)); if (!p) continue;
+    if (/^(is\w*|get\w*|paused|\w*Enabled|\w*Open|\w*Active|\w*InEffect)\(\)$/i.test(f.name)) continue;   // a getter, not a power
+    powers.push({ fn: f.name, sel: f.sel, kind: p[0], level: p[2], what: p[3] });
+  }
+  // Sourcify: is the source verified there
+  let source = { verified: null, by: 'Sourcify' };
+  try { const r = await fetch(`https://sourcify.dev/server/v2/contract/4663/${impl || addr}`, { headers: UA, signal: AbortSignal.timeout(7000) }); if (r.status === 404) source.verified = false; else if (r.ok) { const j = await r.json(); source = { verified: true, by: 'Sourcify', match: j.match || j.runtimeMatch || 'match' }; } } catch (e) {}
+  // roles: the contract may answer to an admin role rather than (or as well as) an owner
+  const roles = fns.some(f => /^(hasRole|grantRole|getRoleAdmin)\(/.test(f.name || ''));
+  const known = fns.filter(f => f.name).length, live = powers.filter(p => p.level === 'high' || p.level === 'medium');
+  const v = { ok: true, token: addr, t: now, proxy: impl ? { kind: proxyKind, implementation: impl } : null, owner: owner ? { address: owner, live: ownerLive } : null, roles,
+    functions: fns.length, named: known, unknown: fns.length - known, powers, state, source,
+    list: fns.map(f => ({ sel: f.sel, name: f.name })), note: 'Read from the bytecode on chain. Function names come from public signature databases; a function that exists may still be guarded, and the owner may not be the only role. Not advice.' };
+  v.summary = await xrayWords(st, env, v);
+  xrays.set(addr, { t: now, v }); if (xrays.size > 300) xrays.delete(xrays.keys().next().value);
+  return v;
+}
+// plain words: Workers AI first, fixed rules when it does not answer
+function xrayRules(v) {
+  const hi = v.powers.filter(p => p.level === 'high'), md = v.powers.filter(p => p.level === 'medium');
+  const who = !v.owner && v.roles ? 'It uses admin roles (AccessControl) instead of a single owner, so whoever holds those roles controls it.' : !v.owner ? 'No owner() function was found, so who controls it is not visible from the bytecode alone.' : v.owner.live ? `An owner is set (${v.owner.address.slice(0, 6)}…${v.owner.address.slice(-4)}).` : 'Ownership is renounced: functions guarded by the owner are locked, unless the contract has another admin role.';
+  const can = [...new Set([...hi, ...md].map(p => p.what))];
+  return `${v.functions} functions found${v.unknown ? `, ${v.unknown} of them unnamed` : ''}${v.proxy ? `, behind a ${v.proxy.kind}` : ''}. ${who} ${can.length ? `Functions present that can ${can.slice(0, 5).join(', ')}.` : 'No function that mints, pauses, blocks wallets or changes the tax was found.'}${v.proxy ? ' Because it is a proxy, the code behind it can be replaced.' : ''}`;
+}
+async function xrayWords(st, env, v) {
+  const plain = xrayRules(v);
+  if (!env.AI) return { text: plain, by: 'rules' };
+  const day = new Date().toISOString().slice(0, 10); if (st.xai?.day !== day) st.xai = { day, n: 0 };
+  if (st.xai.n >= 200) return { text: plain, by: 'rules' };
+  st.xai.n++;
+  const control = v.owner ? (v.owner.live ? `an owner wallet is set: ${v.owner.address}` : 'ownership is renounced (owner is the zero or dead address)') : v.roles ? 'admin roles (AccessControl), no single owner' : 'no owner() function was found; who controls it cannot be seen from the bytecode, and it is NOT known to be renounced';
+  const facts = [`Control: ${control}`, `Code: ${v.proxy ? `a ${v.proxy.kind}; the code behind it can be replaced` : 'not a proxy; the code is fixed'}`, `Functions found: ${v.functions} (${v.unknown} unnamed)`,
+    `Functions that give power: ${v.powers.length ? v.powers.map(p => `${p.fn} can ${p.what}`).join('; ') : 'none found'}`, `State now: ${v.state.length ? v.state.map(s => `${s.fn} = ${s.v}`).join('; ') : 'nothing readable'}`, `Source verified on Sourcify: ${v.source.verified == null ? 'unknown' : v.source.verified ? 'yes' : 'no'}`].join('\n');
+  try {
+    const r = await env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', { max_tokens: 260, messages: [
+      { role: 'system', content: 'You explain a token contract to someone about to buy it. Use only the facts given. In three to five short sentences: who controls the contract, what that controller can still do (name the functions), and what the current state is (taxes, limits, trading). Say renounced only if the facts say renounced. A function being present does not prove it can be used by anyone; say the controller can use it. Never say whether to buy or sell. Never predict a price. Plain text, no lists, no markdown.' },
+      { role: 'user', content: facts }] });
+    const text = String(r?.response || '').trim();
+    if (text.length > 40) return { text: text.slice(0, 900), by: 'model' };
+  } catch (e) {}
+  return { text: plain, by: 'rules' };
+}
+// a fresh graduation with a live owner power gets posted to the group, at most six a day
+async function xrayAlert(st, env) {
+  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_GROUP) return;
+  const q = st.xrayQ = st.xrayQ || [], day = new Date().toISOString().slice(0, 10);
+  if (st.xrayDay?.day !== day) st.xrayDay = { day, n: 0 };
+  if (!q.length || st.xrayDay.n >= 6) return;
+  const token = q.shift(), v = await xray(st, env, token).catch(() => null);
+  st.xrayLast = { t: Date.now(), token, ok: !!v?.ok, powers: v?.powers?.length ?? null };
+  if (!v?.ok) return;
+  const live = v.powers.filter(p => p.level === 'high' && (v.owner?.live || v.proxy || !v.owner));
+  if (!live.length) return;
+  const sym = (await launch(env, token).catch(() => null))?.symbol, short = a => a.slice(0, 6) + '…' + a.slice(-4);
+  const text = `<b>Agent Scan</b> · ${tgEsc(sym ? '$' + sym : short(token))} just graduated on Pons.\n\n${live.slice(0, 5).map(p => `• <code>${tgEsc(p.fn)}</code>: can ${tgEsc(p.what)}`).join('\n')}\n\n${v.owner?.live ? `Owner: <code>${short(v.owner.address)}</code>` : v.owner ? 'Ownership renounced.' : 'No owner() found.'}${v.proxy ? `\nBehind a ${tgEsc(v.proxy.kind)}.` : ''}\n\nshuntdesk.com/scan/?a=${token}\n\n<i>Read from the bytecode. A function that exists may still be guarded. Not advice.</i>`;
+  const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: env.TELEGRAM_GROUP, text, parse_mode: 'HTML', disable_web_page_preview: true }) });
+  if (res.ok) st.xrayDay.n++; else st.xrayLast.why = 'telegram said ' + res.status;
+}
+
+// ---------- Bond Watch: every token on the Pons curve, read from the curves themselves ----------
+// The factory's launch log names each token's curve. Each curve keeps its own state: realQuoteReserve() is the ETH
+// raised, graduationThreshold() the ETH it needs to bond, graduated() whether it has. All of them are read in one
+// call through Multicall3 every ten minutes. A launch that has raised under 1% six hours in is dropped, so the
+// list stays to the ones still moving; the counts of launches and bonds per day come from the logs.
+const MC3 = '0xca11bde05977b3631167028862be2a173976ca11', BONDS = 'bonds-v1';
+const SEL = { real: 'b0c4b7c5', thr: '', grad: '', sym: '95d89b41', nat: '', pair: '' };
+async function selOf(sig) { return keccak256([...new TextEncoder().encode(sig)].map(b => b.toString(16).padStart(2, '0')).join('')).slice(0, 8); }
+async function multicall(calls) {   // calls: [target, selector] → hex result or null
+  const out = [];
+  for (let i = 0; i < calls.length; i += 250) {
+    const part = calls.slice(i, i + 250), n = part.length, w = x => x.toString(16).padStart(64, '0');
+    let head = w(32) + w(n), body = '';
+    part.forEach(([to, sel], k) => { head += w(n * 32 + k * 160); body += w(BigInt(to)) + w(1) + w(96) + w(4) + sel.padEnd(64, '0'); });
+    let r = null; try { r = await rpc('eth_call', [{ to: MC3, data: '0x82ad56cb' + head + body }, 'latest']); } catch (e) {}
+    if (!r) { out.push(...part.map(() => null)); continue; }
+    const h = r.slice(2), word = o => BigInt('0x' + h.substr(o * 2, 64)), base = Number(word(32)) === n ? 64 : 64;
+    for (let k = 0; k < n; k++) {
+      const off = 64 + Number(word(64 + k * 32)), ok = word(off) === 1n, dOff = off + Number(word(off + 32)), len = Number(word(dOff));
+      out.push(ok && len ? '0x' + h.substr((dOff + 32) * 2, len * 2) : null);
+    }
+  }
+  return out;
+}
+const str = hex => { try { if (!hex || hex.length < 130) return null; const h = hex.slice(2), len = parseInt(h.substr(64, 64), 16); return new TextDecoder().decode(new Uint8Array(h.substr(128, len * 2).match(/../g).map(b => parseInt(b, 16)))).replace(/[^\x20-\x7e]/g, '').slice(0, 16); } catch (e) { return null; } };
+let bondsMem = null;
+const bondsLoad = async env => bondsMem || (bondsMem = await env.KV.get(BONDS).then(s => s ? JSON.parse(s) : { rows: [], block: 0, t: 0, days: [] }));
+async function bondTick(env) {
+  const B = await bondsLoad(env), now = Date.now(); if (now - B.t < 10 * 60000) return; B.t = now;
+  try {
+    if (!SEL.thr) { SEL.thr = await selOf('graduationThreshold()'); SEL.grad = await selOf('graduated()'); SEL.real = await selOf('realQuoteReserve()'); SEL.nat = await selOf('isNativeQuote()'); SEL.pair = await selOf('pairToken()'); }
+    const head = parseInt(await rpc('eth_blockNumber'), 16), from = B.block ? B.block + 1 : head - 2 * 864000;   // first read: two days back
+    const have = new Set(B.rows.map(r => r.t0)), fresh = [];
+    for (let a = from; a <= head; a += 400000) {
+      const logs = await rpc('eth_getLogs', [{ address: PONS, topics: [T_LAUNCH], fromBlock: hex(a), toBlock: hex(Math.min(head, a + 399999)) }]);
+      for (const l of logs) { const token = wordAddr(l.topics[1]); if (!have.has(token)) fresh.push({ t0: token, c: wordAddr(l.topics[2]), by: wordAddr(l.topics[3]), b: parseInt(l.blockNumber, 16), at: now - (head - parseInt(l.blockNumber, 16)) * 100 }); }
+      const g = await rpc('eth_getLogs', [{ address: PONS, topics: [T_GRAD], fromBlock: hex(a), toBlock: hex(Math.min(head, a + 399999)) }]);
+      for (const l of g) { const d = new Date(now - (head - parseInt(l.blockNumber, 16)) * 100).toISOString().slice(0, 10); const day = B.days.find(x => x.d === d) || (B.days.push({ d, l: 0, g: 0 }), B.days.at(-1)); day.g++; }
+    }
+    for (const f of fresh) { const d = new Date(f.at).toISOString().slice(0, 10); const day = B.days.find(x => x.d === d) || (B.days.push({ d, l: 0, g: 0 }), B.days.at(-1)); day.l++; }
+    B.days = B.days.sort((a, b) => a.d < b.d ? -1 : 1).slice(-14);
+    B.block = head;
+    // the new ones: threshold and symbol once
+    if (fresh.length) {
+      const res = await multicall(fresh.flatMap(f => [[f.c, SEL.thr], [f.t0, SEL.sym], [f.c, SEL.nat], [f.c, SEL.pair]]));
+      // a curve quoted in a token rather than native ETH: name that token, once per token
+      const quotes = [...new Set(fresh.map((f, i) => res[i * 4 + 2] && BigInt(res[i * 4 + 2]) === 0n && res[i * 4 + 3] ? '0x' + res[i * 4 + 3].slice(-40) : null).filter(a => a && !/^0x0{40}$/.test(a)))];
+      const qs = quotes.length ? await multicall(quotes.map(q => [q, SEL.sym])) : [], qsym = Object.fromEntries(quotes.map((q, i) => [q, str(qs[i]) || 'quote']));
+      fresh.forEach((f, i) => { const th = res[i * 4]; f.th = th ? Number(BigInt(th) / 10n ** 12n) / 1e6 : 0; f.s = str(res[i * 4 + 1]) || f.t0.slice(0, 8); f.h = []; const nat = res[i * 4 + 2], pr = res[i * 4 + 3]; f.u = nat && BigInt(nat) === 0n && pr ? qsym['0x' + pr.slice(-40)] || 'quote' : 'ETH'; });
+      B.rows.push(...fresh.filter(f => f.th > 0));
+    }
+    // every curve still on the board: what it has raised, and whether it bonded
+    const live = B.rows.filter(r => !r.g);
+    const res = await multicall(live.flatMap(r => [[r.c, SEL.real], [r.c, SEL.grad]]));
+    live.forEach((r, i) => { const q = res[i * 2], gd = res[i * 2 + 1]; if (q) { const eth = Number(BigInt(q) / 10n ** 12n) / 1e6; r.q = eth; r.p = Math.min(100, eth / r.th * 100); r.h.push([now, Math.round(r.p * 100) / 100]); r.h = r.h.slice(-36); r.max = Math.max(r.max || 0, r.p); } if (gd && BigInt(gd) === 1n) { r.g = now; r.p = 100; } });
+    // keep: the ones still moving, the bonded ones for two days, and nothing older than three days
+    B.rows = B.rows.filter(r => now - r.at < 72 * HOUR && (r.g ? now - r.g < 48 * HOUR : !(now - r.at > 6 * HOUR && (r.max || 0) < 1)));
+    B.err = null;
+  } catch (e) { B.err = String(e.message || e).slice(0, 120); }
+  await env.KV.put(BONDS, JSON.stringify(B));
+}
+async function bondView(env) {
+  const B = await bondsLoad(env), now = Date.now();
+  const speed = r => { const h = r.h || [], a = h.find(x => now - x[0] <= 65 * 60000) || h[0], z = h.at(-1); if (!a || !z || z[0] === a[0]) return null; return (z[1] - a[1]) / ((z[0] - a[0]) / HOUR); };
+  const rows = B.rows.filter(r => !r.g && r.p != null).map(r => { const v = speed(r); return { token: r.t0, symbol: r.s, launcher: r.by, launched: new Date(r.at).toISOString(), progress: Math.round(r.p * 10) / 10, raised: r.q, need: r.th, unit: r.u || 'ETH', perHour: v == null ? null : Math.round(v * 10) / 10, etaHours: v > 0.05 ? Math.round((100 - r.p) / v * 10) / 10 : null, peak: Math.round((r.max || 0) * 10) / 10 }; })
+    .sort((a, b) => b.progress - a.progress).slice(0, 80);
+  const bonded = B.rows.filter(r => r.g).sort((a, b) => b.g - a.g).slice(0, 20).map(r => ({ token: r.t0, symbol: r.s, bonded: new Date(r.g).toISOString(), hoursToBond: Math.round((r.g - r.at) / HOUR * 10) / 10 }));
+  const days = B.days.slice(-7), L = days.reduce((s, d) => s + d.l, 0), G = days.reduce((s, d) => s + d.g, 0);
+  // of the tracked launches that ever reached a mark, how many bonded: a rate that grows as the log does
+  const reach = m => { const hit = B.rows.filter(r => (r.max || 0) >= m && now - r.at > 6 * HOUR); return { n: hit.length, bonded: hit.filter(r => r.g).length }; };
+  return { ok: true, read: B.t, onCurve: B.rows.filter(r => !r.g).length, days, week: { launched: L, bonded: G, rate: L ? G / L : null }, reached: { 25: reach(25), 50: reach(50), 75: reach(75) }, rows, bonded, err: B.err || null,
+    note: 'Read from each Pons curve on chain: ETH raised against the ETH it needs to bond. The pace is the last hour; an estimate is only that pace carried on. Not advice.' };
+}
+
+// ---------- Tripwire: a private alarm on Telegram for one token ----------
+// /watch 0x… in a DM to the bot. Every three minutes the server looks at what happened to the token since the last
+// look: a transaction that called one of the contract's power functions (the selectors Agent Scan found), and
+// tokens leaving the launcher's wallet or one of the largest holders' wallets (Transfer logs). Five tokens a chat,
+// 150 tokens in all.
+const T_TRANSFER = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+async function tripAdd(st, env, chat, token) {
+  const T = st.trip = st.trip || {};
+  const mine = Object.entries(T).filter(([, w]) => w.chats.includes(chat));
+  if (T[token]?.chats.includes(chat)) return { ok: true, why: 'already watching' };
+  if (mine.length >= 5) return { ok: false, why: 'five tokens a chat; /unwatch one first' };
+  if (!T[token] && Object.keys(T).length >= 150) return { ok: false, why: 'the tripwire is full right now' };
+  if (!T[token]) {
+    const x = await xray(st, env, token).catch(() => null);
+    if (!x?.ok) return { ok: false, why: x?.why || 'the contract could not be read' };
+    const sels = Object.fromEntries(x.powers.filter(p => p.level !== 'info').map(p => [p.sel, p.fn]));
+    // who to watch selling: the launcher, and the ten largest ordinary holders per GoPlus
+    const gp = await goplus(env, token).catch(() => null), sh = await handWallet(env, token, true).catch(() => null);
+    const watch = [...new Set([sh?.ponsBy, sh?.creator, ...(gp?.holders || []).filter(h => h.is_contract != 1 && h.is_locked != 1).slice(0, 10).map(h => String(h.address).toLowerCase())].filter(isAddr))].slice(0, 12);
+    const sup = await contractCall(token, '18160ddd'), head = parseInt(await rpc('eth_blockNumber'), 16);
+    T[token] = { chats: [], sym: word(gp?.token_symbol || '', 12) || null, sels, watch, launcher: sh?.ponsBy || sh?.creator || null, supply: sup ? BigInt(sup).toString() : null, block: head, t: Date.now() };
+  }
+  T[token].chats.push(chat);
+  return { ok: true, w: T[token] };
+}
+function tripDrop(st, chat, token) {
+  const T = st.trip || {}; if (!T[token]) return false;
+  T[token].chats = T[token].chats.filter(c => c !== chat); if (!T[token].chats.length) delete T[token];
+  return true;
+}
+async function tgSend(env, chat, text) {
+  if (!env.TELEGRAM_BOT_TOKEN) return 0;
+  const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: chat, text, parse_mode: 'HTML', disable_web_page_preview: true }) });
+  return r.status;
+}
+// Tripwire by email (Resend): an address is only used after its owner clicks the link in a confirmation email,
+// and every alert carries a link that stops it. Three tokens an address, 300 addresses in all.
+const mailOk = e => /^[^\s@<>"']{1,64}@[^\s@<>"']{1,190}\.[a-z]{2,}$/i.test(e || '');
+async function sendMail(env, to, subject, html) {
+  if (!env.RESEND_API_KEY) return 0;
+  const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + env.RESEND_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: env.RESEND_FROM || 'Shuntdesk <alerts@shuntdesk.com>', to: [to], subject, html }) });
+  return r.status;
+}
+async function tripMail(st, env, b, origin) {
+  const email = String(b?.email || '').trim().toLowerCase(), token = String(b?.token || '').toLowerCase();
+  if (!mailOk(email) || !isAddr(token)) return [400, { ok: false, why: 'an email address and a token address, please' }];
+  const M = st.tripMail = st.tripMail || {};
+  const mine = Object.values(M).filter(m => m.email === email && m.on);
+  if (mine.length >= 3) return [400, { ok: false, why: 'three tokens per address' }];
+  if (Object.keys(M).length >= 300) return [400, { ok: false, why: 'email alerts are full right now' }];
+  const x = await xray(st, env, token).catch(() => null); if (!x?.ok) return [400, { ok: false, why: x?.why || 'the contract could not be read' }];
+  const id = crypto.randomUUID().slice(0, 12), code = crypto.randomUUID().replace(/-/g, '');
+  M[id] = { email, token, code, on: false, t: Date.now() };
+  const link = `${origin}/api/trip/confirm?id=${id}&c=${code}`;
+  const s = await sendMail(env, email, 'Confirm your Shuntdesk tripwire', `<p>Someone asked for Tripwire alerts on <b>${token}</b> to be sent to this address.</p><p><a href="${link}">Confirm and start the alerts</a></p><p>If it was not you, ignore this email and nothing will be sent.</p><p style="color:#888">Shuntdesk · shuntdesk.com · not advice</p>`);
+  if (s >= 300) { delete M[id]; return [502, { ok: false, why: 'the email could not be sent right now' }]; }
+  return [200, { ok: true, why: 'check your inbox for the confirmation link' }];
+}
+async function tripMailLink(st, env, kind, id, c) {
+  const m = st.tripMail?.[id]; if (!m || m.code !== c) return 'That link is no longer valid.';
+  if (kind === 'off') { delete st.tripMail[id]; return 'Done: no more Tripwire emails for that token.'; }
+  if (!m.on) {
+    // the token goes on the tripwire with this address as one of its listeners
+    const r = await tripAdd(st, env, 'mail:' + id, m.token).catch(() => null);
+    if (!r?.ok) return 'The tripwire could not be set right now. Try again later.';
+    m.on = true;
+  }
+  return 'Confirmed. You will get an email when the owner calls a power function, or the launcher or a top holder moves tokens out.';
+}
+export async function tripTick(st, env) {
+  const T = st.trip; if (!T || !Object.keys(T).length) return;
+  const now = Date.now(); if (now - (st.tripT || 0) < 3 * 60000) return; st.tripT = now;
+  const head = parseInt(await rpc('eth_blockNumber'), 16), short = a => a.slice(0, 6) + '…' + a.slice(-4);
+  for (const [token, w] of Object.entries(T)) {
+    const from = w.block + 1; if (from > head) continue;
+    const say = [];
+    // power functions called since the last look
+    if (env.BLOCKSCOUT_API_KEY && Object.keys(w.sels).length) try {
+      const j = await (await fetch(`https://api.blockscout.com/4663/api?module=account&action=txlist&address=${token}&startblock=${from}&endblock=${head}&sort=asc&page=1&offset=50&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA })).json();
+      for (const tx of Array.isArray(j.result) ? j.result : []) {
+        const sel = String(tx.input || '').slice(2, 10).toLowerCase();
+        if (String(tx.to).toLowerCase() === token && w.sels[sel] && tx.isError !== '1') say.push(`<code>${tgEsc(w.sels[sel])}</code> was just called by <code>${short(String(tx.from).toLowerCase())}</code>`);
+      }
+    } catch (e) {}
+    // tokens leaving the launcher or a top holder
+    if (w.watch.length) try {
+      const logs = await rpc('eth_getLogs', [{ address: token, topics: [T_TRANSFER, w.watch.map(a => '0x' + a.slice(2).padStart(64, '0'))], fromBlock: hex(Math.max(from, head - 90000)), toBlock: hex(head) }]);
+      const out = {}; for (const l of logs || []) { const f = wordAddr(l.topics[1]); out[f] = (out[f] || 0n) + BigInt(l.data); }
+      for (const [f, amt] of Object.entries(out)) {
+        const share = w.supply ? Number(amt * 100000n / BigInt(w.supply)) / 1000 : null;
+        if (share == null || share >= 0.5) say.push(`${f === w.launcher ? 'The launcher' : 'A top-10 holder'} <code>${short(f)}</code> just moved ${share == null ? 'tokens' : share.toFixed(2) + '% of supply'} out`);
+      }
+    } catch (e) {}
+    w.block = head;
+    if (!say.length) continue;
+    const text = `<b>Tripwire</b> · ${tgEsc(w.sym ? '$' + w.sym : short(token))}\n\n${say.slice(0, 6).map(s => '• ' + s).join('\n')}\n\nshuntdesk.com/scan/?a=${token}\n\n<i>From the chain, as it happened. Not advice. /unwatch ${token} to stop.</i>`;
+    for (const c of w.chats) {
+      if (String(c).startsWith('mail:')) { const m = st.tripMail?.[String(c).slice(5)]; if (!m) { w.chats = w.chats.filter(x => x !== c); continue; } const off = `https://shuntdesk.com/api/trip/off?id=${String(c).slice(5)}&c=${m.code}`; await sendMail(env, m.email, `Tripwire · ${w.sym ? '$' + w.sym : short(token)}`, text.replace(/\n/g, '<br>').replace(/\/unwatch \S+ to stop\./, `<a href="${off}">Stop these emails</a>.`)).catch(() => 0); continue; }
+      const code = await tgSend(env, c, text).catch(() => 0); if (code === 403) w.chats = w.chats.filter(x => x !== c);
+    }
+    if (!w.chats.length) delete T[token];
+  }
+}
+
+// ---------- wallet intel: the same wallet off this chain ----------
+// For the wallets on a money trail or the owner of a contract: Webacy's risk read (drainers, hacks, mixers,
+// sanctions, on Ethereum and Base), and the wallet's history on Ethereum and Arbitrum from Etherscan (the free
+// plan does not cover Base or Robinhood Chain): first seen, how many transactions, how many contracts it made.
+// Kept a day per wallet, since none of it changes fast and both free plans are small.
+const intelCache = new Map();
+async function walletIntel(st, env, w) {
+  const hit = intelCache.get(w), now = Date.now(); if (hit && now - hit.t < 24 * HOUR) return hit.v;
+  const day = new Date().toISOString().slice(0, 10); if (st.intelDay?.day !== day) st.intelDay = { day, n: 0 };
+  if (st.intelDay.n >= 300) return { ok: false, why: 'the daily allowance is used up' };
+  st.intelDay.n++;
+  const risk = async chain => {
+    if (!env.WEBACY_API_KEY) return null;
+    try { const j = await (await fetch(`https://api.webacy.com/addresses/${w}?chain=${chain}`, { headers: { 'x-api-key': env.WEBACY_API_KEY, Accept: 'application/json' }, signal: AbortSignal.timeout(12000) })).json();
+      const tags = [...new Map((j.issues || []).flatMap(i => i.tags || []).map(t => [t.key, { key: t.key, name: t.name, severity: t.severity }])).values()].sort((a, b) => b.severity - a.severity);
+      return { overall: j.overallRisk ?? null, tags: tags.filter(t => t.severity >= 1).slice(0, 8) }; } catch (e) { return null; }
+  };
+  const hist = async chainid => {
+    if (!env.ETHERSCAN_API_KEY) return null;
+    try {
+      const base = `https://api.etherscan.io/v2/api?chainid=${chainid}&module=account&action=txlist&address=${w}&apikey=${env.ETHERSCAN_API_KEY}`;
+      const [first, last] = await Promise.all([fetch(base + '&page=1&offset=1&sort=asc').then(r => r.json()), fetch(base + '&page=1&offset=100&sort=desc').then(r => r.json())]);
+      if (!Array.isArray(first.result) || !first.result.length) return { txs: 0 };
+      const recent = Array.isArray(last.result) ? last.result : [];
+      return { firstSeen: Number(first.result[0].timeStamp) * 1000, txs: recent.length >= 100 ? '100+' : recent.length, made: recent.filter(t => t.contractAddress && String(t.from).toLowerCase() === w).length };
+    } catch (e) { return null; }
+  };
+  const [eth, base, ethH, arbH] = await Promise.all([risk('eth'), risk('base'), hist(1), hist(42161)]);
+  const tags = [...new Map([...(eth?.tags || []), ...(base?.tags || [])].map(t => [t.key, t])).values()].sort((a, b) => b.severity - a.severity);
+  const v = { ok: true, wallet: w, risk: eth || base ? { overall: Math.max(eth?.overall || 0, base?.overall || 0), tags } : null, ethereum: ethH, arbitrum: arbH };
+  intelCache.set(w, { t: now, v }); if (intelCache.size > 1000) intelCache.delete(intelCache.keys().next().value);
+  return v;
+}
+
+// ---------- Site Check: the token's website and links, checked ----------
+// The links come from the token itself where it keeps them (a Pons token's socials() on chain) and from the pages
+// the browser already has (DexScreener's profile). The website then goes through four checks: Google Safe Browsing
+// for known phishing and malware, RDAP for how old the domain is, urlscan.io for what the page loads and whether it
+// is judged malicious (an earlier scan if there is one, else a new unlisted scan, read on a later call), and Jina
+// Reader for what the page says: a request for a seed phrase or a wallet connection, or next to nothing at all.
+const BIG = /(^|\.)(x\.com|twitter\.com|t\.me|telegram\.(me|org)|discord\.(gg|com)|github\.com|medium\.com|youtube\.com|instagram\.com|tiktok\.com|linktr\.ee|dexscreener\.com|ponsfamily\.com|pons\.family|robinhood\.com)$/i;
+const sites = new Map();
+const urlsIn = s => [...new Set((s.match(/https?:\/\/[^\s\x00-\x1f"'<>()\[\]{}|\\^`]+/g) || []).map(u => u.replace(/[.,;:!?·]+$/, '')))].slice(0, 12);
+async function siteCheck(st, env, token, extra = [], opts = {}) {
+  const now = Date.now(), hit = sites.get(token);
+  if (hit && now - hit.t < 6 * HOUR && !hit.v.pending) return hit.v;
+  const day = new Date().toISOString().slice(0, 10); if (st.siteDay?.day !== day) st.siteDay = { day, n: 0, scans: 0 };
+  // links: on chain first, then what the browser passed
+  let onChain = [];
+  try { const r = await contractCall(token, await selOf('socials()')); if (r) onChain = urlsIn(new TextDecoder().decode(new Uint8Array(r.slice(2).match(/../g).map(b => parseInt(b, 16))))); } catch (e) {}
+  const links = [...new Set([...onChain, ...extra.filter(u => /^https?:\/\/[^\s]{4,300}$/.test(u))])].slice(0, 12);
+  const kind = u => { const h = (() => { try { return new URL(u).hostname.toLowerCase(); } catch (e) { return ''; } })(); return /x\.com|twitter\.com/.test(h) ? 'x' : /t\.me|telegram/.test(h) ? 'telegram' : /discord/.test(h) ? 'discord' : /github/.test(h) ? 'github' : BIG.test(h) ? 'other' : 'website'; };
+  const L = links.map(u => ({ url: u, kind: kind(u), from: onChain.includes(u) ? 'contract' : 'listing' }));
+  const site = L.find(l => l.kind === 'website');
+  const v = { ok: true, token, t: now, links: L, website: null, flags: [], pending: false };
+  // Safe Browsing on every link
+  if (env.SAFE_BROWSING_KEY && L.length) try {
+    const r = await (await fetch(`https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${env.SAFE_BROWSING_KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client: { clientId: 'shuntdesk', clientVersion: '1.0' }, threatInfo: { threatTypes: ['MALWARE', 'SOCIAL_ENGINEERING', 'UNWANTED_SOFTWARE', 'POTENTIALLY_HARMFUL_APPLICATION'], platformTypes: ['ANY_PLATFORM'], threatEntryTypes: ['URL'], threatEntries: L.map(l => ({ url: l.url })) } }) })).json();
+    for (const m of r.matches || []) { const l = L.find(x => x.url === m.threat?.url); if (l) l.threat = m.threatType; v.flags.push({ level: 'high', text: `Google Safe Browsing lists ${m.threat?.url} as ${String(m.threatType).toLowerCase().replace(/_/g, ' ')}` }); }
+  } catch (e) {}
+  if (site) {
+    const u = new URL(site.url), domain = u.hostname.replace(/^www\./, '');
+    const w = v.website = { url: site.url, domain };
+    // RDAP: when the domain was registered
+    try { const j = await (await fetch(`https://rdap.org/domain/${domain}`, { headers: UA, redirect: 'follow', signal: AbortSignal.timeout(10000) })).json(); const reg = (j.events || []).find(e => e.eventAction === 'registration')?.eventDate; if (reg) { w.registered = reg; w.ageDays = Math.floor((now - Date.parse(reg)) / 86400000); if (w.ageDays < 14) v.flags.push({ level: w.ageDays < 3 ? 'high' : 'medium', text: `The website's domain was registered ${w.ageDays === 0 ? 'today' : w.ageDays + ' day' + (w.ageDays > 1 ? 's' : '') + ' ago'}` }); } } catch (e) {}
+    // urlscan: an earlier scan of the domain, or a new one
+    if (env.URLSCAN_API_KEY) try {
+      const H = { 'API-Key': env.URLSCAN_API_KEY, 'Content-Type': 'application/json' };
+      const U = st.urlscan = st.urlscan || {}, known = U[domain] && now - U[domain].t < 14 * 86400000 ? U[domain].id : null;
+      let uuid = hit?.v?.website?.urlscan?.uuid || known;
+      if (!uuid) { const s = await (await fetch(`https://urlscan.io/api/v1/search/?q=${encodeURIComponent('page.domain:' + domain)}&size=1`, { headers: H })).json(); const r0 = s.results?.[0]; if (r0 && now - Date.parse(r0.task?.time || 0) < 14 * 86400000) uuid = r0._id; }
+      if (!uuid && st.siteDay.scans < 400) { const s = await (await fetch('https://urlscan.io/api/v1/scan/', { method: 'POST', headers: H, body: JSON.stringify({ url: site.url, visibility: 'unlisted', tags: ['shuntdesk'] }) })).json(); if (s.uuid) { uuid = s.uuid; st.siteDay.scans++; } }
+      if (uuid) {
+        if (!U[domain] || U[domain].id !== uuid) { U[domain] = { id: uuid, t: now }; const ks = Object.keys(U); if (ks.length > 500) delete U[ks[0]]; }
+        const r = await fetch(`https://urlscan.io/api/v1/result/${uuid}/`, { headers: H });
+        if (r.status === 404) { w.urlscan = { uuid, status: 'scanning' }; v.pending = true; }
+        else if (r.ok) { const j = await r.json(), vd = j.verdicts?.overall || {};
+          w.urlscan = { uuid, status: 'done', malicious: !!vd.malicious, score: vd.score ?? null, categories: vd.categories || [], requests: j.stats?.resourceStats?.length ?? null, screenshot: `https://urlscan.io/screenshots/${uuid}.png`, report: `https://urlscan.io/result/${uuid}/` };
+          if (vd.malicious) v.flags.push({ level: 'high', text: `urlscan.io judges the website malicious${vd.categories?.length ? ' (' + vd.categories.join(', ') + ')' : ''}` }); }
+      }
+    } catch (e) {}
+    // Jina Reader: what the page says
+    if (env.JINA_API_KEY) try {
+      const r = await fetch('https://r.jina.ai/' + site.url, { headers: { Authorization: 'Bearer ' + env.JINA_API_KEY }, signal: AbortSignal.timeout(20000) });
+      if (r.ok) { const text = (await r.text()).slice(0, 60000), words = (text.match(/[A-Za-z]{2,}/g) || []).length, low = text.toLowerCase();
+        const has = re => re.test(low);
+        w.page = { title: (text.match(/^Title:\s*(.+)$/m)?.[1] || '').slice(0, 120), words,
+          seed: has(/seed phrase|recovery phrase|private key|mnemonic|12 words|24 words/), connect: has(/connect (your )?wallet|walletconnect|connect metamask/), claim: has(/claim (your )?(airdrop|tokens|reward)|free (tokens|airdrop)/) };
+        if (w.page.seed) v.flags.push({ level: 'high', text: 'The website asks for a seed phrase, recovery phrase or private key' });
+        if (w.page.connect && w.page.claim) v.flags.push({ level: 'medium', text: 'The website asks you to connect a wallet to claim tokens' });
+        if (words < 60) v.flags.push({ level: 'low', text: 'The website has next to nothing on it' });
+        if (env.AI && words >= 60 && opts.summary !== false) try { const a = await env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', { max_tokens: 120, messages: [{ role: 'system', content: 'Say in two plain sentences what this token website says it is and what it asks the visitor to do. Facts from the text only. No opinion on the token, no advice.' }, { role: 'user', content: text.slice(0, 6000) }] }); const s = String(a?.response || '').trim(); if (s) w.page.summary = s.slice(0, 400); } catch (e) {}
+      }
+    } catch (e) {}
+  }
+  if (!L.length) v.flags.push({ level: 'low', text: 'No website or social link found for this token' });
+  sites.set(token, { t: now, v }); if (sites.size > 400) sites.delete(sites.keys().next().value);
+  return v;
+}
+
+// ---------- the daily line, posted to the community group at 13:00 UTC ----------
+// The site's own numbers for the last day, so the group hears from the line every day: the crew desk, the calls,
+// what the radar found, and the Pons curves closest to bonding. Once a day, nothing invented.
+async function groupDigest(st, env) {
+  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_GROUP) return;
+  const now = new Date(), day = now.toISOString().slice(0, 10);
+  if (now.getUTCHours() < 13 || st.digestDay === day) return;
+  st.digestDay = day;
+  const r = report(st), rd = await radarView(env).catch(() => null), bw = await bondView(env).catch(() => null);
+  const near = (bw?.rows || []).slice(0, 3).map(b => `${tgEsc(b.symbol)} ${b.progress}%`).join(' · ');
+  const y = bw?.days?.at(-2);
+  const text = `<b>The daily line</b> · ${day}\n\n<b>Crew desk</b> ${money(r.equity)} paper USDG (${r.change >= 0 ? '+' : ''}${money(r.change)} in 24h)\n<b>Calls</b> ${r.verdicts.CLEAN} clean · ${r.verdicts.RISKY} risky · ${r.verdicts.DANGER} danger${r.judged ? `, ${r.held} of ${r.judged} held an hour later` : ''}\n${rd ? `<b>Radar</b> ${rd.scanned} new tokens scanned so far, ${rd.flagged} with a flag\n` : ''}${y ? `<b>Pons</b> ${y.l.toLocaleString('en-US')} launched yesterday, ${y.g} bonded\n` : ''}${near ? `<b>Closest to bonding</b> ${near}\n` : ''}\nshuntdesk.com/radar · shuntdesk.com/bonds\n\n<i>The site's own figures. Not advice.</i>`;
+  await tgSend(env, env.TELEGRAM_GROUP, text).catch(() => 0);
+}
+
+// ---------- Wallet X-ray: what a wallet holds, read only ----------
+// Every ERC-20 a wallet holds (the keyed Blockscout index), with what Shuntdesk already knows of each: the verdict
+// on file, where it stands on the Pons curve, and whether it copies the name of a real token from another address
+// (a USDG or a stock ticker that is not the real contract). Prices and the way out are worked in the browser.
+const REAL = { USDG: USDG, WETH: WETH, NVDA: '0xd0601ce157db5bdc3162bbac2a2c8af5320d9eec', TSLA: '0x322f0929c4625ed5bad873c95208d54e1c003b2d', AAPL: '0xaf3d76f1834a1d425780943c99ea8a608f8a93f9', META: '0xc0d6457c16cc70d6790dd43521c899c87ce02f35', GOOGL: '0x2e0847e8910a9732eb3fb1bb4b70a580adad4fe3', AMZN: '0x12f190a9f9d7d37a250758b26824b97ce941bf54', MSFT: '0xe93237c50d904957cf27e7b1133b510c669c2e74', AMD: '0x86923f96303d656e4aa86d9d42d1e57ad2023fdc', COIN: '0x6330d8c3178a418788df01a47479c0ce7ccf450b', PLTR: '0x894e1ec2d74ffe5aef8dc8a9e84686accb964f2a', MSTR: '0xec262a75e413fafd0df80480274532c79d42da09', SPY: '0x117cc2133c37b721f49de2a7a74833232b3b4c0c', QQQ: '0xd5f3879160bc7c32ebb4dc785f8a4f505888de68', SHUNT: '0x7e517e779b85895894becad80c9bb69b4cb1c4d6' };
+async function walletView(st, env, w) {
+  if (!env.BLOCKSCOUT_API_KEY) return { ok: false, why: 'not available right now' };
+  const j = await (await fetch(`https://api.blockscout.com/4663/api?module=account&action=tokenlist&address=${w}&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA, signal: AbortSignal.timeout(12000) })).json();
+  if (!Array.isArray(j.result)) return j.message === 'No tokens found' ? { ok: true, wallet: w, tokens: [] } : { ok: false, why: 'the explorer did not answer' };
+  const B = await bondsLoad(env);
+  const tokens = j.result.filter(t => /20/.test(t.type || '') && BigInt(t.balance || '0') > 0n).slice(0, 80).map(t => {
+    const a = String(t.contractAddress).toLowerCase(), sym = word(t.symbol, 14), real = REAL[String(t.symbol || '').toUpperCase()];
+    const v = st.verdicts.find(x => x.addr === a), b = B.rows.find(r => r.t0 === a), x = xrays.get(a)?.v;
+    return { token: a, symbol: sym, name: word(t.name, 30), decimals: Number(t.decimals) || 0, balance: String(t.balance),
+      impostor: !!real && real !== a ? real : null,
+      verdict: v ? { verdict: v.verdict, score: v.score, at: new Date(v.t).toISOString(), after1h: v.p1h && v.p0 ? v.p1h / v.p0 - 1 : null } : null,
+      curve: b ? { progress: Math.round((b.p || 0) * 10) / 10, bonded: !!b.g } : null,
+      powers: x ? x.powers.filter(p => p.level === 'high').map(p => p.what) : null };
+  });
+  return { ok: true, wallet: w, tokens, note: 'Read only. Balances from the explorer; nothing is connected or signed. Not advice.' };
+}
+
 // ---------- stock tokens against the stock itself ----------
 // The reference is Yahoo Finance's public chart feed: the last regular close and the latest trade in any session
 // (pre-market and after-hours included). It can lag by a few minutes. The chain prices are read in the browser.
@@ -1084,6 +1599,8 @@ const api = {
       if (url.pathname === '/api/pools') return json(await pools(env, url.searchParams.get('kind') === 'new' ? 'new' : 'trending'));
       if (url.pathname === '/api/launch') { const a = (url.searchParams.get('a') || '').toLowerCase(); return isAddr(a) ? json(await launch(env, a)) : json({ ok: false, why: 'bad address' }, 400); }
       if (url.pathname === '/api/stocks') return json(await stockRefs());
+      if (url.pathname === '/api/bonds') return json(await bondView(env));
+      if (url.pathname === '/api/radar') return json(await radarView(env));
       if (url.pathname === '/api/hand/launches') { const ws = [...new Set((url.searchParams.get('w') || '').toLowerCase().split(',').filter(isAddr))].slice(0, 40); return ws.length ? json(await handLaunches(env, ws)) : json({ ok: false, why: 'pass ?w= up to 40 wallets, comma separated' }, 400); }
       if (url.pathname === '/api/hand') { const w = (url.searchParams.get('w') || '').toLowerCase(); return isAddr(w) ? json(await handWallet(env, w, url.searchParams.get('creator') === '1')) : json({ ok: false, why: 'bad address' }, 400); }
       if (url.pathname === '/api/looks') { const a = (url.searchParams.get('a') || '').toLowerCase(); return isAddr(a) ? json(await lookalikes(env, a)) : json({ ok: false, why: 'bad address' }, 400); }
@@ -1108,6 +1625,12 @@ const api = {
       }
       if (url.pathname === '/mcp' || url.pathname === '/api/mcp') return mcp(st, env, request, body, ip);
       if (url.pathname === '/api/replay') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); if (!allow(st, ip, 'replay', 30)) return json({ ok: false, why: 'slow down' }, 429); const r = await replay(st, env, a); await save(env, st); return json(r); }
+      if (url.pathname === '/api/wallet') { const a = (url.searchParams.get('w') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); if (!allow(st, ip, 'wallet', 30)) return json({ ok: false, why: 'slow down: 30 wallets an hour' }, 429); return json(await walletView(st, env, a)); }
+      if (url.pathname === '/api/intel') { const ws = [...new Set((url.searchParams.get('w') || '').toLowerCase().split(',').filter(isAddr))].slice(0, 4); if (!ws.length) return json({ ok: false, why: 'pass ?w= up to 4 wallets' }, 400); if (!allow(st, ip, 'intel', 60)) return json({ ok: false, why: 'slow down' }, 429); const out = {}; for (const a of ws) out[a] = await walletIntel(st, env, a); await save(env, st); return json({ ok: true, wallets: out }); }
+      if (url.pathname === '/api/trip/email' && body) { if (!allow(st, ip, 'tripmail', 5)) return json({ ok: false, why: 'slow down' }, 429); const [code, out] = await tripMail(st, env, body, url.origin); await save(env, st); return json(out, code); }
+      if (url.pathname === '/api/trip/confirm' || url.pathname === '/api/trip/off') { const msg = await tripMailLink(st, env, url.pathname.endsWith('off') ? 'off' : 'on', url.searchParams.get('id') || '', url.searchParams.get('c') || ''); await save(env, st); return new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Tripwire</title><body style="background:#060708;color:#edebe6;font:16px system-ui;padding:60px 24px;text-align:center"><p>${msg}</p><p><a style="color:#2ed3a0" href="/">shuntdesk.com</a></p>`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } }); }
+      if (url.pathname === '/api/site') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); if (!sites.has(a) && !allow(st, ip, 'site', 40)) return json({ ok: false, why: 'slow down: 40 sites an hour' }, 429); const extra = (url.searchParams.get('u') || '').split(' ').filter(Boolean).slice(0, 6); const r = await siteCheck(st, env, a, extra); await save(env, st); return json(r); }
+      if (url.pathname === '/api/xray') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); if (!xrays.has(a) && !allow(st, ip, 'xray', 40)) return json({ ok: false, why: 'slow down: 40 scans an hour' }, 429); const r = await xray(st, env, a); await save(env, st); return json(r); }
       if (url.pathname === '/api/rugs') return json({ rows: rugs(st) });
       if (url.pathname === '/api/play') return json({ trains: playTrains(st) });
       if (url.pathname === '/api/daily') {
@@ -1148,7 +1671,13 @@ const api = {
     try { if (new Date().getUTCHours() >= 1) { const r = await hfPublish(st, env); if (r.final || r.first || r.today) st.hfLast = { t: Date.now(), ...r }; } } catch (e) { st.hfLast = { t: Date.now(), error: String(e.message || e).slice(0, 160) }; }   // once a day, after 01:00 UTC
     try { await gradScan(st, env); } catch (e) { st.grads = { ...(st.grads || { rows: [] }), err: String(e.message || e).slice(0, 120) }; }   // the graduation feed is extra: a failed read never stops the desk
     try { await looksTick(env); } catch (e) {}
+    try { await bondTick(env); } catch (e) {}
+    try { await radarTick(st, env); } catch (e) {}
+    try { await groupDigest(st, env); } catch (e) {}
     try { await handAlert(st, env); } catch (e) { st.handLast = { t: Date.now(), why: String(e.message || e).slice(0, 120) }; }
+    try { await tripTick(st, env); } catch (e) { st.tripLast = { t: Date.now(), why: String(e.message || e).slice(0, 120) }; }
+    try { await xrayAlert(st, env); } catch (e) { st.xrayLast = { t: Date.now(), why: String(e.message || e).slice(0, 120) }; }
+    if (st.xrayQ?.length > 20) st.xrayQ = st.xrayQ.slice(-20);
     if (st.handQ?.length > 20) st.handQ = st.handQ.slice(-20);
     seasonRoll(st); await save(env, st);
   }

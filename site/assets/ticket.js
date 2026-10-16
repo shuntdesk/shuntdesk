@@ -4,6 +4,7 @@ import { scan, cachedScan, recentScans, newPools, isAddr, compact, sig, fmtAge, 
 import { saveCard, postUrl } from './share.js';
 import { mountWatch, watch, unwatch, watching } from './watch.js';
 import { exitDoor } from './door.js';
+import { siteCheck } from './sitecheck.js';
 
 mountChrome('Ticket');
 const paintWatch = mountWatch(document.getElementById('watch'));
@@ -49,7 +50,7 @@ function paintCard(res, done) {
   second(res); extras(res);
   $('#t-acts').innerHTML = (live ? `<a class="btn ${res.platform === 'short' ? 'r' : res.platform === 'long' ? 'g' : ''}" href="/desk/?a=${res.addr}">Trade it on paper →</a><button class="btn ghost" data-do="ask">Ask the conductor</button>` : '')
     + `<button class="btn ghost" data-do="card">Save the card</button><button class="btn ghost" data-do="x">Post on X</button><button class="btn ghost" data-do="link">Copy link</button><a class="btn ghost" href="${EXPLORER}/token/${res.addr}" target="_blank" rel="noopener">Explorer ↗</a>`
-    + (live ? `<button class="btn ghost" data-do="watch">${watching(res.addr) ? 'Watching' : 'Watch'}</button><a class="btn ghost" href="/hand/?a=${res.addr}">Same Hand</a><a class="btn ghost" href="/deployer/?t=${res.addr}">Deployer record</a><a class="btn ghost" href="/replay/?a=${res.addr}">Replay</a>` : '');
+    + (live ? `<button class="btn ghost" data-do="watch">${watching(res.addr) ? 'Watching' : 'Watch'}</button><a class="btn ghost" href="/scan/?a=${res.addr}">Agent Scan</a><a class="btn ghost" href="/hand/?a=${res.addr}">Same Hand</a><a class="btn ghost" href="/deployer/?t=${res.addr}">Deployer record</a><a class="btn ghost" href="/replay/?a=${res.addr}">Replay</a>` : '');
 }
 // the conductor puts the verdict in plain words, typed out
 let shown = null, typing = 0;
@@ -155,7 +156,7 @@ let extrasFor = '';
 async function extras(res) {
   const box = $('#tkx');
   if (res.verdict === 'NO POOL') { box.hidden = true; return; }
-  box.hidden = false;
+  box.hidden = false; scanCard(res);
   const d = exitDoor(res, 500), top = d?.firsts.find(f => f.key === 'top10');
   $('#dx').innerHTML = !d ? '<p class="note">No pool to sell into.</p>' : `<div class="door-big sm"><span>$500</span><i>→</i><b class="${d.now < 400 ? 'short' : ''}">${usd(d.now)}</b></div>
     <p class="note" style="margin:0">${d.noSell ? 'A SELL FAILS IN SIMULATION: NOTHING COMES BACK.' : top ? `IF THE TEN LARGEST WALLETS SELL FIRST: ${usd(top.back)}` : 'THE HOLDER LIST COULD NOT BE READ'}</p>`;
@@ -175,4 +176,18 @@ async function extras(res) {
     <div class="lk-list">${r.closest.slice(0, 4).map(c => `<a href="/replay/?a=${c.token}">${esc(c.symbol || c.token.slice(0, 8))}<b class="${(c.move24h ?? c.move1h) < 0 ? 'short' : 'long'}">${mv(c.move24h ?? c.move1h)}</b></a>`).join('')}</div>
     <p class="note" style="margin:8px 0 0">${!day && r.base.firstDay ? `RESULTS A DAY ON START AROUND ${at(r.base.firstDay)}. ` : ''}${r.ageMin != null && r.ageMin > 360 ? 'THIS TOKEN IS OLDER THAN THE ONES IT IS SET AGAINST, WHICH WERE READ 30 TO 90 MINUTES AFTER LAUNCH. ' : ''}PAST RESULTS OF OTHER TOKENS, NOT A FORECAST.</p>`;
   $('#lk-by').textContent = `${r.matches} closest of ${r.base.judged.toLocaleString('en-US')} tokens logged since ${new Date(r.base.since).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
+}
+// Agent Scan, under the verdict: what the contract lets its controller do
+let scanFor = '';
+async function scanCard(res) {
+  if (scanFor === res.addr) return; scanFor = res.addr;
+  siteCheck($('#sc'), res.addr, res.links || [], v => { $('#sc-by').textContent = `${v.links.length} link${v.links.length === 1 ? '' : 's'} · ${v.flags.filter(f => f.level === 'high').length} high · Safe Browsing, urlscan.io, RDAP, the page itself`; });
+  $('#xs-a').href = '/scan/?a=' + res.addr; $('#xs-sum').textContent = 'Reading the bytecode…'; $('#xs-pw').innerHTML = '';
+  let v = null; try { v = await api('xray?a=' + res.addr); } catch (e) {}
+  if (scanFor !== res.addr) return;
+  if (!v?.ok) { $('#xs-sum').textContent = 'Agent Scan is not answering right now.'; return; }
+  $('#xs-sum').textContent = v.summary.text;
+  $('#xs-by').textContent = `${v.functions} functions · ${v.proxy ? 'proxy' : 'fixed code'} · ${v.summary.by === 'model' ? 'written by a language model' : 'written by fixed rules'}`;
+  const pw = v.powers.filter(p => p.level === 'high' || p.level === 'medium').slice(0, 6);
+  $('#xs-pw').innerHTML = pw.map(p => `<div class="xr-r ${p.level}"><em>${p.level.toUpperCase()}</em><code>${esc(p.fn)}</code></div>`).join('');
 }

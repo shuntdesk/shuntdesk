@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Radar — Shuntdesk</title>
+<meta name="description" content="Every new token on Robinhood Chain with real holders, scanned on its own soon after launch: contract powers, the security read, the launcher's trail, and what the price did next.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shuntdesk">
+<meta property="og:title" content="Radar — Shuntdesk">
+<meta property="og:description" content="Every new token on Robinhood Chain with real holders, scanned on its own soon after launch: contract powers, the security read, the launcher's trail, and what the price did next.">
+<meta property="og:url" content="https://shuntdesk.com/radar/">
+<meta property="og:image" content="https://shuntdesk.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shuntdesk. One score. Three tracks.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://shuntdesk.com/og.png">
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#060708">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/simple.css">
+<script src="/assets/ui-mode.js"></script>
+</head>
+<body class="sub">
+<canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
+<main class="page">
+  <div class="ph">
+    <div><div class="eyebrow">Radar</div><h1 class="disp">Nobody asked.<br><span class="acc">We scanned it anyway.</span></h1></div>
+    <div class="side"><p class="note" style="max-width:440px;margin:0">EVERY NEW TOKEN ON ROBINHOOD CHAIN WITH 25 OR MORE HOLDERS, READ SOON AFTER LAUNCH AND SCANNED ON ITS OWN. THEN WE WATCH WHAT THE PRICE DOES.</p></div>
+  </div>
+  <div class="stats">
+    <div class="stub stat"><div class="in"><div class="cap"><b>Logged</b></div><div class="v" id="rd-log">···</div><small>new tokens since the log began</small></div></div>
+    <div class="stub stat"><div class="in"><div class="cap"><b>Scanned</b></div><div class="v" id="rd-scan">···</div><small>by the radar, on its own</small></div></div>
+    <div class="stub stat"><div class="in"><div class="cap"><b>Flagged, then fell half</b></div><div class="v sm" id="rd-f">···</div><small>within the hour</small></div></div>
+    <div class="stub stat"><div class="in"><div class="cap"><b>No flag, then fell half</b></div><div class="v sm" id="rd-c">···</div><small>within the hour</small></div></div>
+  </div>
+  <div class="stub n"><div class="in">
+    <div class="cap"><b>The latest scans</b><span id="rd-read">newest first · refreshes every minute</span></div>
+    <div class="dep rdlist" id="rd-list"><div class="r h"><span>TOKEN</span><span>READ</span><span>POOL</span><span>WHAT THE SCAN FOUND</span><span>1H LATER</span><span>1D LATER</span><span></span></div></div>
+  </div></div>
+  <p class="note" style="margin-top:14px">Each token is read from Codex 30 to 90 minutes after launch, then scanned: Agent Scan for the contract's powers, a GoPlus security read for the sell test and tax, and Same Hand for the launcher's trail. A flag is a finding, not a verdict, and a token with no flag can still fall. The price an hour and a day later comes from the same log. This is the record the next version of the verdict will be tested against. Not advice.</p>
+</main>
+<footer class="foot"></footer>
+<script type="module" src="/assets/radar.js"></script>
+</body>
+</html>

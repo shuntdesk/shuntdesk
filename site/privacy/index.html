@@ -21,11 +21,13 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#060708">
 <link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/simple.css">
+<script src="/assets/ui-mode.js"></script>
 </head>
 <body class="sub">
 <canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
 <main class="page">
-  <div class="eyebrow">Privacy · last updated 16 October 2026</div>
+  <div class="eyebrow">Privacy · last updated 17 October 2026</div>
   <h1 class="disp mani-h" style="font-size:min(13vw,150px)"><span>What we keep.</span><span class="o">Not much.</span></h1>
   <div class="gist">
     <div><b>No account.</b><span>No sign-up, no email, no password.</span></div>
@@ -44,6 +46,7 @@
       <h3>Tickets</h3><p>When you run a ticket: the token's address, the verdict, the score and the short result of each check. These calls are public: they appear on the site and in the open dataset on Hugging Face. They carry nothing about you.</p>
       <h3>Boards</h3><p>When you post to the board of desks: your handle and your paper equity, trade count and reset count. When you post a shift in The Yard: your handle, which trains you got and which lever you pulled. Handles are shown publicly; pick one that does not identify you.</p>
       <h3>Phone alerts</h3><p>If you turn on alerts for your watchlist, the server keeps the push address your browser gives it and the tokens you watch, so it can send the alerts. Blocking notifications for the site in your browser stops them. Old push addresses are dropped as new ones come in.</p>
+      <h3>Email alerts</h3><p>If you ask for Tripwire alerts by email, the server keeps your address and the token you asked about, and sends a confirmation email first through Resend. Nothing else is sent until you click it. Every alert has a link that stops them and removes the address.</p>
       <h3>Abuse limits</h3><p>To limit abuse, the server keeps your IP address next to a count of recent requests for up to an hour, then drops it. Cloudflare, which hosts the site, processes requests under its own privacy policy.</p>
     </section>
 

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Scan — Shuntdesk</title>
+<meta name="description" content="Read a token contract down to its functions, verified or not: what the owner can still do, the state it is in now, and whether the code behind it can be swapped.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shuntdesk">
+<meta property="og:title" content="Agent Scan — Shuntdesk">
+<meta property="og:description" content="Read a token contract down to its functions, verified or not: what the owner can still do, the state it is in now, and whether the code behind it can be swapped.">
+<meta property="og:url" content="https://shuntdesk.com/scan/">
+<meta property="og:image" content="https://shuntdesk.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shuntdesk. One score. Three tracks.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://shuntdesk.com/og.png">
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#060708">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/simple.css">
+<script src="/assets/ui-mode.js"></script>
+</head>
+<body class="sub">
+<canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
+<main class="page">
+  <div class="ph">
+    <div><div class="eyebrow">Agent Scan</div><h1 class="disp">Verified or not.<br><span class="acc">Read to the last function.</span></h1></div>
+    <form class="side" id="f">
+      <div class="field"><input id="a" placeholder="0x… a token contract on Robinhood Chain" spellcheck="false" autocomplete="off"><button class="btn">Scan it →</button></div>
+      <div class="note" id="msg">THE BYTECODE COMES STRAIGHT FROM THE CHAIN, SO IT WORKS EVEN WHEN THE SOURCE IS NOT VERIFIED.</div>
+    </form>
+  </div>
+  <div id="out" hidden>
+    <div class="stub xr-hero" id="xr-hero"><div class="in">
+      <div class="cap"><b id="xr-tag">···</b><span id="xr-by">···</span></div>
+      <p class="xr-sum" id="xr-sum"></p>
+    </div></div>
+    <div class="stats" style="margin-top:16px">
+      <div class="stub stat"><div class="in"><div class="cap"><b>Control</b></div><div class="v sm" id="xr-own">···</div><small id="xr-own2">who holds it</small></div></div>
+      <div class="stub stat"><div class="in"><div class="cap"><b>Functions</b></div><div class="v sm" id="xr-fn">···</div><small id="xr-fn2">found in the bytecode</small></div></div>
+      <div class="stub stat"><div class="in"><div class="cap"><b>Code</b></div><div class="v sm" id="xr-px">···</div><small id="xr-px2">can it be swapped</small></div></div>
+      <div class="stub stat"><div class="in"><div class="cap"><b>Source</b></div><div class="v sm" id="xr-src">···</div><small>Sourcify</small></div></div>
+    </div>
+    <div class="stub n"><div class="in">
+      <div class="cap"><b>What it lets its controller do</b><span>functions present in the contract</span></div>
+      <div class="xr-pw" id="xr-pw"></div>
+    </div></div>
+    <div class="stub n" id="xr-stbox" style="margin-top:16px"><div class="in">
+      <div class="cap"><b>The state now</b><span>read-only calls, made just now</span></div>
+      <div class="xr-st" id="xr-st"></div>
+    </div></div>
+    <div class="stub n" style="margin-top:16px"><div class="in">
+      <div class="cap"><b>Site Check</b><span>the website and links, checked</span></div>
+      <div id="sc"></div>
+    </div></div>
+    <div class="stub n" style="margin-top:16px"><div class="in">
+      <div class="cap"><b>Tripwire</b><span>an alert the moment it moves</span></div>
+      <p class="xr-sum" style="font-size:15px">Get an email when the owner calls one of these functions, or the launcher or a top holder moves tokens out. Or send <code>/watch</code> and the address to <a href="https://t.me/shuntdesk_bot" target="_blank" rel="noopener">@shuntdesk_bot</a> on Telegram.</p>
+      <form class="field" id="tw-f" style="margin-top:12px;max-width:560px"><input id="tw-e" type="email" placeholder="you@example.com" autocomplete="email"><button class="btn">Email me →</button></form>
+      <div class="note" id="tw-msg">WE SEND ONE CONFIRMATION EMAIL FIRST. NOTHING ELSE IS SENT UNTIL YOU CLICK IT.</div>
+    </div></div>
+    <details class="xr-all" style="margin-top:16px"><summary>Every function in the contract</summary><div id="xr-all"></div></details>
+    <div class="cta-row" style="margin-top:16px"><a class="btn" id="xr-ticket" href="/ticket/">Run the seven checks →</a><button class="btn ghost" id="xr-x" type="button">Post on X</button><button class="btn ghost" id="xr-link" type="button">Copy link</button></div>
+    <p class="note" style="margin-top:14px">Read from the contract's bytecode on Robinhood Chain. Function names come from public signature databases (OpenChain, 4byte); a function nobody has named is shown as unknown. A function that exists may still be guarded, and an owner may not be the only role. The write-up is by a language model from these findings, or by fixed rules when it does not answer. Not advice.</p>
+  </div>
+</main>
+<footer class="foot"></footer>
+<script type="module" src="/assets/scan.js"></script>
+</body>
+</html>

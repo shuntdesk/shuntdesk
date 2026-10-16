@@ -68,4 +68,10 @@ test('Telegram: the webhook refuses a wrong secret', async () => {
 });
 test('Lookalikes and the money trail answer a bad address with 400', async () => {
   for (const p of ['looks?a=nope', 'hand?w=nope', 'hand/launches?w=nope']) { const [s] = await call(p); assert.equal(s, 400); }
+});test('Agent Scan finds the functions a dispatcher compares against', async () => {
+  // DUP1 PUSH4 a9059cbb EQ ..., PUSH4 40c10f19 DUP2 EQ ..., and a PUSH4 used as a mask that must not count
+  const { dispatcher } = await import('../server/worker.js');
+  const code = '0x' + '80' + '63a9059cbb' + '14' + '61' + '0100' + '57' + '63' + '40c10f19' + '81' + '14' + '61' + '0200' + '57' + '63ffffffff' + '16' + '7f' + '63deadbeef14'.padEnd(64, '0');
+  assert.deepEqual(dispatcher(code).sort(), ['40c10f19', 'a9059cbb']);
+  const [s] = await call('xray?a=nope'); assert.equal(s, 400);
 });

@@ -28,6 +28,12 @@ The same reads as MCP tools (token, verdicts, crew_desk, pons_graduations, daily
 
 ## Tools
 
+- Bond Watch: https://shuntdesk.com/bonds/ lists every token on the Pons curve with its progress to bonding, read from each curve contract, its pace over the last hour, and daily counts of launches and bonds. JSON: GET https://shuntdesk.com/api/v1/bonds
+- Wallet X-ray: https://shuntdesk.com/wallet/?w=0x… reads any wallet, read only: its tokens, what each would fetch if sold now, and copies of real tokens. JSON: GET https://shuntdesk.com/api/v1/wallet?a=0x…
+- Tripwire: /watch 0x… to @shuntdesk_bot in a direct message, for an alert when a power function is called or the launcher or a top holder moves tokens out.
+- Site Check: on every ticket and at GET https://shuntdesk.com/api/v1/site?a=0x…, the token's website and links checked with Google Safe Browsing, RDAP (domain age), urlscan.io (what the page loads, malicious or not) and Jina Reader (what the page asks for).
+- Agent Scan: https://shuntdesk.com/scan/?a=0x… reads a token contract from its bytecode, verified or not: every function it exposes (named through OpenChain and 4byte), the powers among them (mint, pause, block wallets, change the tax, swap the code), who controls it, whether it is a proxy, and its state now. JSON: GET https://shuntdesk.com/api/v1/xray?a=0x…. A function that exists may still be guarded.
+
 - Exit Door: https://shuntdesk.com/exit/?a=0x…&usd=500 shows what a buy of that size gets back if sold straight away, and if the developer, a funded group, launch snipers and bundles, or the ten largest wallets sell first. An estimate from pool depth and sell tax.
 - Same Hand: https://shuntdesk.com/hand/?a=0x… follows a launcher's first funds back two steps and lists every Pons launch by the wallets on that trail, with how many pools are now under $1K. A shared funder is a link, not proof.
 - Stock gap: https://shuntdesk.com/stocks/ sets each stock token's chain price against the stock's latest trade and last close.

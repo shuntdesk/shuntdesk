@@ -24,7 +24,7 @@ async function look(input) {
   try { r = await sameHand(input, io, s => { if (id === job) msg.textContent = STEP[s] || ''; }); } catch (e) { if (id === job) msg.textContent = 'A DATA SOURCE DID NOT ANSWER. TRY AGAIN IN A MINUTE.'; return; }
   if (id !== job) return;
   if (!r.ok) { msg.textContent = r.why.toUpperCase() + '.'; return; }
-  last = r; paint(r);
+  last = r; paint(r); intel(r);
 }
 
 function paint(r) {
@@ -73,3 +73,19 @@ const link = () => location.origin + '/hand/?a=' + last?.input;
 $('#sh-save').onclick = async () => { const cv = await card(); if (!cv) return; cv.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `shuntdesk-hand-${last.input.slice(2, 8)}.png`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }, 'image/png'); };
 $('#sh-x').onclick = () => { if (!last) return; const r = last, txt = r.launched ? `Same Hand on ${short(r.input)}: the money behind it traces to wallets that launched ${r.launched} tokens on Pons. ${r.dead} of them now hold under $1K.` : `Same Hand on ${short(r.input)}: no earlier Pons launch found behind it.`; window.open('https://x.com/intent/post?text=' + encodeURIComponent(txt) + '&url=' + encodeURIComponent(link()), '_blank', 'noopener'); };
 $('#sh-link').onclick = async e => { if (!last) return; try { await navigator.clipboard.writeText(link()); e.target.textContent = 'Copied'; } catch (x) { e.target.textContent = link(); } };
+
+// what the same wallets have done off this chain: Webacy's risk read and their history on Ethereum and Arbitrum
+async function intel(r) {
+  const ws = r.chain.filter(c => !c.contract).map(c => c.addr).slice(0, 4); if (!ws.length) return;
+  let j = null; try { j = await api('intel?w=' + ws.join(',')); } catch (e) {}
+  if (!j?.ok || last !== r) return;
+  r.chain.forEach((c, i) => {
+    const v = j.wallets[c.addr]; if (!v?.ok) return;
+    const node = document.querySelectorAll('#sh-trail .tn')[i]; if (!node) return;
+    const bits = [];
+    if (v.risk?.tags?.length) bits.push(`<b class="short">${v.risk.tags.slice(0, 3).map(t => esc(t.name)).join(' · ')}</b>`);
+    for (const [k, h] of [['Ethereum', v.ethereum], ['Arbitrum', v.arbitrum]]) if (h?.txs) bits.push(`${k}: ${h.txs} tx${h.made ? `, ${h.made} contract${h.made > 1 ? 's' : ''} made` : ''}, since ${new Date(h.firstSeen).toISOString().slice(0, 7)}`);
+    if (!bits.length) bits.push('no risk flag, no history on Ethereum or Arbitrum');
+    node.insertAdjacentHTML('beforeend', `<i class="xi">${bits.join('<br>')}</i>`);
+  });
+}

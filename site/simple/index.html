@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en" class="simple">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shuntdesk — read a token before you ride it</title>
+<meta name="description" content="Token checks on Robinhood Chain. Seven fixed-rule checks, one verdict, every lost point explained, and a public paper desk that bets on the call. No wallet, no key.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shuntdesk">
+<meta property="og:title" content="Shuntdesk — read a token before you ride it">
+<meta property="og:description" content="Token checks on Robinhood Chain. Seven fixed-rule checks, one verdict, every lost point explained, and a public paper desk that bets on the call. No wallet, no key.">
+<meta property="og:url" content="https://shuntdesk.com/simple/">
+<meta property="og:image" content="https://shuntdesk.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shuntdesk. One score. Three tracks.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://shuntdesk.com/og.png">
+<link rel="preload" href="/assets/fonts/bsd-900.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#060708">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/simple.css">
+<script src="/assets/ui-mode.js"></script>
+<link rel="stylesheet" href="/assets/simple-home.css">
+</head>
+<body class="sub l2">
+<main>
+  <section class="hx">
+    <div class="hx-rails" aria-hidden="true"></div>
+    <div class="eyebrow">Robinhood Chain · token checks</div>
+    <h1>Read a token<br>before you ride it.</h1>
+    <p class="hx-sub">Seven fixed-rule checks, one verdict, every lost point explained. Then a public paper desk bets on the call, and the misses stay on the record.</p>
+    <form class="hx-form" id="hf"><div class="field"><input id="ha" placeholder="Paste a token address, 0x…" spellcheck="false" autocomplete="off" aria-label="Token address"><button class="btn">Check it →</button></div></form>
+    <div class="hx-try" id="htry"><span>Try</span></div>
+    <div class="hx-stats" id="hstats">
+      <div><b id="st-calls">···</b><span>calls filed</span></div>
+      <div><b id="st-desk">···</b><span>crew desk, paper</span></div>
+      <div><b id="st-held">···</b><span>clean calls up an hour later</span></div>
+    </div>
+  </section>
+
+  <section class="lx">
+    <div class="lx-h"><h2>Live calls</h2><a href="/board/">The board →</a></div>
+    <div class="stub"><div class="in calls" id="calls"><p class="note">Loading the latest calls…</p></div></div>
+    <p class="note">Filed by anyone who ran a ticket. Priced again an hour later, from the chain. The misses stay in the list.</p>
+  </section>
+
+  <section class="lx">
+    <div class="lx-h"><h2>Tools</h2><a href="/tools/">All tools →</a></div>
+    <div class="tg">
+      <a class="stub tc" href="/exit/"><div class="in"><span class="k">Exit Door</span><h3>What comes back if you sell?</h3><p>Pool depth, sell tax, and what is left if the big wallets sell first.</p></div></a>
+      <a class="stub tc" href="/hand/"><div class="in"><span class="k">Same Hand</span><h3>Who is behind the launch?</h3><p>The money trail back two steps, and everything those wallets launched before.</p></div></a>
+      <a class="stub tc" href="/ticket/"><div class="in"><span class="k">Lookalikes</span><h3>How did tokens like it go?</h3><p>Every new token is logged soon after launch. Each ticket shows how the closest ones went.</p></div></a>
+      <a class="stub tc" href="/stocks/"><div class="in"><span class="k">Stock gap</span><h3>Is the chain ahead of the market?</h3><p>Stock tokens on chain against the stock itself, nights and weekends included.</p></div></a>
+    </div>
+    <div class="tl"><a href="/deployer/">Deployer record</a><a href="/replay/">Rug replay</a><a href="/report/">Daily report</a><a href="/desk/">Paper desk</a></div>
+  </section>
+
+  <section class="lx">
+    <div class="lx-h"><h2>How it works</h2><a href="/docs/">Docs →</a></div>
+    <div class="hw">
+      <div class="stub"><div class="in"><i>01</i><h3>Seven checks</h3><p>Sources, Gate, Scout, Tracer, Linker, Auditor, Judge. The score starts at 100 and loses points at each stop. 75 and up is CLEAN, under 45 is DANGER.</p></div></div>
+      <div class="stub"><div class="in"><i>02</i><h3>The desk bets on it</h3><p>Clean calls the server can confirm go long, danger calls on deep pools go short. Paper money, real prices from the chain. <a href="/desk/">Desk balance: <b id="hw-eq">···</b></a></p></div></div>
+      <div class="stub"><div class="in"><i>03</i><h3>The record stays public</h3><p>Every call is priced again an hour and a day later and published daily as open data. <a href="https://huggingface.co/datasets/shuntdesk/verdicts" target="_blank" rel="noopener">The dataset ↗</a></p></div></div>
+    </div>
+  </section>
+
+  <section class="lx">
+    <div class="lx-h"><h2>Also on the line</h2></div>
+    <div class="al">
+      <a class="stub" href="/play/"><div class="in"><span class="k">The Yard</span><b>A playground</b><p>Past calls arrive as trains. Send each one down the line or to the siding.</p></div></a>
+      <a class="stub" href="https://t.me/shuntdesk_bot" target="_blank" rel="noopener"><div class="in"><span class="k">Telegram</span><b>@shuntdesk_bot</b><p>/check any token from the chat, and a community at t.me/shuntdesk.</p></div></a>
+      <a class="stub" href="/agents/"><div class="in"><span class="k">For agents</span><b>API and MCP</b><p>Read-only JSON and five MCP tools, no key.</p></div></a>
+    </div>
+  </section>
+</main>
+<footer class="foot"></footer>
+<script type="module" src="/assets/simple-home.js"></script>
+</body>
+</html>
