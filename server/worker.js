@@ -1183,7 +1183,7 @@ async function xrayAlert(st, env) {
 // raised, graduationThreshold() the ETH it needs to bond, graduated() whether it has. All of them are read in one
 // call through Multicall3 every ten minutes. A launch that has raised under 1% six hours in is dropped, so the
 // list stays to the ones still moving; the counts of launches and bonds per day come from the logs.
-const MC3 = '0xca11bde05977b3631167028862be2a173976ca11', BONDS = 'bonds-v1';
+const MC3 = '0xca11bde05977b3631167028862be2a173976ca11', BONDS = 'bonds-v2';
 const SEL = { real: 'b0c4b7c5', thr: '', grad: '', sym: '95d89b41', nat: '', pair: '' };
 async function selOf(sig) { return keccak256([...new TextEncoder().encode(sig)].map(b => b.toString(16).padStart(2, '0')).join('')).slice(0, 8); }
 async function multicall(calls) {   // calls: [target, selector] → hex result or null
@@ -1228,27 +1228,35 @@ async function wideLogs(env, topic0, from, to) {
 }
 async function bondTick(env) {
   const B = await bondsLoad(env), now = Date.now(); if (now - B.t < 10 * 60000) return; B.t = now;
+  let stage = 'head';
   try {
     if (!SEL.thr) { SEL.thr = await selOf('graduationThreshold()'); SEL.grad = await selOf('graduated()'); SEL.real = await selOf('realQuoteReserve()'); SEL.nat = await selOf('isNativeQuote()'); SEL.pair = await selOf('pairToken()'); }
     const head = parseInt(await rpc('eth_blockNumber'), 16), from = B.block ? B.block + 1 : head - 2 * 864000;   // first read: two days back
-    const have = new Set(B.rows.map(r => r.t0)), fresh = [];
+    const have = new Set(B.rows.map(r => r.t0)), fresh = [], grads = [];
+    // read every window first, count nothing until all of them came back: a failed read leaves the record as it was
     for (let a = from; a <= head; a += 400000) {
+      stage = 'launch log';
       const logs = await wideLogs(env, T_LAUNCH, a, Math.min(head, a + 399999));
-      for (const l of logs) { const token = wordAddr(l.topics[1]); if (!have.has(token)) fresh.push({ t0: token, c: wordAddr(l.topics[2]), by: wordAddr(l.topics[3]), b: parseInt(l.blockNumber, 16), at: now - (head - parseInt(l.blockNumber, 16)) * 100 }); }
-      const g = await wideLogs(env, T_GRAD, a, Math.min(head, a + 399999));
-      for (const l of g) { const d = new Date(now - (head - parseInt(l.blockNumber, 16)) * 100).toISOString().slice(0, 10); const day = B.days.find(x => x.d === d) || (B.days.push({ d, l: 0, g: 0 }), B.days.at(-1)); day.g++; }
+      for (const l of logs) { const token = wordAddr(l.topics[1]); if (!have.has(token)) { have.add(token); fresh.push({ t0: token, c: wordAddr(l.topics[2]), by: wordAddr(l.topics[3]), b: parseInt(l.blockNumber, 16), at: now - (head - parseInt(l.blockNumber, 16)) * 100 }); } }
+      stage = 'bond log';
+      grads.push(...await wideLogs(env, T_GRAD, a, Math.min(head, a + 399999)));
     }
+    if (!B.block) B.days = [];
+    for (const l of grads) { const d = new Date(now - (head - parseInt(l.blockNumber, 16)) * 100).toISOString().slice(0, 10); const day = B.days.find(x => x.d === d) || (B.days.push({ d, l: 0, g: 0 }), B.days.at(-1)); day.g++; }
+    stage = 'curves';
     for (const f of fresh) { const d = new Date(f.at).toISOString().slice(0, 10); const day = B.days.find(x => x.d === d) || (B.days.push({ d, l: 0, g: 0 }), B.days.at(-1)); day.l++; }
     B.days = B.days.sort((a, b) => a.d < b.d ? -1 : 1).slice(-14);
     B.block = head;
     // the new ones: threshold and symbol once
-    if (fresh.length) {
-      const res = await multicall(fresh.flatMap(f => [[f.c, SEL.thr], [f.t0, SEL.sym], [f.c, SEL.nat], [f.c, SEL.pair]]));
+    // a curve older than twelve hours on the first read is long settled: count it, don't read it
+    const recent = fresh.filter(f => now - f.at < 12 * HOUR);
+    if (recent.length) {
+      const res = await multicall(recent.flatMap(f => [[f.c, SEL.thr], [f.t0, SEL.sym], [f.c, SEL.nat], [f.c, SEL.pair]]));
       // a curve quoted in a token rather than native ETH: name that token, once per token
-      const quotes = [...new Set(fresh.map((f, i) => res[i * 4 + 2] && BigInt(res[i * 4 + 2]) === 0n && res[i * 4 + 3] ? '0x' + res[i * 4 + 3].slice(-40) : null).filter(a => a && !/^0x0{40}$/.test(a)))];
+      const quotes = [...new Set(recent.map((f, i) => res[i * 4 + 2] && BigInt(res[i * 4 + 2]) === 0n && res[i * 4 + 3] ? '0x' + res[i * 4 + 3].slice(-40) : null).filter(a => a && !/^0x0{40}$/.test(a)))];
       const qs = quotes.length ? await multicall(quotes.map(q => [q, SEL.sym])) : [], qsym = Object.fromEntries(quotes.map((q, i) => [q, str(qs[i]) || 'quote']));
-      fresh.forEach((f, i) => { const th = res[i * 4]; f.th = th ? Number(BigInt(th) / 10n ** 12n) / 1e6 : 0; f.s = str(res[i * 4 + 1]) || f.t0.slice(0, 8); f.h = []; const nat = res[i * 4 + 2], pr = res[i * 4 + 3]; f.u = nat && BigInt(nat) === 0n && pr ? qsym['0x' + pr.slice(-40)] || 'quote' : 'ETH'; });
-      B.rows.push(...fresh.filter(f => f.th > 0));
+      recent.forEach((f, i) => { const th = res[i * 4]; f.th = th ? Number(BigInt(th) / 10n ** 12n) / 1e6 : 0; f.s = str(res[i * 4 + 1]) || f.t0.slice(0, 8); f.h = []; const nat = res[i * 4 + 2], pr = res[i * 4 + 3]; f.u = nat && BigInt(nat) === 0n && pr ? qsym['0x' + pr.slice(-40)] || 'quote' : 'ETH'; });
+      B.rows.push(...recent.filter(f => f.th > 0));
     }
     // every curve still on the board: what it has raised, and whether it bonded
     const live = B.rows.filter(r => !r.g);
@@ -1257,7 +1265,7 @@ async function bondTick(env) {
     // keep: the ones still moving, the bonded ones for two days, and nothing older than three days
     B.rows = B.rows.filter(r => now - r.at < 72 * HOUR && (r.g ? now - r.g < 48 * HOUR : !(now - r.at > 6 * HOUR && (r.max || 0) < 1)));
     B.err = null;
-  } catch (e) { B.err = String(e.message || e).slice(0, 120); }
+  } catch (e) { B.err = (stage + ': ' + String(e.message || e)).slice(0, 160); }
   await env.KV.put(BONDS, JSON.stringify(B));
 }
 async function bondView(env) {
