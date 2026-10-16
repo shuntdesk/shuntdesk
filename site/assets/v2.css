@@ -1,0 +1,80 @@
+/* Shuntdesk v2: the clean terminal. Loaded after base.css on every page. It keeps the identity (the mark, black,
+   ink, the rail green, Big Shoulders and JetBrains Mono) and drops the weight: no 3D yard behind the pages, no
+   grain, no cut corners, no cards that lean toward the pointer. Plain cards with a hairline, rounded corners,
+   solid buttons, a quiet header. */
+:root { --card: #0c0d0f; --card2: #111215; --line: rgba(237, 235, 230, .1); --line2: rgba(237, 235, 230, .18); --r: 14px; --sans: "Barlow", system-ui, sans-serif; }
+html, body { background: #060708; }
+#yard, .vig, .grain, .ret, .burst, .mq, .zhint { display: none !important; }
+body { font-size: 16px; }
+
+/* header */
+.top { height: 62px !important; gap: 22px !important; padding: 0 28px !important; background: rgba(6, 7, 8, .82) !important; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border-bottom: 1px solid var(--line); }
+.logo b { font-size: 24px !important; }
+.top nav { gap: 2px !important; }
+.top nav a { font-family: var(--sans) !important; font-weight: 600; font-size: 14.5px !important; letter-spacing: 0 !important; text-transform: none !important; padding: 7px 12px !important; border-radius: 8px; color: var(--mut); }
+.top nav a:hover { color: var(--ink); background: rgba(237, 235, 230, .05); }
+.top nav a.on { color: var(--ink); background: rgba(237, 235, 230, .08); }
+.top nav a.on::after { display: none !important; }
+.chain, .xlink, .cachip { clip-path: none !important; border-radius: 999px !important; background: transparent !important; border-color: var(--line) !important; }
+.chain i { box-shadow: none !important; }
+
+/* pages */
+.page { padding-top: 112px !important; max-width: 1240px !important; }
+.eyebrow { color: var(--long) !important; letter-spacing: .2em !important; font-size: 11px !important; }
+.eyebrow::before { display: none !important; }
+.ph { margin-bottom: 28px !important; align-items: flex-end; }
+.ph h1.disp, h1.disp.mani-h, h1.disp.doc-h { font-size: clamp(42px, 6.2vw, 86px) !important; line-height: .92 !important; margin: 14px 0 6px !important; text-shadow: none !important; }
+.ph h1.disp .acc, h1.disp .o, .doc-h .o, .mani-h .o { color: var(--mut) !important; -webkit-text-stroke: 0 !important; text-shadow: none !important; }
+.doc-lede, .lede { color: #bdbbb6 !important; }
+
+/* cards */
+.stub { clip-path: none !important; background: var(--line) !important; border-radius: var(--r) !important; padding: 1px !important; transform: none !important; animation: none !important; box-shadow: none !important; }
+.stub > .in { clip-path: none !important; background: var(--card) !important; border-radius: calc(var(--r) - 1px) !important; }
+.stub > .in::before, .stub > .in::after, .stub::before, .stub::after { display: none !important; }
+.stub.g { background: rgba(46, 211, 160, .4) !important; }
+.stub.r { background: rgba(255, 77, 94, .4) !important; }
+.stub.n { background: var(--line) !important; }
+.cap { letter-spacing: .14em !important; }
+.zoomable { cursor: default; }
+
+/* buttons and fields */
+.btn { clip-path: none !important; border-radius: 10px !important; font-family: var(--sans) !important; font-weight: 600 !important; font-size: 15px !important; letter-spacing: 0 !important; text-transform: none !important; padding: 12px 18px !important; transform: none !important; }
+.btn:hover { filter: brightness(.92) !important; }
+.btn.ghost { background: transparent !important; box-shadow: inset 0 0 0 1px var(--line2) !important; }
+.btn.ghost:hover { background: rgba(237, 235, 230, .05) !important; filter: none !important; }
+.field { clip-path: none !important; border-radius: 12px !important; background: var(--card) !important; box-shadow: inset 0 0 0 1px var(--line2) !important; overflow: hidden; }
+.field:focus-within { box-shadow: inset 0 0 0 1px rgba(46, 211, 160, .7), 0 0 0 4px rgba(46, 211, 160, .12) !important; }
+.field .btn { border-radius: 0 !important; }
+.chip, .tabs button, .sizes button, .sizes input, .x, .mt, .tag, .plat, .pills span { clip-path: none !important; border-radius: 8px !important; }
+.tabs button { box-shadow: inset 0 0 0 1px var(--line) !important; }
+
+/* rows and tables */
+.dep .r, .rows .r, table.pos td, .doorlist .dr, table.pos tr + tr { background-image: none !important; }
+.dep .r, .rows .r, .doorlist .dr { border-top: 1px solid var(--line); }
+.dep .r.h { border-top: 0; }
+table.pos tr + tr td { border-top: 1px solid var(--line); }
+.dep .r:hover { background-color: rgba(237, 235, 230, .04) !important; }
+
+/* the board and the ticket no longer have a 3D stage above them */
+body.b3d::before { display: none !important; }
+.stage { height: auto !important; min-height: 0 !important; padding: 112px 5vw 10px !important; max-width: 1240px; margin: 0 auto; box-sizing: content-box; gap: 22px; }
+.stage h1 { text-shadow: none !important; }
+body.b3d .page { padding-top: 10px !important; }
+body.tk3d .page { padding-top: 112px !important; }
+
+/* docs and legal */
+.doc { background: transparent !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; padding: 0 0 40px !important; }
+.gist div { border-radius: 12px; box-shadow: inset 0 0 0 1px var(--line) !important; background: var(--card) !important; }
+
+/* the footer: plain */
+.foot { background: #060708 !important; padding-top: 0 !important; border-top: 1px solid var(--line) !important; }
+
+@media (max-width: 1000px) {
+  .top { padding: 0 16px !important; gap: 12px !important; }
+  .top nav a { font-size: 13.5px !important; padding: 6px 8px !important; }
+  .page { padding-top: 92px !important; }
+}
+@media (max-width: 480px) {
+  .top nav a { font-size: 12.5px !important; padding: 6px 6px !important; }
+  .logo b { font-size: 20px !important; }
+}

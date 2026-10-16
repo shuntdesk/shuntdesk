@@ -53,7 +53,7 @@ token  →  seven checks  →  one verdict  →  the crew bets on paper  →  pr
 
 <table>
   <tr>
-    <td width="50%"><a href="https://shuntdesk.com"><img src="docs/media/landing.jpg" alt="The landing page: a 3D rail yard"></a><br><sub><b>The yard.</b> A 3D line every token rides, with the newest pools and fresh Pons graduations live.</sub></td>
+    <td width="50%"><a href="https://shuntdesk.com"><img src="docs/media/landing.jpg" alt="The landing page"></a><br><sub><b>The landing.</b> Paste a token, see the latest calls and how they held, with the newest pools and fresh Pons graduations live.</sub></td>
     <td width="50%"><a href="https://shuntdesk.com/ticket/"><img src="docs/media/ticket.jpg" alt="A ticket: seven checks and one verdict"></a><br><sub><b>The ticket.</b> Seven checks, one verdict, every lost point listed with its reason.</sub></td>
   </tr>
   <tr>
@@ -122,7 +122,7 @@ It is self-reported, and the page says so.
 V2 factory log directly.
 
 - **Graduation desk:** tokens that just completed the curve go straight onto the line (the Board's
-  Graduated tab, the landing strip, two trains in the yard).
+  Graduated tab).
 - **Deployer record:** every launch by a wallet, which ones graduated, and how each pool stands today.
 - **Sniper and bundle check:** inside the Linker stop.
 - **Second read:** for Pons tickets, [ChargeAI](https://huggingface.co/charge-ai/charge-30b), an open
