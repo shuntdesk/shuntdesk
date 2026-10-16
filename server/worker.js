@@ -1205,6 +1205,27 @@ async function multicall(calls) {   // calls: [target, selector] → hex result 
 const str = hex => { try { if (!hex || hex.length < 130) return null; const h = hex.slice(2), len = parseInt(h.substr(64, 64), 16); return new TextDecoder().decode(new Uint8Array(h.substr(128, len * 2).match(/../g).map(b => parseInt(b, 16)))).replace(/[^\x20-\x7e]/g, '').slice(0, 16); } catch (e) { return null; } };
 let bondsMem = null;
 const bondsLoad = async env => bondsMem || (bondsMem = await env.KV.get(BONDS).then(s => s ? JSON.parse(s) : { rows: [], block: 0, t: 0, days: [] }));
+// one Pons log over a wide range: the public node first (the backup node refuses wide ranges), then the keyed index, page by page
+async function wideLogs(env, topic0, from, to) {
+  let why = '';
+  for (let k = 0; k < 3; k++) {
+    try {
+      const r = await fetch(RPCS[0], { method: 'POST', headers: { 'Content-Type': 'application/json', ...UA }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getLogs', params: [{ address: PONS, topics: [topic0], fromBlock: hex(from), toBlock: hex(to) }] }) });
+      const j = await r.json().catch(() => null); if (j && Array.isArray(j.result)) return j.result; why = 'node said ' + r.status;
+    } catch (e) { why = String(e.message || e).slice(0, 80); }
+    await new Promise(r => setTimeout(r, 1200));
+  }
+  if (!env?.BLOCKSCOUT_API_KEY) throw new Error(why);
+  const out = [];
+  for (let page = 1; page <= 10; page++) {
+    const r = await fetch(`https://api.blockscout.com/4663/api?module=logs&action=getLogs&address=${PONS}&topic0=${topic0}&fromBlock=${from}&toBlock=${to}&page=${page}&offset=1000&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA });
+    const j = await r.json().catch(() => null);
+    if (j && Array.isArray(j.result)) { out.push(...j.result); if (j.result.length < 1000) return out; }
+    else if (j?.message === 'No records found') return out;
+    else throw new Error(why + ' · blockscout: ' + String(j?.message || r.status).slice(0, 60));
+  }
+  return out;
+}
 async function bondTick(env) {
   const B = await bondsLoad(env), now = Date.now(); if (now - B.t < 10 * 60000) return; B.t = now;
   try {
@@ -1212,9 +1233,9 @@ async function bondTick(env) {
     const head = parseInt(await rpc('eth_blockNumber'), 16), from = B.block ? B.block + 1 : head - 2 * 864000;   // first read: two days back
     const have = new Set(B.rows.map(r => r.t0)), fresh = [];
     for (let a = from; a <= head; a += 400000) {
-      const logs = await rpc('eth_getLogs', [{ address: PONS, topics: [T_LAUNCH], fromBlock: hex(a), toBlock: hex(Math.min(head, a + 399999)) }]);
+      const logs = await wideLogs(env, T_LAUNCH, a, Math.min(head, a + 399999));
       for (const l of logs) { const token = wordAddr(l.topics[1]); if (!have.has(token)) fresh.push({ t0: token, c: wordAddr(l.topics[2]), by: wordAddr(l.topics[3]), b: parseInt(l.blockNumber, 16), at: now - (head - parseInt(l.blockNumber, 16)) * 100 }); }
-      const g = await rpc('eth_getLogs', [{ address: PONS, topics: [T_GRAD], fromBlock: hex(a), toBlock: hex(Math.min(head, a + 399999)) }]);
+      const g = await wideLogs(env, T_GRAD, a, Math.min(head, a + 399999));
       for (const l of g) { const d = new Date(now - (head - parseInt(l.blockNumber, 16)) * 100).toISOString().slice(0, 10); const day = B.days.find(x => x.d === d) || (B.days.push({ d, l: 0, g: 0 }), B.days.at(-1)); day.g++; }
     }
     for (const f of fresh) { const d = new Date(f.at).toISOString().slice(0, 10); const day = B.days.find(x => x.d === d) || (B.days.push({ d, l: 0, g: 0 }), B.days.at(-1)); day.l++; }
