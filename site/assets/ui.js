@@ -43,7 +43,7 @@ export function mountChrome(active) {
     th.textContent = light ? 'Dark' : 'Light';
   });
   const chip = $('.cachip', top);
-  if (chip) chip.addEventListener('click', async () => {
+  const copyCA = chip => chip.addEventListener('click', async () => {
     let ok = false;
     try { await navigator.clipboard.writeText(CA); ok = true; } catch (e) {
       const t = document.createElement('textarea'); t.value = CA; t.style.position = 'fixed'; t.style.opacity = '0'; document.body.append(t); t.select();
@@ -53,12 +53,14 @@ export function mountChrome(active) {
     const small = lab.tagName === 'B'; lab.textContent = ok ? (small ? 'OK' : 'COPIED') : (small ? '!' : 'COPY FAILED'); chip.classList.toggle('done', ok);
     clearTimeout(chip._t); chip._t = setTimeout(() => { lab.textContent = was; chip.classList.remove('done'); }, 1600);
   });
+  if (chip) copyCA(chip);
   const tick = async () => { try { const n = await blockNumber(); $('#blk').textContent = '#' + n.toLocaleString('en-US'); } catch (e) {} };
   tick(); setInterval(tick, 12000);
 
   const foot = $('.foot');
   const phrase = '<span>Every token rides the line</span><b>✦</b><span class="f">Shuntdesk</span><b>✦</b><span>A scanner with something to lose</span><b>✦</b><span class="f">Paper money, real data</span><b>✦</b>';
   if (foot) foot.innerHTML = `
+    <div class="f2-tok"><b>$SHUNT</b><span>The official token</span><button class="cachip f2-ca" type="button" aria-label="Copy the contract address ${CA}"><b>CA</b><span>${CA}</span><i>COPY</i></button><a href="https://ponsfamily.com/launchpad/${CA}" target="_blank" rel="noopener">Get it on Pons ↗</a><a href="/token/">Token page →</a></div>
     <div class="mq"><div>${phrase}${phrase}</div></div>
     <div class="f2">
       <div class="f2-top">
@@ -66,7 +68,7 @@ export function mountChrome(active) {
         <a class="btn" href="/ticket/">Put a token on the line →</a>
       </div>
       <div class="f2-cols">
-        <div><h5>Product</h5>${NAV.map(n => `<a href="${n[1]}">${n[0]}</a>`).join('')}<a href="/play/">The Yard</a></div>
+        <div><h5>Product</h5>${NAV.map(n => `<a href="${n[1]}">${n[0]}</a>`).join('')}<a href="/play/">The Yard</a><a href="/token/">$SHUNT</a></div>
         <div><h5>Tools</h5><a href="/radar/">Radar</a><a href="/scan/">Agent Scan</a><a href="/bonds/">Bond Watch</a><a href="/wallet/">Wallet X-ray</a><a href="/exit/">Exit Door</a><a href="/hand/">Same Hand</a><a href="/stocks/">Stock gap</a><a href="/deployer/">Deployer record</a><a href="/replay/">Rug replay</a><a href="/report/">Daily report</a></div>
         <div><h5>Community</h5>${X_HANDLE ? `<a href="https://x.com/${X_HANDLE}" target="_blank" rel="noopener">X ↗</a>` : ''}<a href="https://t.me/shuntdesk" target="_blank" rel="noopener">Telegram ↗</a><a href="https://t.me/shuntdesk_bot" target="_blank" rel="noopener">Telegram bot ↗</a><a href="/agents/">For agents</a><a href="https://huggingface.co/datasets/shuntdesk/verdicts" target="_blank" rel="noopener">Open data ↗</a><a href="https://github.com/shuntdesk/shuntdesk" target="_blank" rel="noopener">Source code ↗</a></div>
         <div><h5>Legal</h5><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><a href="/docs/#faq">FAQ</a></div>
@@ -74,6 +76,7 @@ export function mountChrome(active) {
       <p class="f2-src">Data from DexScreener · GeckoTerminal · Blockscout · GoPlus · Codex · Binance · Robinhood Chain RPC · Yahoo Finance · Surplus · Hugging Face</p>
       <div class="f2-bot"><span>© 2026 Shuntdesk</span><span>Paper money only · Rule-based readings that can be wrong · Not financial advice</span></div>
     </div>`;
+  const fca = foot && $('.f2-ca', foot); if (fca) copyCA(fca);
 
   // cards: a light under the pointer, and a lean toward it
   let lit = null;

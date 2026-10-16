@@ -896,3 +896,26 @@ html.simple.light ::selection { background: #2ed3a0; color: #060708; }
   .logo b { font-size: 18px; }
 }
 @media (max-width: 430px) { .logo b { display: none; } .top nav a { padding: 10px 4px; } }
+/* ---------- /token/: the official $SHUNT page ---------- */
+.tk-lede { max-width: 640px; font-size: 18px; line-height: 1.55; color: #cfcdc8; margin-top: 22px; }
+.tk-ca { display: flex; align-items: center; gap: 14px; margin-top: 30px; max-width: 100%; font-family: var(--mono); font-size: 15px; color: var(--ink); padding: 16px 18px; border: 1px solid rgba(237, 235, 230, .4); background: rgba(10, 11, 13, .7); cursor: pointer; clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px); }
+.tk-ca b { color: var(--long); letter-spacing: .14em; } .tk-ca span { overflow-wrap: anywhere; text-align: left; }
+.tk-ca i { font-style: normal; font-size: 11px; letter-spacing: .16em; color: var(--mut); padding-left: 14px; border-left: 1px solid var(--hair); }
+.tk-ca:hover { border-color: rgba(237, 235, 230, .8); } .tk-ca.done i { color: var(--long); }
+.tk-cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 22px; }
+.tk-live { margin-top: 64px; padding: 28px; border: 1px solid var(--hair); background: rgba(10, 11, 13, .6); }
+.tk-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; } .tk-head h2 { font-family: var(--disp); font-size: 34px; text-transform: uppercase; }
+.tk-head span, .tk-barl { font-family: var(--mono); font-size: 11.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--mut); }
+.tk-bar { height: 10px; margin-top: 22px; background: rgba(237, 235, 230, .08); } .tk-bar div { height: 100%; width: 0; background: var(--long); box-shadow: 0 0 18px var(--long); transition: width 1s; }
+.tk-barl { display: flex; justify-content: space-between; margin-top: 10px; }
+.tk-grid { margin-top: 26px; }
+.tk-note { font-size: 13px; color: var(--dim); margin-top: 18px; max-width: 720px; }
+.tk-more { margin-top: 64px; }
+@media (max-width: 600px) { .tk-ca { font-size: 12.5px; padding: 14px; } .tk-live { padding: 20px; } .tk-lede { font-size: 16px; } }
+/* ---------- the footer's first line: $SHUNT ---------- */
+.f2-tok { display: flex; align-items: center; gap: 14px 22px; flex-wrap: wrap; padding: 18px 5vw; max-width: 1400px; margin: 0 auto; border-bottom: 1px solid var(--hair); font-family: var(--mono); font-size: 12px; letter-spacing: .1em; color: var(--mut); }
+.f2-tok > b { font-family: var(--disp); font-size: 22px; letter-spacing: .02em; color: var(--ink); }
+.f2-tok .cachip { padding: 7px 11px; }
+.f2-tok a { color: var(--ink); text-transform: uppercase; } .f2-tok a:hover { color: var(--long); }
+.f2-tok .cachip span, .f2-tok .cachip i { display: inline !important; } .f2-tok .cachip span { overflow-wrap: anywhere; text-align: left; }
+@media (max-width: 600px) { .f2-tok { padding: 16px 16px; } .f2-tok .cachip { font-size: 10.5px; max-width: 100%; } }

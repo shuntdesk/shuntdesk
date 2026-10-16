@@ -5,6 +5,7 @@
 Site: https://shuntdesk.com
 Docs: https://shuntdesk.com/docs/
 X: https://x.com/shuntdesk
+Token: $SHUNT, the official Shuntdesk token on Pons, contract 0x7e517e779b85895894becad80c9bb69b4cb1c4d6 (the only one): https://shuntdesk.com/token/
 
 ## For agents
 
