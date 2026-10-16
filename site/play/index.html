@@ -16,7 +16,6 @@
 <link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="theme-color" content="#060708">
-<script type="importmap">{ "imports": { "three": "/assets/vendor/three.module.js" } }</script>
 <link rel="modulepreload" href="/assets/vendor/three.module.js">
 <style>
 @font-face { font-family: D; src: url(/assets/fonts/bsd-900.woff2); font-display: swap; }
@@ -367,16 +366,7 @@ body.booting #intro .card { animation: none; opacity: 0; }
   </div>
 </div>
 <div id="err" hidden></div>
-<script>
-// any error shows here, so a phone can report it in a screenshot
-// the loading screen: a bar that creeps toward the next milestone, then a fade into the city
-window.boot = (k, msg) => { const u = document.getElementById('bootbar'), m = document.getElementById('bootmsg'); if (u) u.style.width = Math.round(k * 100) + '%'; if (msg && m) m.textContent = msg; };
-window.bootDone = () => { window.boot(1, 'Ready'); setTimeout(() => { document.getElementById('boot').classList.add('done'); document.body.classList.remove('booting'); }, 250); };
-window.boot(0.12, 'Building the city');
-window.showErr = e => { const el = document.getElementById('err'); el.hidden = false; el.textContent = 'Error: ' + (e && (e.message || e.reason?.message || e)) + (e && e.stack ? '\n' + String(e.stack).split('\n').slice(0, 3).join('\n') : ''); };
-addEventListener('error', e => window.showErr(e.error || e.message));
-addEventListener('unhandledrejection', e => window.showErr(e.reason));
-</script>
+<script src="/assets/play-boot.js"></script>
 <script type="module" src="/assets/play.js"></script>
 </body>
 </html>

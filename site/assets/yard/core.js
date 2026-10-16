@@ -1,5 +1,5 @@
 // The Yard, core: renderer and post, small builders, the collision grid, and the clock that turns day into night.
-import * as THREE from 'three';
+import * as THREE from '/assets/vendor/three.module.js';
 import { EffectComposer } from '../vendor/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from '../vendor/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from '../vendor/jsm/postprocessing/UnrealBloomPass.js';
