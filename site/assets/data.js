@@ -128,12 +128,15 @@ async function ponsLogs(topics, onStep) {
 }
 // who launched a token on Pons (null when it did not come from Pons)
 export async function ponsLauncher(token) {
-  const { logs } = await ponsLogs([T_LAUNCH, word32(token)]);
-  return logs[0] ? fromWord(logs[0].topics[3]) : null;
+  try { const { logs } = await ponsLogs([T_LAUNCH, word32(token)]); return logs[0] ? fromWord(logs[0].topics[3]) : null; }
+  // a node that refuses the wide log read: the server reads the same log from its keyed index
+  catch (e) { const r = await api(`hand?w=${token.toLowerCase()}&creator=1`); if (!r?.ok) throw e; return r.ponsBy || null; }
 }
 // everything a wallet launched on Pons: when, whether it graduated, and how its pool stands now
 export async function deployerRecord(wallet, onStep) {
-  const { head, logs } = await ponsLogs([T_LAUNCH, null, null, word32(wallet)], onStep);
+  let head, logs;
+  try { ({ head, logs } = await ponsLogs([T_LAUNCH, null, null, word32(wallet)], onStep)); }
+  catch (e) { return deployerFromServer(wallet, e); }
   const toks = logs.map(l => ({ addr: fromWord(l.topics[1]), block: parseInt(l.blockNumber, 16) })).sort((a, b) => b.block - a.block);
   const ago = b => Date.now() - (head - b) * 100.4;   // about ten blocks a second on this chain
   const grads = new Set();
@@ -144,6 +147,15 @@ export async function deployerRecord(wallet, onStep) {
   let m = {}; try { m = await prices(toks.map(t => t.addr)); } catch (e) {}
   for (const t of toks.filter(t => !m[t.addr]).slice(0, 5)) { const p = await pairFor(t.addr).catch(() => null); if (p) m[t.addr] = p; }   // fresh ones: GeckoTerminal
   return toks.map(t => ({ ...t, t: ago(t.block), graduated: grads.has(t.addr), pair: m[t.addr] || null }));
+}
+
+// the same record through the server's keyed index, for when the node refuses the wide log read. Graduation is
+// read from the pools: a token with a DEX pool has left the curve (the curve itself is not listed by DexScreener).
+async function deployerFromServer(wallet, err) {
+  const r = await api('hand/launches?w=' + wallet.toLowerCase()); if (!r?.ok) throw err;
+  const toks = (r.launches[wallet.toLowerCase()] || []).map(l => ({ addr: l.token, block: l.block, t: l.t || Date.now() })).sort((a, b) => b.block - a.block);
+  let m = {}; try { m = await prices(toks.map(t => t.addr)); } catch (e) {}
+  return toks.map(t => ({ ...t, graduated: !!m[t.addr], pair: m[t.addr] || null }));
 }
 
 // best pair (deepest liquidity) per token

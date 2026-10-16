@@ -45,13 +45,20 @@ export function mountChrome(active) {
   const phrase = '<span>Every token rides the line</span><b>✦</b><span class="f">Shuntdesk</span><b>✦</b><span>A scanner with something to lose</span><b>✦</b><span class="f">Paper money, real data</span><b>✦</b>';
   if (foot) foot.innerHTML = `
     <div class="mq"><div>${phrase}${phrase}</div></div>
-    <div class="fgrid">
-      <div class="fbrand"><a class="logo" href="/">${LOGO}<b>SHUNTDESK</b></a><p>We check tokens on Robinhood Chain, then bet paper money on our own verdicts. The balance is public. So are the misses.</p><div class="pills"><span>PAPER ONLY</span><span>NO WALLET</span><span>NO KEY</span></div>${xLink('xlink xfoot')}</div>
-      <div class="fcol"><h5>The line</h5>${NAV.map(n => `<a href="${n[1]}">${n[0]}</a>`).join('')}<a href="/exit/">Exit Door</a><a href="/hand/">Same Hand</a><a href="/stocks/">Stock gap</a><a href="/report/">Daily report</a><a href="/deployer/">Deployer record</a><a href="/replay/">Rug replay</a><a href="/play/">The Yard (game)</a><a href="/agents/">For agents</a><a href="https://t.me/shuntdesk" target="_blank" rel="noopener">Telegram community ↗</a><a href="https://t.me/shuntdesk_bot" target="_blank" rel="noopener">Telegram bot ↗</a><a href="https://huggingface.co/datasets/shuntdesk/verdicts" target="_blank" rel="noopener">Open data ↗</a><a href="https://github.com/shuntdesk/shuntdesk" target="_blank" rel="noopener">Source code ↗</a><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a></div>
-      <div class="fcol"><h5>Read from</h5><span>DexScreener</span><span>GeckoTerminal</span><span>Blockscout</span><span>GoPlus</span><span>Codex</span><span>Binance</span><span>Robinhood Chain RPC</span><span>Surplus · ChargeAI</span><span>Hugging Face</span></div>
-      <div class="stub endplate"><div class="in"><div class="cap"><b>Terminus</b><span>end of the line</span></div><h4>Ride it again.</h4><a class="btn" href="/ticket/">Board with a token →</a></div></div>
-    </div>
-    <p class="fine">Every balance and position here is simulated. Verdicts come from fixed rules reading public chain data, so they can be wrong. A clean verdict is not a reason to buy, and a danger verdict is not proof of fraud. Not financial advice.</p>`;
+    <div class="f2">
+      <div class="f2-top">
+        <div class="f2-brand"><a class="logo" href="/">${LOGO}<b>SHUNTDESK</b></a><p>Token checks on Robinhood Chain, with a paper desk that bets on its own calls. The balance is public. So are the misses.</p></div>
+        <a class="btn" href="/ticket/">Put a token on the line →</a>
+      </div>
+      <div class="f2-cols">
+        <div><h5>Product</h5>${NAV.map(n => `<a href="${n[1]}">${n[0]}</a>`).join('')}<a href="/play/">The Yard</a></div>
+        <div><h5>Tools</h5><a href="/exit/">Exit Door</a><a href="/hand/">Same Hand</a><a href="/stocks/">Stock gap</a><a href="/deployer/">Deployer record</a><a href="/replay/">Rug replay</a><a href="/report/">Daily report</a></div>
+        <div><h5>Community</h5>${X_HANDLE ? `<a href="https://x.com/${X_HANDLE}" target="_blank" rel="noopener">X ↗</a>` : ''}<a href="https://t.me/shuntdesk" target="_blank" rel="noopener">Telegram ↗</a><a href="https://t.me/shuntdesk_bot" target="_blank" rel="noopener">Telegram bot ↗</a><a href="/agents/">For agents</a><a href="https://huggingface.co/datasets/shuntdesk/verdicts" target="_blank" rel="noopener">Open data ↗</a><a href="https://github.com/shuntdesk/shuntdesk" target="_blank" rel="noopener">Source code ↗</a></div>
+        <div><h5>Legal</h5><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><a href="/docs/#faq">FAQ</a></div>
+      </div>
+      <p class="f2-src">Data from DexScreener · GeckoTerminal · Blockscout · GoPlus · Codex · Binance · Robinhood Chain RPC · Yahoo Finance · Surplus · Hugging Face</p>
+      <div class="f2-bot"><span>© 2026 Shuntdesk</span><span>Paper money only · Rule-based readings that can be wrong · Not financial advice</span></div>
+    </div>`;
 
   // cards: a light under the pointer, and a lean toward it
   let lit = null;

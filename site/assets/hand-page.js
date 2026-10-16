@@ -30,18 +30,18 @@ async function look(input) {
 function paint(r) {
   $('#out').hidden = false;
   const tag = { dead: 'SAME HAND · MOSTLY DEAD', same: 'SAME HAND', new: 'NO EARLIER LAUNCH FOUND' }[r.hand];
-  $('#h-tag').textContent = tag; $('#h-hero').className = 'stub hand-hero ' + (r.hand === 'dead' ? 'r' : r.hand === 'same' ? '' : 'g');
-  $('#h-sub').textContent = r.token ? `${r.viaPons ? 'launched on Pons' : 'deployed'} by ${short(r.launcher)}` : `wallet ${short(r.launcher)}`;
+  $('#sh-tag').textContent = tag; $('#sh-hero').className = 'stub hand-hero ' + (r.hand === 'dead' ? 'r' : r.hand === 'same' ? '' : 'g');
+  $('#sh-sub').textContent = r.token ? `${r.viaPons ? 'launched on Pons' : 'deployed'} by ${short(r.launcher)}` : `wallet ${short(r.launcher)}`;
   const busy = r.chain.find(c => c.busy && c.role !== 'launcher'), ends = r.chain.at(-1);
-  $('#h-line').textContent = r.launched
+  $('#sh-line').textContent = r.launched
     ? `${r.token ? 'This launch' : 'This wallet'} traces back to ${r.launchers} wallet${r.launchers > 1 ? 's' : ''} that launched ${r.launched} token${r.launched > 1 ? 's' : ''} on Pons${r.token ? ' before' : ''}. ${r.dead} of them now hold under $1K.`
     : `Nothing else on Pons from the launcher${r.chain.length > 1 ? ' or the wallets behind it' : ''}.${busy ? ` The trail stops at ${short(busy.addr)}, a busy wallet (an exchange, a bridge or a bot).` : ends.contract ? ` The trail stops at a contract, ${short(ends.addr)}.` : r.chain.length === 1 ? ' Its first funds could not be traced.' : ''}`;
-  $('#h-trail').innerHTML = r.chain.map((c, i) => `<div class="tn${c.busy || c.contract ? ' end' : ''}"><small>${esc(c.role.toUpperCase())}</small><a href="${X}${c.addr}" target="_blank" rel="noopener">${short(c.addr)}</a>
+  $('#sh-trail').innerHTML = r.chain.map((c, i) => `<div class="tn${c.busy || c.contract ? ' end' : ''}"><small>${esc(c.role.toUpperCase())}</small><a href="${X}${c.addr}" target="_blank" rel="noopener">${short(c.addr)}</a>
     <span>${c.launches ? `${c.launches} launch${c.launches > 1 ? 'es' : ''} on Pons` : 'no Pons launch'}${c.paid != null && !c.busy ? ` · paid ${c.paid} wallet${c.paid === 1 ? '' : 's'}` : ''}${c.busy ? ' · busy wallet, trail ends' : ''}${c.contract ? ' · a contract, trail ends' : ''}</span>
     ${i ? `<i>sent ${c.eth != null ? c.eth.toFixed(4) + ' ETH' : 'funds'}${c.at ? ' · ' + ageShort(c.at) + ' ago' : ''}${c.via === 'contract call' ? ' · inside a contract call' : ''}</i>` : ''}</div>`).join('<b class="ar">←</b>');
-  $('#h-n').textContent = r.launched; $('#h-dead').textContent = r.dead; $('#h-alive').textContent = r.alive; $('#h-who').textContent = r.launchers;
-  $('#h-dead').className = 'v' + (r.dead ? ' short' : '');
-  $('#h-list').innerHTML = '<div class="r h"><span>LAUNCHED</span><span>TOKEN</span><span>BY</span><span>LIQUIDITY</span><span></span></div>' + (r.rows.slice(0, 80).map(x => {
+  $('#sh-n').textContent = r.launched; $('#sh-dead').textContent = r.dead; $('#sh-alive').textContent = r.alive; $('#sh-who').textContent = r.launchers;
+  $('#sh-dead').className = 'v' + (r.dead ? ' short' : '');
+  $('#sh-list').innerHTML = '<div class="r h"><span>LAUNCHED</span><span>TOKEN</span><span>BY</span><span>LIQUIDITY</span><span></span></div>' + (r.rows.slice(0, 80).map(x => {
     const v = cachedScan(x.token);
     return `<a class="r" href="/ticket/?a=${x.token}"><span>~${ageShort(x.t)}</span><span class="sy">${esc(x.sym || short(x.token))}<small>${v ? `${v.verdict} ${v.score} on this browser` : short(x.token)}</small></span>
       <span>${esc(x.how)}${x.via ? ' ' + short(x.via) : ''}</span><span class="${x.liq < DEAD_LIQ ? 'short' : ''}">${x.pool ? '$' + compact(x.liq) : 'no pool'}</span><span class="go">→</span></a>`;
@@ -70,6 +70,6 @@ async function card() {
   return cv;
 }
 const link = () => location.origin + '/hand/?a=' + last?.input;
-$('#h-save').onclick = async () => { const cv = await card(); if (!cv) return; cv.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `shuntdesk-hand-${last.input.slice(2, 8)}.png`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }, 'image/png'); };
-$('#h-x').onclick = () => { if (!last) return; const r = last, txt = r.launched ? `Same Hand on ${short(r.input)}: the money behind it traces to wallets that launched ${r.launched} tokens on Pons. ${r.dead} of them now hold under $1K.` : `Same Hand on ${short(r.input)}: no earlier Pons launch found behind it.`; window.open('https://x.com/intent/post?text=' + encodeURIComponent(txt) + '&url=' + encodeURIComponent(link()), '_blank', 'noopener'); };
-$('#h-link').onclick = async e => { if (!last) return; try { await navigator.clipboard.writeText(link()); e.target.textContent = 'Copied'; } catch (x) { e.target.textContent = link(); } };
+$('#sh-save').onclick = async () => { const cv = await card(); if (!cv) return; cv.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `shuntdesk-hand-${last.input.slice(2, 8)}.png`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }, 'image/png'); };
+$('#sh-x').onclick = () => { if (!last) return; const r = last, txt = r.launched ? `Same Hand on ${short(r.input)}: the money behind it traces to wallets that launched ${r.launched} tokens on Pons. ${r.dead} of them now hold under $1K.` : `Same Hand on ${short(r.input)}: no earlier Pons launch found behind it.`; window.open('https://x.com/intent/post?text=' + encodeURIComponent(txt) + '&url=' + encodeURIComponent(link()), '_blank', 'noopener'); };
+$('#sh-link').onclick = async e => { if (!last) return; try { await navigator.clipboard.writeText(link()); e.target.textContent = 'Copied'; } catch (x) { e.target.textContent = link(); } };
