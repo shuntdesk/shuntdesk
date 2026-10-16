@@ -1675,10 +1675,11 @@ function frame(now) {
   runRain(dt); objective(); drawMap(t); listen(dt);
   if (++shadowTick % 2 === 0) R.shadowMap.needsUpdate = true;   // shadows every other frame
   if (started) quality(dt);
+  if (window.__film) window.__film(cam, sky, t);   // a camera for making videos of the city, set from outside
   composer.render(); if (photoNext) takePhoto();
   requestAnimationFrame(safeFrame);
 }
-if (/[?&]debug\b/.test(location.search)) window.__yard = { DOORS, get MODE() { return MODE; }, startEvent, EVT, RUN, DRIVE, TAXI, ROOMS, openTalk, nearestFolk, TALK, JOB, startJob, pay, get cash() { return save.cash; }, announce, PLATFORMS, CROSSINGS, cam, get RIDE() { return RIDE; }, WHEEL, R, bloom, sun, scene, P, G, look, TIME, ENV, startShift, setLever, zombies, spawnZombie, folk, cars, complete, save, get hero() { return hero; }, get started() { return started; }, get townReady() { return townReady; } };
+if (/[?&]debug\b/.test(location.search)) window.__yard = { PLACES, DOORS, get MODE() { return MODE; }, startEvent, EVT, RUN, DRIVE, TAXI, ROOMS, openTalk, nearestFolk, TALK, JOB, startJob, pay, get cash() { return save.cash; }, announce, PLATFORMS, CROSSINGS, cam, get RIDE() { return RIDE; }, WHEEL, R, bloom, sun, scene, P, G, look, TIME, ENV, startShift, setLever, zombies, spawnZombie, folk, cars, complete, save, get hero() { return hero; }, get started() { return started; }, get townReady() { return townReady; } };
 // the first frames compile the shaders; show the city once two have drawn
 let firstFrames = 0; const bootWatch = () => { if (++firstFrames >= 3) { window.bootDone?.(); if (!townReady) $('go').textContent = 'Waking up the town…'; } else requestAnimationFrame(bootWatch); };
 requestAnimationFrame(safeFrame); requestAnimationFrame(bootWatch);
