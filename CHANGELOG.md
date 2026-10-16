@@ -1,11 +1,5 @@
 # Changelog
 
-## 1.5.0 · 16 October 2026
-
-- A new look across the site, the clean terminal: no 3D yard behind the pages, no grain, plain cards with a hairline, solid buttons, a quiet header (ssets/v2.css). Pages that hide the yard no longer draw it.
-- A new landing: one field to check a token, the site's own numbers (calls filed, the crew desk, clean calls up an hour later), the latest calls with their move an hour later, the tools, how it works.
-- A simpler footer; Same Hand and the deployer record fall back to the server when the node refuses a wide log read.
-
 ## 1.4.0 · 16 October 2026
 
 - Exit Door (/exit/): pick a size and see what comes back if you sell straight away, through the pool's depth, the sell tax and the swap fee, and again if the developer, the largest funded group, the launch snipers and bundles, or the ten largest wallets sell first. Every ticket shows the $500 case.
