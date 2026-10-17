@@ -47,7 +47,7 @@ function paintCard(res, done) {
   shown = res;
   const live = res.verdict !== 'NO POOL';
   $('#t-crew').textContent = !live || !res.crew ? '' : 'CREW DESK: ' + ({ offline: 'NOT ANSWERING', 'no answer': 'NO ANSWER YET' }[res.crew] || res.crew.toUpperCase());
-  second(res); extras(res);
+  second(res); extras(res); devCard(res);
   $('#t-acts').innerHTML = (live ? `<a class="btn ${res.platform === 'short' ? 'r' : res.platform === 'long' ? 'g' : ''}" href="/desk/?a=${res.addr}">Trade it on paper →</a><button class="btn ghost" data-do="ask">Ask the conductor</button>` : '')
     + `<button class="btn ghost" data-do="card">Save the card</button><button class="btn ghost" data-do="x">Post on X</button><button class="btn ghost" data-do="link">Copy link</button><a class="btn ghost" href="${EXPLORER}/token/${res.addr}" target="_blank" rel="noopener">Explorer ↗</a>`
     + (live ? `<button class="btn ghost" data-do="watch">${watching(res.addr) ? 'Watching' : 'Watch'}</button><a class="btn ghost" href="/scan/?a=${res.addr}">Agent Scan</a><a class="btn ghost" href="/hand/?a=${res.addr}">Same Hand</a><a class="btn ghost" href="/deployer/?t=${res.addr}">Deployer record</a><a class="btn ghost" href="/replay/?a=${res.addr}">Replay</a>` : '');
@@ -177,7 +177,21 @@ async function extras(res) {
     <p class="note" style="margin:8px 0 0">${!day && r.base.firstDay ? `RESULTS A DAY ON START AROUND ${at(r.base.firstDay)}. ` : ''}${r.ageMin != null && r.ageMin > 360 ? 'THIS TOKEN IS OLDER THAN THE ONES IT IS SET AGAINST, WHICH WERE READ 30 TO 90 MINUTES AFTER LAUNCH. ' : ''}PAST RESULTS OF OTHER TOKENS, NOT A FORECAST.</p>`;
   $('#lk-by').textContent = `${r.matches} closest of ${r.base.judged.toLocaleString('en-US')} tokens logged since ${new Date(r.base.since).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
 }
-// Agent Scan, under the verdict: what the contract lets its controller do
+// Dev Ledger, under the verdict: every transfer of this token in or out of the wallet that launched it
+let devFor = '';
+async function devCard(res) {
+  if (devFor === res.addr) return; devFor = res.addr;
+  const box = $('#dv'), n0 = v => v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : Math.round(v).toLocaleString('en-US');
+  let v = null; try { v = await api('ledger?a=' + res.addr); } catch (e) {}
+  if (devFor !== res.addr) return;
+  if (!v?.ok) { box.innerHTML = `<p class="note">${esc((v?.why || 'not answering right now').toUpperCase())}.</p>`; return; }
+  const L = v.ledger, got = L.bought + L.received, pct = x => got > 0 ? ` · ${Math.round(x / got * 100)}%` : '';
+  box.innerHTML = [[n0(got), L.received ? 'Bought or received' : 'Bought on the curve'], [n0(L.sold) + pct(L.sold), 'Sold into the curve'], [n0(L.toContracts) + pct(L.toContracts), 'Into other contracts'],
+    [n0(L.toWallets) + pct(L.toWallets), 'Sent to other wallets'], [n0(L.burned) + pct(L.burned), 'Burned'], [v.holdsNow == null ? '?' : n0(v.holdsNow), 'Holds now']]
+    .map(([a, b]) => `<div><b>${a}</b><span>${b}</span></div>`).join('');
+  $('#dv-by').textContent = `launcher ${v.dev.slice(0, 6)}…${v.dev.slice(-4)}, found from the ${v.devFound}`;
+  $('#dv-n').textContent = (v.partial ? 'The launcher has over 1,000 transfers of it; the first 1,000 are counted. ' : '') + '"Into other contracts" can be a sale through a router or a deposit: the chain index cannot tell which.';
+}// Agent Scan, under the verdict: what the contract lets its controller do
 let scanFor = '';
 async function scanCard(res) {
   if (scanFor === res.addr) return; scanFor = res.addr;

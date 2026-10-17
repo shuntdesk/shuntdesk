@@ -691,6 +691,7 @@ async function agentData(st, env, p, a) {
   if (p === 'site') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a token address' }]; return [200, await siteCheck(st, env, a)]; }
   if (p === 'radar') return [200, await radarView(env)];
   if (p === 'wallet') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a wallet address' }]; return [200, await walletView(st, env, a)]; }
+  if (p === 'devledger' || p === 'ledger') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a token address on Robinhood Chain' }]; return [200, await devLedger(env, a)]; }
   if (p === 'xray' || p === 'scan') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a token address on Robinhood Chain' }]; return [200, await xray(st, env, a)]; }
   return [404, { error: 'unknown endpoint', see: 'https://shuntdesk.com/llms.txt' }];
 }
@@ -1262,6 +1263,43 @@ async function multicall(calls) {   // calls: [target, selector] → hex result 
 const str = hex => { try { if (!hex || hex.length < 130) return null; const h = hex.slice(2), len = parseInt(h.substr(64, 64), 16); return new TextDecoder().decode(new Uint8Array(h.substr(128, len * 2).match(/../g).map(b => parseInt(b, 16)))).replace(/[^\x20-\x7e]/g, '').slice(0, 16); } catch (e) { return null; } };
 let bondsMem = null;
 const bondsLoad = async env => bondsMem || (bondsMem = await env.KV.get(BONDS).then(s => s ? JSON.parse(s) : { rows: [], block: 0, t: 0, days: [] }));
+// ---------- Dev Ledger: what the wallet that launched a token has done with that token ----------
+// Every transfer of the token in or out of the launcher, from the keyed Blockscout index, sorted by where it went:
+// burned (the zero or dead address), sold into the token's Pons curve, sent into another contract (a pool, a router,
+// a locker: the index cannot tell a sale from a deposit there), or sent to other wallets (EIP-7702 wallets count as
+// wallets). In: bought from the curve, or received. Plus the burns of the token by anyone. Kept five minutes.
+const DEAD = '0x000000000000000000000000000000000000dead', ledgers = new Map();
+export async function devLedger(env, token) {
+  const hit = ledgers.get(token), now = Date.now(); if (hit && now - hit.t < 5 * 60000) return hit.v;
+  if (!env.BLOCKSCOUT_API_KEY) return { ok: false, why: 'not available right now' };
+  const bs = async q => { const r = await fetch(`https://api.blockscout.com/4663/api?${q}&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA, signal: AbortSignal.timeout(12000) }); const j = await r.json(); return Array.isArray(j.result) ? j.result : []; };
+  const sh = await handWallet(env, token, true).catch(() => null), dev = String(sh?.ponsBy || sh?.creator || '').toLowerCase() || null;
+  if (!dev) return { ok: false, why: 'the launcher could not be found' };
+  const c = await ponsCurve(token), curve = c?.curve || null;
+  const [txs, burns, dec, bal] = await Promise.all([
+    bs(`module=account&action=tokentx&contractaddress=${token}&address=${dev}&sort=asc&page=1&offset=1000`),
+    bs(`module=account&action=tokentx&contractaddress=${token}&address=${DEAD}&sort=desc&page=1&offset=200`),
+    contractCall(token, '313ce567'), contractCall(token, '70a08231' + dev.slice(2).padStart(64, '0'))]);
+  const d = dec ? Number(BigInt(dec)) : 18, amt = v => Number(BigInt(v || '0') * 1000n / 10n ** BigInt(d)) / 1000;
+  const others = [...new Set(txs.filter(t => String(t.from).toLowerCase() === dev).map(t => String(t.to).toLowerCase()).filter(a => a !== DEAD && !/^0x0{40}$/.test(a) && a !== curve))];
+  const codes = {}; await Promise.all(others.slice(0, 30).map(async a => { codes[a] = await rpc('eth_getCode', [a, 'latest']).catch(() => null); }));
+  const isPool = a => { const k = codes[a]; return !!k && k !== '0x' && !isDelegated(k); };
+  const L = { bought: 0, received: 0, burned: 0, sold: 0, toContracts: 0, toWallets: 0 }, moves = [];
+  for (const t of txs) {
+    const from = String(t.from).toLowerCase(), to = String(t.to).toLowerCase(), v = amt(t.value), at = Number(t.timeStamp) * 1000;
+    if (to === dev) { if (from === curve) L.bought += v; else L.received += v; continue; }
+    if (from !== dev) continue;
+    const kind = to === DEAD || /^0x0{40}$/.test(to) ? 'burned' : to === curve ? 'sold' : isPool(to) ? 'toContracts' : 'toWallets';
+    L[kind] += v; moves.push({ kind, amount: v, to, at: new Date(at).toISOString(), tx: t.hash });
+  }
+  const burnRows = burns.filter(t => String(t.to).toLowerCase() === DEAD);
+  const v = { ok: true, token, dev, devFound: sh?.ponsBy ? 'Pons launch log' : 'contract creation', curve, ledger: L, holdsNow: bal ? amt(BigInt(bal).toString()) : null,
+    moves: moves.slice(-40).reverse(), partial: txs.length >= 1000,
+    burns: { total: burnRows.reduce((s, t) => s + amt(t.value), 0), count: burnRows.length, byDev: burnRows.filter(t => String(t.from).toLowerCase() === dev).length, last: burnRows.slice(0, 12).map(t => ({ amount: amt(t.value), from: String(t.from).toLowerCase(), at: new Date(Number(t.timeStamp) * 1000).toISOString(), tx: t.hash })) },
+    note: 'Every transfer of this token in or out of the wallet that launched it, from the chain index. "Into contracts" may be a sale through a router or a deposit: the index cannot tell. Read only. Not advice.' };
+  ledgers.set(token, { t: now, v }); if (ledgers.size > 300) ledgers.delete(ledgers.keys().next().value);
+  return v;
+}
 // one Pons log over a wide range: the public node first (the backup node refuses wide ranges), then the keyed index, page by page
 async function wideLogs(env, topic0, from, to) {
   let why = '';
@@ -1700,6 +1738,7 @@ const api = {
       if (url.pathname === '/api/launch') { const a = (url.searchParams.get('a') || '').toLowerCase(); return isAddr(a) ? json(await launch(env, a)) : json({ ok: false, why: 'bad address' }, 400); }
       if (url.pathname === '/api/stocks') return json(await stockRefs());
       if (url.pathname === '/api/bonds') return json(await bondView(env));
+      if (url.pathname === '/api/ledger') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); return json(await devLedger(env, a)); }
       if (url.pathname === '/api/radar') return json(await radarView(env));
       if (url.pathname === '/api/hand/launches') { const ws = [...new Set((url.searchParams.get('w') || '').toLowerCase().split(',').filter(isAddr))].slice(0, 40); return ws.length ? json(await handLaunches(env, ws)) : json({ ok: false, why: 'pass ?w= up to 40 wallets, comma separated' }, 400); }
       if (url.pathname === '/api/hand') { const w = (url.searchParams.get('w') || '').toLowerCase(); return isAddr(w) ? json(await handWallet(env, w, url.searchParams.get('creator') === '1')) : json({ ok: false, why: 'bad address' }, 400); }

@@ -919,3 +919,8 @@ html.simple.light ::selection { background: #2ed3a0; color: #060708; }
 .f2-tok a { color: var(--ink); text-transform: uppercase; } .f2-tok a:hover { color: var(--long); }
 .f2-tok .cachip span, .f2-tok .cachip i { display: inline !important; } .f2-tok .cachip span { overflow-wrap: anywhere; text-align: left; }
 @media (max-width: 600px) { .f2-tok { padding: 16px 16px; } .f2-tok .cachip { font-size: 10.5px; max-width: 100%; } }
+.dl-burns { margin-top: 26px; } .dl-burns h3 { font-family: var(--mono); font-size: 11.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--mut); margin-bottom: 10px; }
+.dl-burns a { display: grid; grid-template-columns: 1fr auto auto; gap: 18px; align-items: baseline; padding: 11px 0; border-top: 1px solid var(--hair); font-family: var(--mono); font-size: 13px; color: var(--mut); }
+.dl-burns a b { font-family: var(--disp); font-size: 22px; color: #ff7a3d; } .dl-burns a:hover i { color: var(--ink); } .dl-burns i { font-style: normal; }
+#dl-dev { color: var(--long); }
+@media (max-width: 600px) { .dl-burns a { grid-template-columns: 1fr auto; } .dl-burns a i { display: none; } }
