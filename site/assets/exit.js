@@ -34,7 +34,12 @@ function paint(res) {
     return `<div class="dr${k < 0.5 ? ' bad' : k < 0.9 ? ' warn' : ''}"><div class="dl"><b>${esc(f.label)}</b><small>${f.share ? `${f.share.toFixed(1)}% of supply sold ahead of you · they take ${usdFmt(f.theirs)} · pool left $${compact(f.poolLeft)}` : 'only your own sale moves the pool'}</small></div>
       <div class="db"><i style="width:${Math.max(1, f.back / max * 100).toFixed(1)}%"></i></div><div class="dv">${usdFmt(f.back)}<small>${Math.round((k - 1) * 100)}%</small></div></div>`;
   }).join('');
-  $('#x-liq').textContent = '$' + compact(res.liq);
+  const cp = res.launch?.pool && !res.launch.graduated ? res.launch.pool : null;
+  $('#x-liq').textContent = '$' + compact(cp ? cp.realUsd : res.liq);
+  $('#x-liq2').textContent = cp ? `ETH raised on the Pons curve, ${Math.round(res.launch.progress)}% to bond` : 'liquidity, both sides';
+  $('#x-model').textContent = cp
+    ? `An estimate, not a quote. The token is still on its Pons curve, so the sale goes into the curve: a constant product over the curve's own reserves, with its fee and the creator's tax (${(cp.fee * 100).toFixed(1)}% together) taken off the ETH going in and coming out, and never more out than the curve has raised. Worked the way the curve's own buy and sell answer. Holder shares come from the ticket's own reading. Nothing is bought or sold. Not advice.`
+    : `An estimate, not a quote. The pool is treated as one constant-product pool holding its quoted liquidity, with a 0.3% swap fee; concentrated pools can be deeper near the price and thinner away from it. Holder shares come from the ticket's own reading. Nothing is bought or sold. Not advice.`;
   $('#x-imp').textContent = '+' + (d.buyImpact * 100).toFixed(1) + '%';
   $('#x-tax').textContent = `${res.buyTax == null ? '?' : res.buyTax.toFixed(0)}% / ${res.sellTax == null ? '?' : res.sellTax.toFixed(0)}%`;
   $('#x-ver').textContent = `${res.verdict} ${res.score}`; $('#x-ver').className = 'v sm ' + (res.verdict === 'CLEAN' ? 'long' : res.verdict === 'DANGER' ? 'short' : '');

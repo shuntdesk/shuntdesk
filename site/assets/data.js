@@ -273,6 +273,11 @@ export async function scan(address, onStep = () => {}) {
       src = 'GoPlus'; count = Number(gp.holder_count);
       holders = gp.holders.map(h => ({ a: h.address.toLowerCase(), c: h.is_contract == 1 || h.is_locked == 1, share: Number(h.percent) * 100 }));
     }
+    // EIP-7702: a person's wallet delegating to smart-wallet code has 23 bytes of code (0xef0100 and an address) and the
+    // explorer calls it a contract. Most large holders here are such wallets: they count as wallets, not contracts.
+    const flagged = holders.slice(0, 25).filter(h => h.c);
+    const codes = await Promise.all(flagged.map(h => rpc('eth_getCode', [h.a, 'latest']).catch(() => null)));
+    flagged.forEach((h, i) => { if (/^0xef0100[0-9a-f]{40}$/i.test(String(codes[i] || ''))) { h.c = false; h.delegated = true; } });
     eoa = holders.filter(h => !h.c && h.a !== ZERO && h.a !== DEAD);
     const top10 = eoa.slice(0, 10).reduce((s, h) => s + h.share, 0), inContracts = holders.filter(h => h.c).reduce((s, h) => s + h.share, 0);
     res.holderSrc = src;

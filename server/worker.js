@@ -118,8 +118,26 @@ async function goplus(env, addr) {
       if (gpToken.v) headers.Authorization = gpToken.v;
     }
     const r = await fetch(`https://api.gopluslabs.io/api/v1/token_security/4663?contract_addresses=${addr}`, { headers });
-    return (await r.json()).result?.[addr] || null;
+    const gp = (await r.json()).result?.[addr] || null;
+    if (gp?.holders) await walletsNotContracts(gp.holders.slice(0, 20).filter(h => h.is_contract == 1 && h.is_locked != 1), h => h.address, h => { h.is_contract = 0; h.delegated = 1; });
+    return gp;
   } catch (e) { return null; }
+}
+// EIP-7702: a person's wallet that delegates to smart-wallet code carries 23 bytes of code, 0xef0100 and an address,
+// and explorers and GoPlus call it a contract. Most large holders on Robinhood Chain are such wallets; counted as
+// contracts they drop out of the top ten ($SHUNT read 13.6% that way, 25.5% in truth). They count as wallets.
+export const isDelegated = code => /^0xef0100[0-9a-f]{40}$/i.test(String(code || ''));
+async function walletsNotContracts(list, addrOf, mark) {
+  if (!list.length) return;
+  let codes = [];
+  try {   // one batched request for all of them, the code of each address
+    for (const url of RPCS) {
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(list.map((h, i) => ({ jsonrpc: '2.0', id: i, method: 'eth_getCode', params: [String(addrOf(h)).toLowerCase(), 'latest'] }))) });
+      const j = await r.json().catch(() => null);
+      if (Array.isArray(j)) { codes = list.map((h, i) => j.find(x => x.id === i)?.result); break; }
+    }
+  } catch (e) {}
+  list.forEach((h, i) => { if (isDelegated(codes[i])) mark(h); });
 }
 // what the server can confirm about a token: red flags, and whether it has enough holders to be called clean
 function serverRead(gp) {

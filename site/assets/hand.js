@@ -14,7 +14,8 @@ const ZERO = '0x0000000000000000000000000000000000000000';
 export const DEAD_LIQ = 1000;   // a pool under $1K has next to nothing left to sell into
 
 // a contract has code; a wallet does not
-const isContract = async (io, a) => { try { const c = await io.rpc('eth_getCode', [a, 'latest']); return !!c && c !== '0x'; } catch (e) { return false; } };
+// a 7702 wallet (0xef0100 and an address) is a person's wallet, not a contract
+const isContract = async (io, a) => { try { const c = await io.rpc('eth_getCode', [a, 'latest']); return !!c && c !== '0x' && !/^0xef0100[0-9a-f]{40}$/i.test(c); } catch (e) { return false; } };
 
 export async function sameHand(input, io, onStep = () => {}) {
   input = input.toLowerCase();
