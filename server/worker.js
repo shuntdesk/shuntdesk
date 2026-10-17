@@ -826,7 +826,44 @@ async function gradScan(st, env) {
 // Launch facts from Codex for launchpad tokens: snipers, bundles, insiders, the developer's share, curve progress.
 // Shared by every visitor for ten minutes, with its own daily ceiling inside the same free allowance.
 const launches = new Map();
+// Curve progress is read from the Pons curve itself, never from Codex: Codex's graduationPercent counts something
+// else (it showed 75% for a curve holding 1.95 of the 4.2 ETH it needs, which Pons shows as 46%). Pons counts
+// realQuoteReserve against graduationThreshold, and so does this. Kept a minute.
+const curves = new Map();
+export async function ponsCurve(addr) {
+  const hit = curves.get(addr), now = Date.now();
+  if (hit && now - hit.t < 60000) return hit.v;
+  let v = null;
+  try {
+    const c = await rpc('eth_call', [{ to: addr, data: '0x' + SEL.curve }, 'latest']);
+    const curve = c && c.length >= 66 ? '0x' + c.slice(-40) : null;
+    if (curve && !/^0x0{40}$/.test(curve)) {
+      const [q, th, g, qr, tr, fb, ct, nat] = await multicall([[curve, SEL.real], [curve, SEL.thr], [curve, SEL.grad], [curve, SEL.qres], [curve, SEL.tres], [curve, SEL.fee], [curve, SEL.ctax], [curve, SEL.nat]]);
+      if (q && th && BigInt(th) > 0n) {
+        const graduated = !!g && BigInt(g) === 1n, f18 = x => Number(BigInt(x) / 10n ** 12n) / 1e6;
+        v = { curve, graduated, progress: graduated ? 100 : Math.min(100, Number(BigInt(q) * 1000000n / BigInt(th)) / 10000), raised: f18(q), need: f18(th) };
+        // the curve as a pool, for Exit Door: a constant product over its virtual reserves (the quote reserve counts
+        // a phantom amount on top of what was raised), with the fee and the creator's tax taken off every trade.
+        // Checked against the curve's own buy and sell answers. Only for curves quoted in native ETH.
+        if (!graduated && qr && tr && fb && nat && BigInt(nat) === 1n) {
+          const eth = await ethUsd().catch(() => 0);
+          if (eth > 0) v.pool = { quoteUsd: f18(qr) * eth, tokens: f18(tr), realUsd: f18(q) * eth, fee: (Number(BigInt(fb)) + (ct ? Number(BigInt(ct)) : 0)) / 10000 };
+        }
+      }
+    }
+  } catch (e) {}
+  curves.set(addr, { t: now, v }); if (curves.size > 400) curves.delete(curves.keys().next().value);
+  return v;
+}
 async function launch(env, addr) {
+  const v = await launchCodex(env, addr);
+  if (v.ok && v.launchpad !== 'pons') return v;   // Codex knows it is not a Pons launch
+  const c = await ponsCurve(addr);   // and when Codex is out for the day, the chain still answers for the curve
+  if (!v.ok) return c ? { ok: true, launchpad: 'pons', progress: c.progress, graduated: c.graduated, raised: c.raised, need: c.need, curve: c.curve, pool: c.pool || null } : v;
+  if (!c) return v.launchpad === 'pons' ? { ...v, progress: null } : v;   // a Pons token whose curve could not be read shows no figure rather than Codex's
+  return { ...v, ok: true, launchpad: 'pons', progress: c.progress, graduated: c.graduated, raised: c.raised, need: c.need, curve: c.curve, pool: c.pool || null };
+}
+async function launchCodex(env, addr) {
   const hit = launches.get(addr), now = Date.now();
   if (hit && now - hit.t < 30 * 60000) return hit.v;
   if (!(await codexOk(env, 'launch'))) return hit ? hit.v : { ok: false, why: 'not available right now' };
@@ -1183,8 +1220,9 @@ async function xrayAlert(st, env) {
 // raised, graduationThreshold() the ETH it needs to bond, graduated() whether it has. All of them are read in one
 // call through Multicall3 every ten minutes. A launch that has raised under 1% six hours in is dropped, so the
 // list stays to the ones still moving; the counts of launches and bonds per day come from the logs.
-const MC3 = '0xca11bde05977b3631167028862be2a173976ca11', BONDS = 'bonds-v2';
-const SEL = { real: 'b0c4b7c5', thr: '', grad: '', sym: '95d89b41', nat: '', pair: '' };
+const MC3 = '0xca11bde05977b3631167028862be2a173976ca11', BONDS = 'bonds-v3';
+// Pons curve and token selectors: keccak-256 of each signature, worked out once (the test checks them)
+const SEL = { real: '4f1f58fd', thr: '8b0bc501', grad: 'e7c2b772', sym: '95d89b41', nat: 'dc08e094', pair: '3de35b79', curve: '7165485d', qres: '9da771f4', tres: 'cbcb3171', fee: '24a9d853', ctax: 'c1bb8901' };
 async function selOf(sig) { return keccak256([...new TextEncoder().encode(sig)].map(b => b.toString(16).padStart(2, '0')).join('')).slice(0, 8); }
 async function multicall(calls) {   // calls: [target, selector] → hex result or null
   const out = [];
@@ -1226,49 +1264,60 @@ async function wideLogs(env, topic0, from, to) {
   }
   return out;
 }
-async function bondTick(env) {
+export async function bondTick(env) {
   const B = await bondsLoad(env), now = Date.now(); if (now - B.t < 10 * 60000) return; B.t = now;
   let stage = 'head';
   try {
-    if (!SEL.thr) { SEL.thr = await selOf('graduationThreshold()'); SEL.grad = await selOf('graduated()'); SEL.real = await selOf('realQuoteReserve()'); SEL.nat = await selOf('isNativeQuote()'); SEL.pair = await selOf('pairToken()'); }
-    const head = parseInt(await rpc('eth_blockNumber'), 16), from = B.block ? B.block + 1 : head - 2 * 864000;   // first read: two days back
-    const have = new Set(B.rows.map(r => r.t0)), fresh = [], grads = [];
+    // forward from the last read; on the first read the last 800,000 blocks (about 22 hours). Then one more window
+    // back each tick until a week is covered: a week at once is more calls than one tick may make.
+    const head = parseInt(await rpc('eth_blockNumber'), 16), first = !B.block, from = first ? head - 799999 : B.block + 1;
+    const wins = []; for (let a = from; a <= head; a += 400000) wins.push([a, Math.min(head, a + 399999)]);
+    const floor = first ? from : B.floor || from, back = floor > head - 7 * 864000 ? [Math.max(head - 7 * 864000, floor - 400000), floor - 1] : null;
+    if (back) wins.push(back);
+    const have = new Set([...B.rows.map(r => r.t0), ...(B.todo || []).map(r => r.t0)]), fresh = [], grads = [];
     // read every window first, count nothing until all of them came back: a failed read leaves the record as it was
-    for (let a = from; a <= head; a += 400000) {
+    for (const [a, z] of wins) {
       stage = 'launch log';
-      const logs = await wideLogs(env, T_LAUNCH, a, Math.min(head, a + 399999));
+      const logs = await wideLogs(env, T_LAUNCH, a, z);
       for (const l of logs) { const token = wordAddr(l.topics[1]); if (!have.has(token)) { have.add(token); fresh.push({ t0: token, c: wordAddr(l.topics[2]), by: wordAddr(l.topics[3]), b: parseInt(l.blockNumber, 16), at: now - (head - parseInt(l.blockNumber, 16)) * 100 }); } }
       stage = 'bond log';
-      grads.push(...await wideLogs(env, T_GRAD, a, Math.min(head, a + 399999)));
+      grads.push(...await wideLogs(env, T_GRAD, a, z));
     }
-    if (!B.block) B.days = [];
+    if (first) B.days = [];
+    B.floor = back ? back[0] : floor; B.head = head;
     for (const l of grads) { const d = new Date(now - (head - parseInt(l.blockNumber, 16)) * 100).toISOString().slice(0, 10); const day = B.days.find(x => x.d === d) || (B.days.push({ d, l: 0, g: 0 }), B.days.at(-1)); day.g++; }
     stage = 'curves';
     for (const f of fresh) { const d = new Date(f.at).toISOString().slice(0, 10); const day = B.days.find(x => x.d === d) || (B.days.push({ d, l: 0, g: 0 }), B.days.at(-1)); day.l++; }
     B.days = B.days.sort((a, b) => a.d < b.d ? -1 : 1).slice(-14);
     B.block = head;
-    // the new ones: threshold and symbol once
-    // a curve older than twelve hours on the first read is long settled: count it, don't read it
-    const recent = fresh.filter(f => now - f.at < 12 * HOUR);
-    if (recent.length) {
-      const res = await multicall(recent.flatMap(f => [[f.c, SEL.thr], [f.t0, SEL.sym], [f.c, SEL.nat], [f.c, SEL.pair]]));
+    // the new ones go in a queue, newest first; each tick reads its threshold, symbol and quote for up to 1,200 of them,
+    // so a first read of a week of launches is done within a few hours and a failed read is tried again, three times
+    B.todo = [...fresh, ...(B.todo || [])].sort((a, b) => b.at - a.at);
+    const batch = B.todo.splice(0, 1200);
+    if (batch.length) {
+      const res = await multicall(batch.flatMap(f => [[f.c, SEL.thr], [f.t0, SEL.sym], [f.c, SEL.nat], [f.c, SEL.pair], [f.c, SEL.fee], [f.c, SEL.ctax]]));
       // a curve quoted in a token rather than native ETH: name that token, once per token
-      const quotes = [...new Set(recent.map((f, i) => res[i * 4 + 2] && BigInt(res[i * 4 + 2]) === 0n && res[i * 4 + 3] ? '0x' + res[i * 4 + 3].slice(-40) : null).filter(a => a && !/^0x0{40}$/.test(a)))];
+      const quotes = [...new Set(batch.map((f, i) => res[i * 6 + 2] && BigInt(res[i * 6 + 2]) === 0n && res[i * 6 + 3] ? '0x' + res[i * 6 + 3].slice(-40) : null).filter(a => a && !/^0x0{40}$/.test(a)))];
       const qs = quotes.length ? await multicall(quotes.map(q => [q, SEL.sym])) : [], qsym = Object.fromEntries(quotes.map((q, i) => [q, str(qs[i]) || 'quote']));
-      recent.forEach((f, i) => { const th = res[i * 4]; f.th = th ? Number(BigInt(th) / 10n ** 12n) / 1e6 : 0; f.s = str(res[i * 4 + 1]) || f.t0.slice(0, 8); f.h = []; const nat = res[i * 4 + 2], pr = res[i * 4 + 3]; f.u = nat && BigInt(nat) === 0n && pr ? qsym['0x' + pr.slice(-40)] || 'quote' : 'ETH'; });
-      B.rows.push(...recent.filter(f => f.th > 0));
-    }
-    // every curve still on the board: what it has raised, and whether it bonded
+      batch.forEach((f, i) => {
+        const th = res[i * 6];
+        if (!th) { f.tries = (f.tries || 0) + 1; if (f.tries < 3) B.todo.push(f); return; }
+        f.th = Number(BigInt(th) / 10n ** 12n) / 1e6; f.s = str(res[i * 6 + 1]) || f.t0.slice(0, 8); f.h = []; delete f.tries; if (res[i * 6 + 4]) f.fee = (Number(BigInt(res[i * 6 + 4])) + (res[i * 6 + 5] ? Number(BigInt(res[i * 6 + 5])) : 0)) / 10000;
+        const nat = res[i * 6 + 2], pr = res[i * 6 + 3]; f.u = nat && BigInt(nat) === 0n && pr ? qsym['0x' + pr.slice(-40)] || 'quote' : 'ETH';
+        if (f.th > 0) B.rows.push(f);
+      });
+    }    // every curve still on the board: what it has raised, and whether it bonded
     const live = B.rows.filter(r => !r.g);
-    const res = await multicall(live.flatMap(r => [[r.c, SEL.real], [r.c, SEL.grad]]));
-    live.forEach((r, i) => { const q = res[i * 2], gd = res[i * 2 + 1]; if (q) { const eth = Number(BigInt(q) / 10n ** 12n) / 1e6; r.q = eth; r.p = Math.min(100, eth / r.th * 100); r.h.push([now, Math.round(r.p * 100) / 100]); r.h = r.h.slice(-36); r.max = Math.max(r.max || 0, r.p); } if (gd && BigInt(gd) === 1n) { r.g = now; r.p = 100; } });
-    // keep: the ones still moving, the bonded ones for two days, and nothing older than three days
-    B.rows = B.rows.filter(r => now - r.at < 72 * HOUR && (r.g ? now - r.g < 48 * HOUR : !(now - r.at > 6 * HOUR && (r.max || 0) < 1)));
+    const res = await multicall(live.flatMap(r => [[r.c, SEL.real], [r.c, SEL.grad], [r.c, SEL.qres], [r.c, SEL.tres], [r.c, SEL.fee], [r.c, SEL.ctax]]));
+    live.forEach((r, i) => { const q = res[i * 6], gd = res[i * 6 + 1], qr = res[i * 6 + 2], tr = res[i * 6 + 3], fb = res[i * 6 + 4], ct = res[i * 6 + 5]; if (fb) r.fee = (Number(BigInt(fb)) + (ct ? Number(BigInt(ct)) : 0)) / 10000; if (qr && tr) { r.vq = Number(BigInt(qr) / 10n ** 12n) / 1e6; r.vt = Number(BigInt(tr) / 10n ** 12n) / 1e6; } if (q) { const eth = Number(BigInt(q) / 10n ** 12n) / 1e6; r.q = eth; r.p = Math.min(100, eth / r.th * 100); r.h.push([now, Math.round(r.p * 100) / 100]); r.h = r.h.slice(-36); r.max = Math.max(r.max || 0, r.p); } if (gd && BigInt(gd) === 1n) { r.g = now; r.p = 100; } });
+    // keep: every curve still open that has raised 1% or more, however old; a new one for its first six hours;
+    // the bonded ones for two days. The largest 2,000 if it ever comes to that.
+    B.rows = B.rows.filter(r => r.g ? now - r.g < 48 * HOUR : (r.max || 0) >= 1 || now - r.at < 6 * HOUR).sort((a, b) => (b.p || 0) - (a.p || 0)).slice(0, 2000);
     B.err = null;
   } catch (e) { B.err = (stage + ': ' + String(e.message || e)).slice(0, 160); }
   await env.KV.put(BONDS, JSON.stringify(B));
 }
-async function bondView(env) {
+export async function bondView(env) {
   const B = await bondsLoad(env), now = Date.now();
   const speed = r => { const h = r.h || [], a = h.find(x => now - x[0] <= 65 * 60000) || h[0], z = h.at(-1); if (!a || !z || z[0] === a[0]) return null; return (z[1] - a[1]) / ((z[0] - a[0]) / HOUR); };
   const rows = B.rows.filter(r => !r.g && r.p != null).map(r => { const v = speed(r); return { token: r.t0, symbol: r.s, launcher: r.by, launched: new Date(r.at).toISOString(), progress: Math.round(r.p * 10) / 10, raised: r.q, need: r.th, unit: r.u || 'ETH', perHour: v == null ? null : Math.round(v * 10) / 10, etaHours: v > 0.05 ? Math.round((100 - r.p) / v * 10) / 10 : null, peak: Math.round((r.max || 0) * 10) / 10 }; })
@@ -1277,7 +1326,8 @@ async function bondView(env) {
   const days = B.days.slice(-7), L = days.reduce((s, d) => s + d.l, 0), G = days.reduce((s, d) => s + d.g, 0);
   // of the tracked launches that ever reached a mark, how many bonded: a rate that grows as the log does
   const reach = m => { const hit = B.rows.filter(r => (r.max || 0) >= m && now - r.at > 6 * HOUR); return { n: hit.length, bonded: hit.filter(r => r.g).length }; };
-  return { ok: true, read: B.t, onCurve: B.rows.filter(r => !r.g).length, days, week: { launched: L, bonded: G, rate: L ? G / L : null }, reached: { 25: reach(25), 50: reach(50), 75: reach(75) }, rows, bonded, err: B.err || null,
+  const cover = B.head && B.floor ? Math.round((B.head - B.floor) / 36000) : 0;
+  return { ok: true, read: B.t, onCurve: B.rows.filter(r => !r.g).length, coverage: { hours: cover, complete: cover >= 167 && !(B.todo || []).length, queued: (B.todo || []).length }, days, week: { launched: L, bonded: G, rate: L ? G / L : null }, reached: { 25: reach(25), 50: reach(50), 75: reach(75) }, rows, bonded, err: B.err || null,
     note: 'Read from each Pons curve on chain: ETH raised against the ETH it needs to bond. The pace is the last hour; an estimate is only that pace carried on. Not advice.' };
 }
 
@@ -1509,14 +1559,15 @@ async function walletView(st, env, w) {
   if (!env.BLOCKSCOUT_API_KEY) return { ok: false, why: 'not available right now' };
   const j = await (await fetch(`https://api.blockscout.com/4663/api?module=account&action=tokenlist&address=${w}&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA, signal: AbortSignal.timeout(12000) })).json();
   if (!Array.isArray(j.result)) return j.message === 'No tokens found' ? { ok: true, wallet: w, tokens: [] } : { ok: false, why: 'the explorer did not answer' };
-  const B = await bondsLoad(env);
+  const B = await bondsLoad(env), eth = await ethUsd().catch(() => 0);
   const tokens = j.result.filter(t => /20/.test(t.type || '') && BigInt(t.balance || '0') > 0n).slice(0, 80).map(t => {
     const a = String(t.contractAddress).toLowerCase(), sym = word(t.symbol, 14), real = REAL[String(t.symbol || '').toUpperCase()];
     const v = st.verdicts.find(x => x.addr === a), b = B.rows.find(r => r.t0 === a), x = xrays.get(a)?.v;
     return { token: a, symbol: sym, name: word(t.name, 30), decimals: Number(t.decimals) || 0, balance: String(t.balance),
       impostor: !!real && real !== a ? real : null,
       verdict: v ? { verdict: v.verdict, score: v.score, at: new Date(v.t).toISOString(), after1h: v.p1h && v.p0 ? v.p1h / v.p0 - 1 : null } : null,
-      curve: b ? { progress: Math.round((b.p || 0) * 10) / 10, bonded: !!b.g } : null,
+      // a token still on its curve has no market price elsewhere: the curve itself prices it and takes the sale
+      curve: b ? { progress: Math.round((b.p || 0) * 10) / 10, bonded: !!b.g, pool: !b.g && b.u === 'ETH' && b.vq && b.vt && b.fee != null && eth ? { quoteUsd: b.vq * eth, tokens: b.vt, realUsd: (b.q || 0) * eth, fee: b.fee } : null } : null,
       powers: x ? x.powers.filter(p => p.level === 'high').map(p => p.what) : null };
   });
   return { ok: true, wallet: w, tokens, note: 'Read only. Balances from the explorer; nothing is connected or signed. Not advice.' };

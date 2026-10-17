@@ -331,7 +331,7 @@ export async function scan(address, onStep = () => {}) {
     const L = await pLaunch, lf = [], said = [];
     if (L && L.ok && L.launchpad) {
       const p = v => v == null ? null : Number(v), sn = p(L.sniperPct), bu = p(L.bundlerPct), ins = p(L.insiderPct), dev = p(L.devPct);
-      res.launch = { pad: L.launchpad, graduated: L.graduated, progress: L.progress, sn, bu, ins, dev };
+      res.launch = { pad: L.launchpad, graduated: L.graduated, progress: L.progress, sn, bu, ins, dev, pool: L.pool || null };
       lf.push(['Launchpad', `${L.launchpad === 'pons' ? 'Pons' : L.launchpad}${L.graduated ? ', graduated' : L.progress != null ? `, ${Math.round(L.progress)}% to graduation` : ''}`]);
       for (const [k, v] of [['Snipers hold', sn], ['Bundles hold', bu], ['Insiders hold', ins], ['Developer holds', dev]]) if (v != null) lf.push([k, v.toFixed(1) + '%']);
       const worse = s => { if (s === 'bad' || (s === 'warn' && st === 'ok')) st = s; };

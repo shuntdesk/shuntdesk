@@ -75,3 +75,17 @@ test('Lookalikes and the money trail answer a bad address with 400', async () =>
   assert.deepEqual(dispatcher(code).sort(), ['40c10f19', 'a9059cbb']);
   const [s] = await call('xray?a=nope'); assert.equal(s, 400);
 });
+test('the Pons selectors are the keccak-256 of their signatures', () => {
+  const sel = s => keccak256([...new TextEncoder().encode(s)].map(b => b.toString(16).padStart(2, '0')).join('')).slice(0, 8);
+  assert.deepEqual(['realQuoteReserve()', 'graduationThreshold()', 'graduated()', 'symbol()', 'isNativeQuote()', 'pairToken()', 'curve()'].map(sel), ['4f1f58fd', '8b0bc501', 'e7c2b772', '95d89b41', 'dc08e094', '3de35b79', '7165485d']);
+});
+
+test('Exit Door prices a Pons curve as the curve answers: virtual reserves, 2.5% off each way', async () => {
+  const { exitDoor } = await import('../site/assets/door.js');
+  // $SHUNT's curve on 17 Oct 2026, ETH at $2,418.23: the curve's own buy() gave 34,534,023 tokens for 0.3 ETH
+  const eth = 2418.23, pool = { quoteUsd: 3.628777732776932 * eth, tokens: 462965803.836757, realUsd: 1.948777 * eth, fee: 0.025 };
+  const d = exitDoor({ price: pool.quoteUsd / pool.tokens, liq: pool.realUsd, fdv: 1e9 * pool.quoteUsd / pool.tokens, launch: { pool } }, 0.3 * eth);
+  assert.ok(Math.abs(d.tokens / 34534023.56 - 1) < 0.001, `tokens ${d.tokens}`);
+  // straight back out: the round trip costs the two fees, about 4.9%
+  assert.ok(Math.abs(d.now / (0.3 * eth) - 0.975 * 0.975) < 0.002, `back ${d.now}`);
+});

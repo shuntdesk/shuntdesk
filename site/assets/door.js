@@ -11,16 +11,22 @@ export function exitDoor(t, usd) {
   if (!t || !(t.price > 0) || !(t.liq > 0) || !(usd > 0)) return null;
   const supply = t.fdv > 0 ? t.fdv / t.price : null;
   const buyTax = Math.min(0.99, (t.buyTax || 0) / 100), sellTax = Math.min(0.99, (t.sellTax || 0) / 100);
-  const q0 = t.liq / 2, t0 = q0 / t.price;
-  const swap = (q, k, tokIn) => { const t1 = k + tokIn * (1 - FEE), q1 = q * k / t1; return { out: q - q1, q: q1, t: t1 }; };
+  // a token still on its Pons curve trades against the curve: a constant product over the curve's virtual reserves,
+  // the fee and the creator's tax (2.5% together on Pons today) taken off the ETH going in and the ETH coming out,
+  // and never more ETH out than the curve has really raised. Checked against the curve's own buy and sell answers.
+  const cp = t.launch?.pool && !t.launch.graduated ? t.launch.pool : null;
+  const q0 = cp ? cp.quoteUsd : t.liq / 2, t0 = cp ? cp.tokens : q0 / t.price, cap = cp ? cp.realUsd : Infinity;
+  const swap = cp
+    ? (q, k, tokIn) => { const t1 = k + tokIn, q1 = q * k / t1, gross = Math.min(q - q1, cap - (q0 - q)); return { out: Math.max(0, gross) * (1 - cp.fee), q: q - Math.max(0, gross), t: t1 }; }
+    : (q, k, tokIn) => { const t1 = k + tokIn * (1 - FEE), q1 = q * k / t1; return { out: q - q1, q: q1, t: t1 }; };
   // the buy: dollars in, tokens out
-  const qIn = usd * (1 - buyTax) * (1 - FEE), q1 = q0 + qIn, t1 = q0 * t0 / q1, got = t0 - t1;
+  const qIn = usd * (1 - buyTax) * (1 - (cp ? cp.fee : FEE)), q1 = q0 + qIn, t1 = q0 * t0 / q1, got = t0 - t1;
   const sellable = got * (1 - sellTax);
   const run = (share) => {
     let q = q1, k = t1, theirs = 0;
     if (share > 0 && supply) { const s = swap(q, k, share / 100 * supply * (1 - sellTax)); q = s.q; k = s.t; theirs = s.out; }
     const me = swap(q, k, sellable);
-    return { back: t.noSell ? 0 : me.out, theirs, poolLeft: Math.max(0, (me.q) * 2) };
+    return { back: t.noSell ? 0 : me.out, theirs, poolLeft: Math.max(0, cp ? cap - (q0 - me.q) : me.q * 2) };
   };
   const sum = a => (a || []).reduce((s, v) => s + (Number(v) || 0), 0);
   const L = t.launch || {};

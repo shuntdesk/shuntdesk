@@ -13,13 +13,13 @@ async function paint() {
   if (!v?.ok) { $('#bw-read').textContent = 'not answering right now'; return; }
   const w = v.week;
   $('#bw-rate').textContent = w.rate != null ? pct(w.rate) : '···';
-  $('#bw-rate2').textContent = w.launched ? `${w.bonded.toLocaleString('en-US')} of ${w.launched.toLocaleString('en-US')} launches bonded · about 1 in ${Math.round(1 / (w.rate || 1))}` : 'of Pons launches complete the curve';
+  $('#bw-rate2').textContent = w.launched ? `${w.bonded.toLocaleString('en-US')} bonds against ${w.launched.toLocaleString('en-US')} launches · about 1 in ${Math.round(1 / (w.rate || 1))}` : 'of Pons launches complete the curve';
   $('#bw-days').textContent = `last ${v.days.length} days`;
   $('#bw-on').textContent = v.onCurve.toLocaleString('en-US');
   $('#bw-50').textContent = of(v.reached[50]); $('#bw-75').textContent = of(v.reached[75]);
   const lb = v.bonded[0];
   $('#bw-last').textContent = lb ? lb.symbol : 'none yet'; $('#bw-last2').textContent = lb ? `${ageShort(Date.parse(lb.bonded))} ago, ${lb.hoursToBond} h after launch` : 'in the last two days';
-  $('#bw-read').textContent = `read ${ageShort(v.read)} ago · every ten minutes`;
+  const cv = v.coverage; $('#bw-read').textContent = `read ${ageShort(v.read)} ago · every ten minutes` + (cv && !cv.complete ? ` · still reading back: ${cv.hours} of 168 hours so far${cv.queued ? `, ${cv.queued.toLocaleString('en-US')} launches queued` : '}` : '');
   const list = $('#bw-list'); list.querySelectorAll('.r:not(.h)').forEach(n => n.remove());
   list.insertAdjacentHTML('beforeend', v.rows.slice(0, 60).map(r => `<a class="r" href="/ticket/?a=${r.token}">
     <span class="sy">${esc(r.symbol)}<small>${r.token.slice(0, 6)}…${r.token.slice(-4)}</small></span>
