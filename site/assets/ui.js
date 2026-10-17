@@ -14,7 +14,7 @@ const X_HANDLE = 'shuntdesk';
 const X_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>';
 // the token's contract, shown in the header with a copy button; empty hides it
 const CA = '0x7e517e779b85895894becad80c9bb69b4cb1c4d6';
-const caChip = () => CA ? `<button class="cachip" type="button" title="Copy the contract address" aria-label="Copy the contract address ${CA}"><b>CA</b><span>${CA.slice(0, 6)}…${CA.slice(-4)}</span><i>COPY</i></button>` : '';
+const caChip = () => CA ? `<a class="cachip" href="/token/" title="The official $SHUNT token" aria-label="The official $SHUNT token, contract ${CA}"><b>CA</b><span>${CA.slice(0, 6)}…${CA.slice(-4)}</span><i>$SHUNT →</i></a>` : '';
 const xLink = cls => X_HANDLE ? `<a class="${cls}" href="https://x.com/${X_HANDLE}" target="_blank" rel="noopener" aria-label="Shuntdesk on X">${X_ICON}<span>@${X_HANDLE}</span></a>` : '';
 
 export function mountChrome(active) {
@@ -42,25 +42,12 @@ export function mountChrome(active) {
     try { localStorage.setItem('sd.theme', light ? 'light' : 'dark'); } catch (e) {}
     th.textContent = light ? 'Dark' : 'Light';
   });
-  const chip = $('.cachip', top);
-  const copyCA = chip => chip.addEventListener('click', async () => {
-    let ok = false;
-    try { await navigator.clipboard.writeText(CA); ok = true; } catch (e) {
-      const t = document.createElement('textarea'); t.value = CA; t.style.position = 'fixed'; t.style.opacity = '0'; document.body.append(t); t.select();
-      try { ok = document.execCommand('copy'); } catch (e2) {} t.remove();
-    }
-    const i = $('i', chip), lab = getComputedStyle(i).display === 'none' ? $('b', chip) : i, was = lab.textContent;   // on a phone only 'CA' shows, so that is what answers
-    const small = lab.tagName === 'B'; lab.textContent = ok ? (small ? 'OK' : 'COPIED') : (small ? '!' : 'COPY FAILED'); chip.classList.toggle('done', ok);
-    clearTimeout(chip._t); chip._t = setTimeout(() => { lab.textContent = was; chip.classList.remove('done'); }, 1600);
-  });
-  if (chip) copyCA(chip);
   const tick = async () => { try { const n = await blockNumber(); $('#blk').textContent = '#' + n.toLocaleString('en-US'); } catch (e) {} };
   tick(); setInterval(tick, 12000);
 
   const foot = $('.foot');
   const phrase = '<span>Every token rides the line</span><b>✦</b><span class="f">Shuntdesk</span><b>✦</b><span>A scanner with something to lose</span><b>✦</b><span class="f">Paper money, real data</span><b>✦</b>';
   if (foot) foot.innerHTML = `
-    <div class="f2-tok"><b>$SHUNT</b><span>The official token</span><button class="cachip f2-ca" type="button" aria-label="Copy the contract address ${CA}"><b>CA</b><span>${CA}</span><i>COPY</i></button><a href="https://ponsfamily.com/launchpad/${CA}" target="_blank" rel="noopener">Get it on Pons ↗</a><a href="/token/">Token page →</a></div>
     <div class="mq"><div>${phrase}${phrase}</div></div>
     <div class="f2">
       <div class="f2-top">
@@ -76,7 +63,6 @@ export function mountChrome(active) {
       <p class="f2-src">Data from DexScreener · GeckoTerminal · Blockscout · GoPlus · Codex · Binance · Robinhood Chain RPC · Yahoo Finance · Surplus · Hugging Face</p>
       <div class="f2-bot"><span>© 2026 Shuntdesk</span><span>Paper money only · Rule-based readings that can be wrong · Not financial advice</span></div>
     </div>`;
-  const fca = foot && $('.f2-ca', foot); if (fca) copyCA(fca);
 
   // cards: a light under the pointer, and a lean toward it
   let lit = null;
