@@ -1238,17 +1238,18 @@ async function xrayAlert(st, env) {
 // raised, graduationThreshold() the ETH it needs to bond, graduated() whether it has. All of them are read in one
 // call through Multicall3 every ten minutes. A launch that has raised under 1% six hours in is dropped, so the
 // list stays to the ones still moving; the counts of launches and bonds per day come from the logs.
-const MC3 = '0xca11bde05977b3631167028862be2a173976ca11', BONDS = 'bonds-v3';
+const MC3 = '0xca11bde05977b3631167028862be2a173976ca11', BONDS = 'bonds-v4';
 // Pons curve and token selectors: keccak-256 of each signature, worked out once (the test checks them)
 const SEL = { real: '4f1f58fd', thr: '8b0bc501', grad: 'e7c2b772', sym: '95d89b41', nat: 'dc08e094', pair: '3de35b79', curve: '7165485d', qres: '9da771f4', tres: 'cbcb3171', fee: '24a9d853', ctax: 'c1bb8901' };
 async function selOf(sig) { return keccak256([...new TextEncoder().encode(sig)].map(b => b.toString(16).padStart(2, '0')).join('')).slice(0, 8); }
 async function multicall(calls) {   // calls: [target, selector] → hex result or null
   const out = [];
-  for (let i = 0; i < calls.length; i += 250) {
-    const part = calls.slice(i, i + 250), n = part.length, w = x => x.toString(16).padStart(64, '0');
+  for (let i = 0; i < calls.length; i += 100) {   // a hundred calls a request: larger ones were turned away now and then
+    const part = calls.slice(i, i + 100), n = part.length, w = x => x.toString(16).padStart(64, '0');
     let head = w(32) + w(n), body = '';
     part.forEach(([to, sel], k) => { head += w(n * 32 + k * 160); body += w(BigInt(to)) + w(1) + w(96) + w(4) + sel.padEnd(64, '0'); });
-    let r = null; try { r = await rpc('eth_call', [{ to: MC3, data: '0x82ad56cb' + head + body }, 'latest']); } catch (e) {}
+    let r = null;
+    for (let k = 0; k < 2 && !r; k++) { try { r = await rpc('eth_call', [{ to: MC3, data: '0x82ad56cb' + head + body }, 'latest']); } catch (e) { if (!k) await new Promise(z => setTimeout(z, 600)); } }   // once more after a pause
     if (!r) { out.push(...part.map(() => null)); continue; }
     const h = r.slice(2), word = o => BigInt('0x' + h.substr(o * 2, 64)), base = Number(word(32)) === n ? 64 : 64;
     for (let k = 0; k < n; k++) {
@@ -1319,7 +1320,8 @@ export async function bondTick(env) {
       const qs = quotes.length ? await multicall(quotes.map(q => [q, SEL.sym])) : [], qsym = Object.fromEntries(quotes.map((q, i) => [q, str(qs[i]) || 'quote']));
       batch.forEach((f, i) => {
         const th = res[i * 6];
-        if (!th) { f.tries = (f.tries || 0) + 1; if (f.tries < 3) B.todo.push(f); return; }
+        // a read that did not come back is tried again next tick, at the back of the queue; never dropped while it is under a week old
+        if (!th) { f.tries = (f.tries || 0) + 1; if (now - f.at < 7 * 24 * HOUR) B.todo.push(f); return; }
         f.th = Number(BigInt(th) / 10n ** 12n) / 1e6; f.s = str(res[i * 6 + 1]) || f.t0.slice(0, 8); f.h = []; delete f.tries; if (res[i * 6 + 4]) f.fee = (Number(BigInt(res[i * 6 + 4])) + (res[i * 6 + 5] ? Number(BigInt(res[i * 6 + 5])) : 0)) / 10000;
         const nat = res[i * 6 + 2], pr = res[i * 6 + 3]; f.u = nat && BigInt(nat) === 0n && pr ? qsym['0x' + pr.slice(-40)] || 'quote' : 'ETH';
         if (f.th > 0) B.rows.push(f);
