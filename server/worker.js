@@ -1239,7 +1239,7 @@ async function xrayAlert(st, env) {
 // raised, graduationThreshold() the ETH it needs to bond, graduated() whether it has. All of them are read in one
 // call through Multicall3 every ten minutes. A launch that has raised under 1% six hours in is dropped, so the
 // list stays to the ones still moving; the counts of launches and bonds per day come from the logs.
-const MC3 = '0xca11bde05977b3631167028862be2a173976ca11', BONDS = 'bonds-v4';
+const MC3 = '0xca11bde05977b3631167028862be2a173976ca11', BONDS = 'bonds-v5';
 // Pons curve and token selectors: keccak-256 of each signature, worked out once (the test checks them)
 const SEL = { real: '4f1f58fd', thr: '8b0bc501', grad: 'e7c2b772', sym: '95d89b41', nat: 'dc08e094', pair: '3de35b79', curve: '7165485d', qres: '9da771f4', tres: 'cbcb3171', fee: '24a9d853', ctax: 'c1bb8901' };
 async function selOf(sig) { return keccak256([...new TextEncoder().encode(sig)].map(b => b.toString(16).padStart(2, '0')).join('')).slice(0, 8); }
@@ -1370,7 +1370,8 @@ export async function bondTick(env) {
     live.forEach((r, i) => { const q = res[i * 6], gd = res[i * 6 + 1], qr = res[i * 6 + 2], tr = res[i * 6 + 3], fb = res[i * 6 + 4], ct = res[i * 6 + 5]; if (fb) r.fee = (Number(BigInt(fb)) + (ct ? Number(BigInt(ct)) : 0)) / 10000; if (qr && tr) { r.vq = Number(BigInt(qr) / 10n ** 12n) / 1e6; r.vt = Number(BigInt(tr) / 10n ** 12n) / 1e6; } if (q) { const eth = Number(BigInt(q) / 10n ** 12n) / 1e6; r.q = eth; r.p = Math.min(100, eth / r.th * 100); r.h.push([now, Math.round(r.p * 100) / 100]); r.h = r.h.slice(-36); r.max = Math.max(r.max || 0, r.p); } if (gd && BigInt(gd) === 1n) { r.g = now; r.p = 100; } });
     // keep: every curve still open that has raised 1% or more, however old; a new one for its first six hours;
     // the bonded ones for two days. The largest 2,000 if it ever comes to that.
-    B.rows = B.rows.filter(r => r.g ? now - r.g < 48 * HOUR : (r.max || 0) >= 1 || now - r.at < 6 * HOUR).sort((a, b) => (b.p || 0) - (a.p || 0)).slice(0, 2000);
+    // a curve whose progress has not been read yet stays until it is: a failed read is not a curve at 0%
+    B.rows = B.rows.filter(r => r.g ? now - r.g < 48 * HOUR : (r.max == null && now - r.at < 7 * 24 * HOUR) || r.max >= 1 || now - r.at < 6 * HOUR).sort((a, b) => (b.p || 0) - (a.p || 0)).slice(0, 2000);
     B.err = null;
   } catch (e) { B.err = (stage + ': ' + String(e.message || e)).slice(0, 160); }
   await env.KV.put(BONDS, JSON.stringify(B));
