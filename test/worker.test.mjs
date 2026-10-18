@@ -111,7 +111,7 @@ test('Will it bond refuses a bad handle and an incomplete set of calls; /alarms 
   const [c1, o1] = await call('bondgame', { handle: 'x', picks: [] }); assert.equal(c1, 400); assert.match(o1.why, /handle|not set/);
   const tg = async text => { const r = await worker.fetch(new Request('http://x/api/tg', { method: 'POST', headers: { 'x-telegram-bot-api-secret-token': 'right' }, body: JSON.stringify({ message: { message_id: 1, chat: { id: 778, type: 'private' }, from: { id: 5 }, text } }) }), { ...env, TELEGRAM_SECRET: 'right' }); return (await r.json()).text; };
   assert.match(await tg('/alarms on'), /admin sends \/alarms on/);
-  assert.match(await tg('/report'), /Send \/report followed by a token address/);
+  assert.match(await tg('/report'), /crew desk/i);   // with no address it is the daily report; with one, a token report
   assert.match(await tg('/spotters'), /No report has been priced|Top spotters/);
 });
 
@@ -138,4 +138,10 @@ test('every script the site serves parses', async () => {
   const { readdirSync } = await import('node:fs'), { spawnSync } = await import('node:child_process');
   const bad = readdirSync('site/assets').filter(f => f.endsWith('.js')).filter(f => spawnSync(process.execPath, ['--check', 'site/assets/' + f]).status !== 0);
   assert.deepEqual(bad, []);
+});
+
+test('burn to boost takes only a burn from the wallet linked to the chat', async () => {
+  const tg = async text => { const r = await worker.fetch(new Request('http://x/api/tg', { method: 'POST', headers: { 'x-telegram-bot-api-secret-token': 'right' }, body: JSON.stringify({ message: { message_id: 1, chat: { id: 5151, type: 'private' }, from: { id: 3 }, text } }) }), { ...env, TELEGRAM_SECRET: 'right' }); return (await r.json()).text; };
+  // someone else's burn, from a chat with no linked wallet: refused before anything is read from the chain
+  assert.match(await tg('/boost 0x5804beee8368132d32ad4b8818ce86eba9c4bd37 0x63f00e5caebb3d42e5311cd02c6af2cf5c73d8620f0f9ec7c4e88441f9cc1408'), /link the wallet you burn from first/);
 });

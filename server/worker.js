@@ -45,7 +45,7 @@ const RPCS = ['https://rpc.mainnet.chain.robinhood.com'];
 export const bsCredits = { left: null, t: 0 };
 const BS_RESERVE = 30000;
 const bsLow = () => bsCredits.left !== null && bsCredits.left < BS_RESERVE && new Date(bsCredits.t).getUTCDate() === new Date().getUTCDate();
-{ const f0 = globalThis.fetch; globalThis.fetch = async (u, o) => { const r = await f0(u, o); if (String(u?.url || u).includes('api.blockscout.com')) { const h = r.headers.get('x-credits-remaining'); if (h != null && h !== '') { bsCredits.left = Number(h); bsCredits.t = Date.now(); } else if (r.status === 402 || r.status === 429) { bsCredits.left = 0; bsCredits.t = Date.now(); } } return r; }; }
+{ const f0 = globalThis.fetch; globalThis.fetch = async (u, o) => { const r = await f0(u, o); if (String(u?.url || u).includes('api.blockscout.com')) { const h = r.headers.get('x-credits-remaining'); if (h != null && h !== '') { bsCredits.left = Number(h); bsCredits.t = Date.now(); } else if (r.status === 402) { bsCredits.left = 0; bsCredits.t = Date.now(); } } return r; }; }
 const WETH = '0x0bd7d308f8e1639fab988df18a8011f41eacad73', USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168', ETH0 = '0x0000000000000000000000000000000000000000';
 const ETH_REF = { pool: '0x52e65b17fb6e5ba00ed806f37afcd2daa50271ca', q: 'usd', base0: true, d0: 18, d1: 6 };   // WETH / USDG, Uniswap v3
 async function rpc(method, params = []) {
@@ -688,15 +688,14 @@ async function telegram(st, env, request, body) {
     const tk = (clean.match(/0x[0-9a-fA-F]{40}(?![0-9a-fA-F])/) || [])[0], tx = (clean.match(/0x[0-9a-fA-F]{64}/) || [])[0];
     if (!tk || !tx) return reply(`<b>Burn to boost</b>\n\nBurn ${BOOST_MIN.toLocaleString('en-US')} $SHUNT or more (send it to 0x000000000000000000000000000000000000dEaD), then send:\n/boost <code>0xTOKEN</code> <code>0xTRANSACTION</code>\n\nThe token gets a full scan (contract, launch, dev wallet, Dev Score, website) said in the Shuntdesk group and every group with alarms on. One burn, one boost.`);
     const from = msg.from?.username ? '@' + msg.from.username : String(msg.from?.first_name || 'a holder').slice(0, 24);
-    const r = await boostToken(st, env, tk.toLowerCase(), tx.toLowerCase(), from);
+    const r = await boostToken(st, env, tk.toLowerCase(), tx.toLowerCase(), from, chat);
     return reply(r.ok ? r.text : tgEsc(r.why));
   }  if (cmd === 'proof') {
     const [dl, x] = await Promise.all([devLedger(env, SHUNT).catch(() => null), xray(st, env, SHUNT).catch(() => null)]);
     const D = dl?.ok ? dl.ledger : null, n = v => v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : Math.round(v).toLocaleString('en-US');
     return reply(`<b>Proof · $SHUNT</b>\n<code>${SHUNT}</code>\n\n${D ? `Dev wallet bought ${n(D.bought + D.received)}, sold <b>${n(D.sold)}</b>, sent to other wallets ${n(D.toWallets)}, burned <b>${n(D.burned)}</b>, holds ${n(dl.holdsNow ?? 0)} now.\n${dl.burns.count} burns, ${(dl.burns.total / 1e7).toFixed(2)}% of supply in the dead address.\n` : ''}${x?.ok ? `Contract: ${x.functions} functions, ${x.powers.filter(p => p.level === 'high').length ? 'with a power: ' + x.powers.filter(p => p.level === 'high').map(p => p.what).join(', ') : 'no function that mints, pauses, blocks wallets or changes the tax'}${x.proxy ? ', behind a proxy' : ', not a proxy'}.\n` : ''}\nOpen source: github.com/shuntdesk/shuntdesk\nEvery call on record: huggingface.co/datasets/shuntdesk/verdicts\n\n${site}/proof/<i>\nRead from the chain right now. Not advice.</i>`);
   }
-  if (cmd === 'report') {
-    if (!found) return reply('Send /report followed by a token address: /report <code>0x…</code>');
+  if (cmd === 'report' && found) {
     const a = found[0].toLowerCase(), from = { id: String(msg.from?.id || chat), name: msg.from?.username ? '@' + msg.from.username : String(msg.from?.first_name || 'someone').slice(0, 24) };
     const r = await reportToken(st, env, a, from);
     return reply(`<b>Report</b> · ${tgEsc(r.sym ? '$' + r.sym : a.slice(0, 8))}\n<code>${a}</code>\n\n${r.fl.length ? `Found:\n${r.fl.slice(0, 8).map(f => '• ' + tgEsc(f)).join('\n')}` : 'Nothing found by the contract scan, the security read, the launch holdings or the dev ledger.'}\n\n${r.first ? `First report of this token: ${tgEsc(from.name)}. It is priced again in 24 hours for the spotters board (/spotters).` : 'Already reported by someone else.'}\n\n${site}/ticket/?a=${a}<i>\nFindings from the chain, not a verdict on anyone. Not advice.</i>`);
@@ -1423,7 +1422,8 @@ const INDEX_OUT = 'the chain index has run out of reads for today; it is back at
 // A failed read must never become zeros on a page: "sold 0" and "could not read" are different things.
 async function bsStrict(env, q) {
   const r = await fetch(`https://api.blockscout.com/4663/api?${q}&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA, signal: AbortSignal.timeout(15000) });
-  if (r.status === 402 || r.status === 429) throw new Error(INDEX_OUT);
+  if (r.status === 402) throw new Error(INDEX_OUT);
+  if (r.status === 429) throw new Error('the chain index is busy for a moment; try again in a minute');
   const j = await r.json().catch(() => null);
   if (Array.isArray(j?.result)) return j.result;
   if (/no (records|transactions|token transfers) found/i.test(j?.message || '')) return [];
@@ -1436,7 +1436,7 @@ export async function devLedger(env, token) {
   const dRaw = await contractCall(token, 'd5f39488').catch(() => null), fromToken = dRaw && dRaw.length >= 66 ? '0x' + dRaw.slice(-40) : null;
   let dev = fromToken && !/^0x0{40}$/.test(fromToken) ? fromToken : null, devFound = dev ? 'token contract' : null;
   if (!dev) { if (bsLow()) return { ok: false, why: INDEX_OUT }; const sh = await handWallet(env, token, true).catch(() => null); dev = String(sh?.ponsBy || sh?.creator || '').toLowerCase() || null; devFound = sh?.ponsBy ? 'Pons launch log' : 'contract creation'; }
-  if (!dev) return { ok: false, why: 'the launcher could not be found' };
+  if (!dev) { const v = { ok: false, why: 'the launcher could not be found' }; ledgers.set(token, { t: now - 4 * 60000, v }); return v; }
   const c = await ponsCurve(token), curve = c?.curve || null;
   let txs, burns, dec, bal;
   try { [txs, burns, dec, bal] = await Promise.all([
@@ -1457,9 +1457,10 @@ export async function devLedger(env, token) {
     L[kind] += v; moves.push({ kind, amount: v, to, at: new Date(at).toISOString(), tx: t.hash });
   }
   const burnRows = burns.filter(t => String(t.to).toLowerCase() === DEAD);
+  const deadRaw = await contractCall(token, '70a08231' + DEAD.slice(2).padStart(64, '0')).catch(() => null), deadBal = deadRaw ? amt(BigInt(deadRaw).toString()) : null;
   const v = { ok: true, token, dev, devFound, curve, ledger: L, holdsNow: bal ? amt(BigInt(bal).toString()) : null,
     moves: moves.slice(-40).reverse(), partial: txs.length >= 1000,
-    burns: { total: burnRows.reduce((s, t) => s + amt(t.value), 0), count: burnRows.length, byDev: burnRows.filter(t => String(t.from).toLowerCase() === dev).length, last: burnRows.slice(0, 12).map(t => ({ amount: amt(t.value), from: String(t.from).toLowerCase(), at: new Date(Number(t.timeStamp) * 1000).toISOString(), tx: t.hash })) },
+    burns: { total: deadBal != null ? deadBal : burnRows.reduce((s, t) => s + amt(t.value), 0), count: burnRows.length, byDev: burnRows.filter(t => String(t.from).toLowerCase() === dev).length, last: burnRows.slice(0, 12).map(t => ({ amount: amt(t.value), from: String(t.from).toLowerCase(), at: new Date(Number(t.timeStamp) * 1000).toISOString(), tx: t.hash })) },
     note: 'Every transfer of this token in or out of the wallet that launched it, from the chain index. "Into contracts" may be a sale through a router or a deposit: the index cannot tell. Read only. Not advice.' };
   ledgers.set(token, { t: now, v }); if (ledgers.size > 300) ledgers.delete(ledgers.keys().next().value);
   return v;
@@ -1554,7 +1555,7 @@ export async function bondTick(env) {
     // a curve whose progress has not been read yet stays until it is: a failed read is not a curve at 0%
     B.rows = B.rows.filter(r => r.g ? now - r.g < 48 * HOUR : (r.max == null && now - r.at < 7 * 24 * HOUR) || r.max >= 1 || now - r.at < 6 * HOUR).sort((a, b) => (b.p || 0) - (a.p || 0)).slice(0, 2000);
     // bond alerts for the group: a curve seen below 85% that is now at or over it, and a tracked curve that bonded
-    const alerts = live.filter(r => { const was = before.get(r.t0); return was && was.n > 0 && was.p != null && ((r.g && was.p < 100) || (!r.g && was.p < 85 && r.p >= 85)); });
+    const alerts = live.filter(r => { const was = before.get(r.t0); if (!was || !was.n || was.p == null) return false; if (r.g && !r.aG) { r.aG = 1; return true; } if (!r.g && !r.a85 && was.p < 85 && r.p >= 85) { r.a85 = 1; return true; } return false; });
     if (alerts.length) await bondAlerts(env, B, alerts, now).catch(() => 0);
     B.err = null;
   } catch (e) { B.err = (stage + ': ' + String(e.message || e)).slice(0, 160); }
@@ -1819,7 +1820,7 @@ const lookMove = (r, k) => r[k] !== undefined && r.p0 ? (r[k] ? r[k] / r.p0 - 1 
 const alarmChats = (st, env) => [...new Set([env.TELEGRAM_GROUP, ...Object.entries(st.groups || {}).filter(([, g]) => g.on).map(([c]) => c)].filter(Boolean).map(String))];
 // messages wait in a queue and go out ten a tick: one Worker run may make only so many requests, and it is shared
 function tgQueue(st, chats, text) { st.tgQ = st.tgQ || []; for (const c of chats) st.tgQ.push([c, text]); if (st.tgQ.length > 300) st.tgQ = st.tgQ.slice(-300); }
-async function tgFlush(st, env) { if (!st.tgQ?.length || !env.TELEGRAM_BOT_TOKEN) return; for (const [c, text] of st.tgQ.splice(0, 10)) { const s = await tgSend(env, c, text).catch(() => 0); if (s === 403 || s === 400) { if (st.groups?.[c]) st.groups[c].on = false; } } }
+async function tgFlush(st, env) { if (!st.tgQ?.length || !env.TELEGRAM_BOT_TOKEN) return; const back = []; for (const [c, text] of st.tgQ.splice(0, 20)) { const s = await tgSend(env, c, text).catch(() => 0); if (s === 403 && st.groups?.[c]) st.groups[c].on = false; else if (s === 429) back.push([c, text]); } if (back.length) st.tgQ.unshift(...back); }
 
 // ---------- Launch Alarm: each new token the radar scanned, said in the groups when it carries a flag, or reads clean ----------
 async function launchAlarm(st, env, L, rows) {
@@ -1861,12 +1862,12 @@ async function reportToken(st, env, a, from) {
 // a day after a report, the token is priced again: from its curve when it is on one, else Codex. Five a tick.
 async function reportJudge(st, env) {
   const R = st.reports || {}, now = Date.now();
-  const due = Object.entries(R).filter(([, r]) => r.p24 === undefined && now - r.t >= 24 * HOUR).slice(0, 5);
-  for (const [a, r] of due) { const L = await launch(env, a).catch(() => null); const p = L?.pool ? L.pool.quoteUsd / L.pool.tokens : L?.ok ? Number(L.price) || 0 : null; if (p !== null) r.p24 = p; else if (now - r.t > 3 * 24 * HOUR) r.p24 = 0; }
+  const due = Object.entries(R).filter(([, r]) => r.p24 === undefined && !r.unread && now - r.t >= 24 * HOUR).slice(0, 5);
+  for (const [a, r] of due) { const L = await launch(env, a).catch(() => null); const p = L?.pool ? L.pool.quoteUsd / L.pool.tokens : Number(L?.price) || 0; if (p > 0) r.p24 = p; else if (now - r.t > 3 * 24 * HOUR) { r.p24 = null; r.unread = 1; } }
 }
 function spotters(st) {
   const by = {};
-  for (const r of Object.values(st.reports || {})) { const b = by[r.id] = by[r.id] || { name: r.by, reports: 0, judged: 0, lostHalf: 0 }; b.reports++; if (r.p24 !== undefined) { b.judged++; if (r.p24 <= r.p0 * 0.5) b.lostHalf++; } }
+  for (const r of Object.values(st.reports || {})) { const b = by[r.id] = by[r.id] || { name: r.by, reports: 0, judged: 0, lostHalf: 0 }; b.reports++; if (r.p24 > 0) { b.judged++; if (r.p24 <= r.p0 * 0.5) b.lostHalf++; } }
   return Object.values(by).sort((a, b) => b.lostHalf - a.lostHalf || b.reports - a.reports).slice(0, 20);
 }
 
@@ -1903,22 +1904,22 @@ export async function devScore(st, env, w) {
   const missing = complete ? 0 : 1, diag = [];
   const reach = X.floor ? await rpc('eth_getBlockByNumber', [hex(X.floor), false]).then(b => parseInt(b.timestamp, 16) * 1000).catch(() => null) : null;  const launches = logs.map(l => ({ token: wordAddr(l.topics[1]), curve: wordAddr(l.topics[2]), b: parseInt(l.blockNumber, 16), ts: l.timeStamp })).sort((a, b) => b.b - a.b);
   // each launch's time from its own block (the node's log carries no usable time); the newest 15 only
-  await Promise.all(launches.slice(0, 15).map(async x => { x.at = x.ts ? parseInt(x.ts, String(x.ts).startsWith('0x') ? 16 : 10) * 1000 : await rpc('eth_getBlockByNumber', [hex(x.b), false]).then(b => parseInt(b.timestamp, 16) * 1000).catch(() => now); }));
+  await Promise.all(launches.slice(0, 15).map(async x => { x.at = x.ts ? parseInt(x.ts, String(x.ts).startsWith('0x') ? 16 : 10) * 1000 : await rpc('eth_getBlockByNumber', [hex(x.b), false]).then(b => parseInt(b.timestamp, 16) * 1000).catch(() => null); }));
   const read = launches.slice(0, 15);
   const [grad, syms] = await Promise.all([multicall(read.map(x => [x.curve, SEL.grad])), multicall(read.map(x => [x.token, SEL.sym]))]);
   const per = await Promise.all(read.map(async (x, i) => {
     const txs = await bs(`module=account&action=tokentx&contractaddress=${x.token}&address=${w}&sort=asc&page=1&offset=500`).catch(() => null);
-    if (txs === null) return { token: x.token, symbol: str(syms[i]) || x.token.slice(0, 8), launched: new Date(x.at).toISOString(), bonded: !!grad[i] && BigInt(grad[i]) === 1n, unread: true, got: 0, sold: 0, sentAway: 0, pooled: 0, burned: 0, dumped: false, dumpedFirstHour: false, burnedMost: false };
+    if (txs === null) return { token: x.token, symbol: str(syms[i]) || x.token.slice(0, 8), launched: x.at ? new Date(x.at).toISOString() : null, bonded: !!grad[i] && BigInt(grad[i]) === 1n, unread: true, got: 0, sold: 0, sentAway: 0, pooled: 0, burned: 0, dumped: false, dumpedFirstHour: false, burnedMost: false };
     let got = 0, sold = 0, away = 0, burned = 0, soldHour = 0, pooled = 0; const awayTo = {};
     for (const t of txs) {
       const f = String(t.from).toLowerCase(), to = String(t.to).toLowerCase(), v = Number(BigInt(t.value || '0') / 10n ** 12n) / 1e6, at = Number(t.timeStamp) * 1000;
       if (to === w) { got += v; continue; } if (f !== w) continue;
-      if (to === DEAD || /^0x0{40}$/.test(to)) burned += v; else if (to === x.curve) { sold += v; if (at - x.at < HOUR) soldHour += v; } else { away += v; awayTo[to] = (awayTo[to] || 0) + v; }
+      if (to === DEAD || /^0x0{40}$/.test(to)) burned += v; else if (to === x.curve) { sold += v; if (x.at && at - x.at < HOUR) soldHour += v; } else { away += v; awayTo[to] = (awayTo[to] || 0) + v; }
     }
     // tokens sent to a contract (a pool, a locker) are liquidity, not a sale: the largest five recipients are checked for code
     for (const [a, v] of Object.entries(awayTo).sort((p, q) => q[1] - p[1]).slice(0, 5)) { const code = await rpc('eth_getCode', [a, 'latest']).catch(() => '0x'); if (code && code !== '0x' && !isDelegated(code)) { pooled += v; away -= v; } }
     const out = sold + away;
-    return { token: x.token, symbol: str(syms[i]) || x.token.slice(0, 8), launched: new Date(x.at).toISOString(), bonded: !!grad[i] && BigInt(grad[i]) === 1n,
+    return { token: x.token, symbol: str(syms[i]) || x.token.slice(0, 8), launched: x.at ? new Date(x.at).toISOString() : null, bonded: !!grad[i] && BigInt(grad[i]) === 1n,
       got: Math.round(got), sold: Math.round(sold), sentAway: Math.round(away), pooled: Math.round(pooled), burned: Math.round(burned), dumped: got > 0 && out / got >= 0.5, dumpedFirstHour: got > 0 && soldHour / got >= 0.5, burnedMost: got > 0 && burned / got >= 0.5 };
   }));
   const unread = per.filter(p => p.unread).length; if (unread && unread === per.length) return { ok: false, why: INDEX_OUT };
@@ -1952,14 +1953,15 @@ async function bondGame(st, env) {
   // the day that ended: did each curve bond before midnight UTC?
   if (G.day && G.day.d !== d && !G.day.res) {
     const B = await bondsLoad(env), end = Date.parse(G.day.d + 'T00:00:00Z') + 24 * HOUR;
-    const res = await Promise.all(G.day.tokens.map(async t => { const r = B.rows.find(x => x.t0 === t.t); const gt = B.ga?.[t.t] || r?.g; if (gt) return gt <= end; const c = await ponsCurve(t.t).catch(() => null); return c ? c.graduated : false; }));
+    const res = await Promise.all(G.day.tokens.map(async t => { const r = B.rows.find(x => x.t0 === t.t); const gt = B.ga?.[t.t] || r?.g; if (gt) return gt <= end; const c = await ponsCurve(t.t).catch(() => null); return c ? c.graduated : null; }));
+    if (res.includes(null)) return G;   // a curve that did not answer: try again next time, rather than call it unbonded
     const board = {}; for (const [h, e] of Object.entries(G.day.picks)) board[h] = e.p.reduce((s, v, i) => s + (v === res[i] ? 1 : 0), 0);
     G.hist.unshift({ d: G.day.d, tokens: G.day.tokens, res, board }); G.hist = G.hist.slice(0, 14); G.day.res = res;
   }
   if (!G.day || G.day.d !== d) {
     const v = await bondView(env).catch(() => null);
     const pool = (v?.rows || []).filter(r => r.progress >= 20 && r.progress <= 80 && r.unit === 'ETH' && Date.now() - Date.parse(r.launched) < 3 * 24 * HOUR);
-    G.day = { d, tokens: pool.slice(0, 5).map(r => ({ t: r.token, s: r.symbol, p0: r.progress })), picks: {} };
+    if (pool.length) G.day = { d, tokens: pool.slice(0, 5).map(r => ({ t: r.token, s: r.symbol, p0: r.progress })), picks: {} };
   }
   return G;
 }
@@ -1980,7 +1982,8 @@ function bondGamePlay(st, body) {
   if (Date.now() >= Date.parse(day.d + 'T12:00:00Z')) return [400, { ok: false, why: 'calls for today closed at 12:00 UTC' }];
   if (day.picks[h]) return [409, { ok: false, why: 'already called today' }];
   const p = Array.isArray(body.picks) ? body.picks.map(v => v === true) : []; if (p.length !== day.tokens.length) return [400, { ok: false, why: 'call every curve' }];
-  day.picks[h] = { p, t: Date.now() }; if (Object.keys(day.picks).length > 2000) return [400, { ok: false, why: 'full today' }];
+  if (Object.keys(day.picks).length >= 2000) return [400, { ok: false, why: 'full today' }];
+  day.picks[h] = { p, t: Date.now() };
   return [200, { ok: true }];
 }
 
@@ -2056,6 +2059,7 @@ async function holderVerify(st, env, b) {
   if (who !== w) return [400, { ok: false, why: 'the signature is not from that wallet' }];
   const bal = await shuntBalance(w); if (bal === null) return [502, { ok: false, why: 'the chain did not answer, try again' }];
   const H = st.holders = st.holders || {}; const prev = H[L.chat] || {};
+  for (const [c, h] of Object.entries(H)) if (c !== L.chat && h.w === w) delete H[c];   // the wallet leaves the chat it was linked to before
   H[L.chat] = { ...prev, w, bal, t: Date.now(), f: prev.f || { clean: true, flags: false, curve: [] } };
   st.linksUsed[code] = Date.now(); for (const [k, v] of Object.entries(st.linksUsed)) if (Date.now() - v > 40 * 60000) delete st.linksUsed[k];
   const ok = bal >= HOLD_MIN, n = v => Math.round(v).toLocaleString('en-US');
@@ -2081,13 +2085,16 @@ async function holderCurves(st, env) {
   }
 }
 // burn to boost: a burn of $SHUNT to the dead address, sent with a token, buys that token a full scan said in the groups
-async function boostToken(st, env, token, tx, from) {
+async function boostToken(st, env, token, tx, from, chat) {
   const B = st.boosts = st.boosts || {}; if (B[tx]) return { ok: false, why: 'that burn has already boosted a token' };
-  const rc = await rpc('eth_getTransactionReceipt', [tx]).catch(() => null); if (!rc || rc.status !== '0x1') return { ok: false, why: 'that transaction is not on chain, or it failed' };
+  const me = st.holders?.[String(chat)]?.w; if (!me) return { ok: false, why: 'link the wallet you burn from first: /link' };
+  B[tx] = { pending: 1, t: Date.now() };   // held now, so the same burn sent twice at once boosts once
+  const fail = why => { delete B[tx]; return { ok: false, why }; };
+  const rc = await rpc('eth_getTransactionReceipt', [tx]).catch(() => null); if (!rc || rc.status !== '0x1') return fail('that transaction is not on chain, or it failed');
   const TR = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef', dead = '0x' + DEAD.slice(2).padStart(64, '0');
-  const burned = rc.logs.filter(l => l.address.toLowerCase() === SHUNT && l.topics[0] === TR && l.topics[2]?.toLowerCase() === dead).reduce((s, l) => s + Number(BigInt(l.data) / 10n ** 15n) / 1e3, 0);
-  if (burned < BOOST_MIN) return { ok: false, why: `that transaction burns ${Math.round(burned).toLocaleString('en-US')} $SHUNT; a boost takes ${BOOST_MIN.toLocaleString('en-US')} sent to 0x…dEaD` };
-  const blk = await rpc('eth_getBlockByNumber', [rc.blockNumber, false]).catch(() => null); if (blk && Date.now() - parseInt(blk.timestamp, 16) * 1000 > 48 * HOUR) return { ok: false, why: 'that burn is older than two days' };
+  const burned = rc.logs.filter(l => l.address.toLowerCase() === SHUNT && l.topics[0] === TR && l.topics[2]?.toLowerCase() === dead && wordAddr(l.topics[1]) === me).reduce((s, l) => s + Number(BigInt(l.data) / 10n ** 15n) / 1e3, 0);
+  if (burned < BOOST_MIN) return fail(`that transaction burns ${Math.round(burned).toLocaleString('en-US')} $SHUNT from your linked wallet; a boost takes ${BOOST_MIN.toLocaleString('en-US')} sent to 0x…dEaD from it`);
+  const blk = await rpc('eth_getBlockByNumber', [rc.blockNumber, false]).catch(() => null); if (blk && Date.now() - parseInt(blk.timestamp, 16) * 1000 > 48 * HOUR) return fail('that burn is older than two days');
   B[tx] = { token, by: from, t: Date.now(), burned }; const ks = Object.keys(B); if (ks.length > 2000) delete B[ks[0]];
   const [x, sc, dl, L] = await Promise.all([xray(st, env, token).catch(() => null), siteCheck(st, env, token, [], { summary: false }).catch(() => null), devLedger(env, token).catch(() => null), launch(env, token).catch(() => null)]);
   const ds = dl?.ok ? await devScore(st, env, dl.dev).catch(() => null) : null;
@@ -2165,7 +2172,8 @@ export async function followTick(st, env) {
   F.block = to;
   const seen = F.seen = F.seen || {}; for (const k in seen) if (now - seen[k] > 6 * HOUR) delete seen[k];
   const codes = {}; let fresh = 0;
-  for (const l of (logs || []).filter(l => l.topics.length === 3).slice(0, 60)) {
+  const all = (logs || []).filter(l => l.topics.length === 3); if (all.length > 60) F.block = parseInt(all[59].blockNumber, 16) - 1;
+  for (const l of all.slice(0, 60)) {
     const tok = l.address.toLowerCase(), src = wordAddr(l.topics[1]), to = wordAddr(l.topics[2]), key = to + ':' + tok;
     if (seen[key]) continue;
     if (!curveOf.has(tok)) { const c = await contractCall(tok, SEL.curve).catch(() => null); curveOf.set(tok, c && c.length >= 66 ? '0x' + c.slice(-40) : null); if (curveOf.size > 3000) curveOf.delete(curveOf.keys().next().value); }
@@ -2191,7 +2199,7 @@ async function holderWeekly(st, env) {
   for (const [chat, h] of due) {
     st.hwSent[chat] = 1;
     const got = Object.entries(h.wk || {}).filter(([, v]) => v).map(([k, v]) => `${v} ${names[k] || k}`).join(' · ') || 'none';
-    const mine = Object.entries(st.trip || {}).filter(([, w]) => w.chats.includes(chat)).slice(0, 10);
+    const mine = Object.entries(st.trip || {}).filter(([, w]) => w.chats.includes(chat)).slice(0, 4);
     const rows = await Promise.all(mine.map(async ([a, w]) => { const c = await ponsCurve(a).catch(() => null); return `• ${tgEsc(w.sym ? '$' + w.sym : a.slice(0, 8))}${c ? (c.graduated ? ' · bonded' : ` · curve ${c.progress.toFixed(0)}%`) : ''}`; }));
     const text = `<b>Your week on the line</b> · ${tierOf(h.bal)}\n\nAlerts you got: ${got}\n${Object.keys(h.fw || {}).length ? `Wallets you follow: ${Object.keys(h.fw).length}\n` : ''}${rows.length ? `\nOn your Tripwire:\n${rows.join('\n')}\n` : ''}${W?.pons ? `\nPons this week: ${n(W.pons.launched)} launches, ${n(W.pons.bonded)} bonded\n` : ''}${W?.radar ? `The radar caught ${W.radar.caught} of ${W.radar.flagged} flagged, and missed ${W.radar.missed}\n` : ''}${W?.shunt ? `$SHUNT burned this week: ${n(W.shunt.burnedWeek)}\n` : ''}\nYour balance: ${n(h.bal)} $SHUNT\n\nshuntdesk.com/weekly`;
     tgQueue(st, [chat], text); h.wk = {};
@@ -2342,7 +2350,8 @@ const api = {
       if (url.pathname === '/api/health') {
         const st0 = await load(env).catch(() => null);
         const T = '0x39dbed3a2bd333467115de45665cc57f813c4571', probe = async (u, h) => { try { const r = await fetch(u, { headers: { Accept: 'application/json', ...UA, ...h } }); return r.status; } catch (e) { return 'unreachable'; } };
-        return json({ blockscoutCredits: { ...bsCredits, low: bsLow() }, dexscreener: await probe(DS + '/tokens/v1/robinhood/' + T), dexscreenerNoAgent: await (async () => { try { return (await fetch(DS + '/tokens/v1/robinhood/' + T)).status; } catch (e) { return 'unreachable'; } })(), goplus: await probe('https://api.gopluslabs.io/api/v1/token_security/4663?contract_addresses=' + T), geckoterminal: await probe('https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/' + T), yahoo: await probe('https://query1.finance.yahoo.com/v8/finance/chart/TSLA?interval=1m&range=1d'), looks: await looksLoad(env).then(L => ({ logged: L.rows.length, judged: L.rows.filter(r => r.p1 !== undefined).length, err: L.err || null })).catch(e => String(e.message || e)), handLast: st0?.handLast || null, codexToday: st0?.codex || null, rpc: await (async () => { try { return (await fetch('https://rpc.mainnet.chain.robinhood.com', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' })).status; } catch (e) { return 'unreachable'; } })(), chain: await (async () => { const o = { nodes: RPCS.length }; for (const [k, fn] of [['ethUsd', () => poolRatio(ETH_REF)], ['decimals', () => rpc('eth_call', [{ to: T, data: '0x313ce567' }, 'latest'])]]) { try { o[k] = String(await fn()).slice(0, 12); } catch (e) { o[k] = 'ERR ' + String(e.message || e).slice(0, 60); } } return o; })(), keys: { openrouter: !!env.OPENROUTER_API_KEY, goplus: !!env.GOPLUS_APP_KEY, codex: !!env.CODEX_API_KEY, coingecko: !!env.COINGECKO_API_KEY } });
+        const sizes = {}; for (const k of [STATE, BONDS, LINDEX, LOOKS]) { const v = await env.KV.get(k).catch(() => null); sizes[k] = v ? v.length : 0; }   // a stored value may not pass 2 MB
+        return json({ storage: sizes, blockscoutCredits: { ...bsCredits, low: bsLow() }, dexscreener: await probe(DS + '/tokens/v1/robinhood/' + T), dexscreenerNoAgent: await (async () => { try { return (await fetch(DS + '/tokens/v1/robinhood/' + T)).status; } catch (e) { return 'unreachable'; } })(), goplus: await probe('https://api.gopluslabs.io/api/v1/token_security/4663?contract_addresses=' + T), geckoterminal: await probe('https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/' + T), yahoo: await probe('https://query1.finance.yahoo.com/v8/finance/chart/TSLA?interval=1m&range=1d'), looks: await looksLoad(env).then(L => ({ logged: L.rows.length, judged: L.rows.filter(r => r.p1 !== undefined).length, err: L.err || null })).catch(e => String(e.message || e)), handLast: st0?.handLast || null, codexToday: st0?.codex || null, rpc: await (async () => { try { return (await fetch('https://rpc.mainnet.chain.robinhood.com', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' })).status; } catch (e) { return 'unreachable'; } })(), chain: await (async () => { const o = { nodes: RPCS.length }; for (const [k, fn] of [['ethUsd', () => poolRatio(ETH_REF)], ['decimals', () => rpc('eth_call', [{ to: T, data: '0x313ce567' }, 'latest'])]]) { try { o[k] = String(await fn()).slice(0, 12); } catch (e) { o[k] = 'ERR ' + String(e.message || e).slice(0, 60); } } return o; })(), keys: { openrouter: !!env.OPENROUTER_API_KEY, goplus: !!env.GOPLUS_APP_KEY, codex: !!env.CODEX_API_KEY, coingecko: !!env.COINGECKO_API_KEY } });
       }
       if (url.pathname === '/api/candles') { const a = (url.searchParams.get('a') || '').toLowerCase(); return isAddr(a) ? json(await candles(env, a)) : json({ rows: [], res: 1 }, 400); }
       if (url.pathname === '/api/pools') return json(await pools(env, url.searchParams.get('kind') === 'new' ? 'new' : 'trending'));
@@ -2350,7 +2359,7 @@ const api = {
       if (url.pathname === '/api/stocks') return json(await stockRefs());
       if (url.pathname === '/api/bonds') return json(await bondView(env));
       if (url.pathname === '/api/lab') return json(await labData(env));
-      if (url.pathname === '/api/ledger') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); return json(await devLedger(env, a)); }
+      if (url.pathname === '/api/ledger') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); if (!ledgers.has(a) && !allow(st, ip, 'ledger', 60)) return json({ ok: false, why: 'slow down: 60 an hour' }, 429); return json(await devLedger(env, a)); }
       if (url.pathname === '/api/radar') return json(await radarView(env));
       if (url.pathname === '/api/hand/launches') { const ws = [...new Set((url.searchParams.get('w') || '').toLowerCase().split(',').filter(isAddr))].slice(0, 40); return ws.length ? json(await handLaunches(env, ws)) : json({ ok: false, why: 'pass ?w= up to 40 wallets, comma separated' }, 400); }
       if (url.pathname === '/api/hand') { const w = (url.searchParams.get('w') || '').toLowerCase(); return isAddr(w) ? json(await handWallet(env, w, url.searchParams.get('creator') === '1')) : json({ ok: false, why: 'bad address' }, 400); }
@@ -2398,7 +2407,7 @@ const api = {
         if (body) { if (!allow(st, ip, 'bondgame', 10)) return json({ ok: false, why: 'slow down' }, 429); const [code, out] = bondGamePlay(st, body); await save(env, st); return json({ ...out, ...bondGameView(st, String(body.handle || '').toLowerCase(), await bondsLoad(env)) }, code); }
         await save(env, st); return json(bondGameView(st, String(url.searchParams.get('me') || '').toLowerCase(), await bondsLoad(env)));
       }
-      if (url.pathname.startsWith('/badge/')) { const a = url.pathname.slice(7).replace(/\.svg$/, '').toLowerCase(); if (!isAddr(a)) return new Response('not found', { status: 404 });
+      if (url.pathname.startsWith('/badge/')) { const a = url.pathname.slice(7).replace(/\.svg$/, '').toLowerCase(); if (!isAddr(a)) return new Response('not found', { status: 404 }); if (!ledgers.has(a) && !allow(st, ip, 'badge', 120)) return new Response('slow down', { status: 429 });
         return new Response(await badgeSvg(st, env, a), { headers: { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'public, max-age=600', 'Access-Control-Allow-Origin': '*' } }); }      if (url.pathname === '/api/daily') {
         if (body) { if (!allow(st, ip, 'daily', 10)) return json({ ok: false, why: 'slow down' }, 429); const [code, out] = dailyShift(st, body); if (code === 200) await save(env, st); return json(out, code); }
         const v = dailyView(st, String(url.searchParams.get('me') || '').toLowerCase()); await save(env, st); return json(v);
@@ -2435,6 +2444,7 @@ const api = {
     try { await postMortem(st, env); } catch (e) {}
     try { await pushTick(st, env); } catch (e) { st.pushLast = { t: Date.now(), error: String(e.message || e).slice(0, 120) }; }
     try { if (new Date().getUTCHours() >= 1) { const r = await hfPublish(st, env); if (r.final || r.first || r.today) st.hfLast = { t: Date.now(), ...r }; } } catch (e) { st.hfLast = { t: Date.now(), error: String(e.message || e).slice(0, 160) }; }   // once a day, after 01:00 UTC
+    try { await tgFlush(st, env); } catch (e) {}   // messages first, while the run still has requests to spend
     try { await gradScan(st, env); } catch (e) { st.grads = { ...(st.grads || { rows: [] }), err: String(e.message || e).slice(0, 120) }; }   // the graduation feed is extra: a failed read never stops the desk
     try { await looksTick(env); } catch (e) {}
     try { await bondTick(env); } catch (e) {}
