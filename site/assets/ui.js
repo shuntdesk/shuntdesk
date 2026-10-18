@@ -55,7 +55,7 @@ export function mountChrome(active) {
         <a class="btn" href="/ticket/">Put a token on the line →</a>
       </div>
       <div class="f2-cols">
-        <div><h5>Product</h5>${NAV.map(n => `<a href="${n[1]}">${n[0]}</a>`).join('')}<a href="/play/">The Yard</a><a href="/token/">$SHUNT</a><a href="/proof/">Proof</a><a href="/weekly/">Weekly card</a></div>
+        <div><h5>Product</h5>${NAV.map(n => `<a href="${n[1]}">${n[0]}</a>`).join('')}<a href="/play/">The Yard</a><a href="/token/">$SHUNT</a><a href="/holder/">Holders</a><a href="/proof/">Proof</a><a href="/weekly/">Weekly card</a></div>
         <div><h5>Tools</h5><a href="/radar/">Radar</a><a href="/caught/">Caught</a><a href="/dev/">Dev Score</a><a href="/bond-game/">Will it bond?</a><a href="/lab/">Verdict Lab</a><a href="/scan/">Agent Scan</a><a href="/bonds/">Bond Watch</a><a href="/wallet/">Wallet X-ray</a><a href="/exit/">Exit Door</a><a href="/hand/">Same Hand</a><a href="/stocks/">Stock gap</a><a href="/deployer/">Deployer record</a><a href="/replay/">Rug replay</a><a href="/report/">Daily report</a></div>
         <div><h5>Community</h5>${X_HANDLE ? `<a href="https://x.com/${X_HANDLE}" target="_blank" rel="noopener">X ↗</a>` : ''}<a href="https://t.me/shuntdesk" target="_blank" rel="noopener">Telegram ↗</a><a href="https://t.me/shuntdesk_bot" target="_blank" rel="noopener">Telegram bot ↗</a><a href="/agents/">For agents</a><a href="https://huggingface.co/datasets/shuntdesk/verdicts" target="_blank" rel="noopener">Open data ↗</a><a href="https://github.com/shuntdesk/shuntdesk" target="_blank" rel="noopener">Source code ↗</a></div>
         <div><h5>Legal</h5><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><a href="/docs/#faq">FAQ</a></div>

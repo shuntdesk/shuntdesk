@@ -114,3 +114,20 @@ test('Will it bond refuses a bad handle and an incomplete set of calls; /alarms 
   assert.match(await tg('/report'), /Send \/report followed by a token address/);
   assert.match(await tg('/spotters'), /No report has been priced|Top spotters/);
 });
+
+test('a $SHUNT holder link: /link gives a code, a signature from the wallet links it, a wrong one is refused', async () => {
+  const { personalDigest, holderMessage, keccak256: k } = await import('../server/worker.js');
+  const tg = async text => { const r = await worker.fetch(new Request('http://x/api/tg', { method: 'POST', headers: { 'x-telegram-bot-api-secret-token': 'right' }, body: JSON.stringify({ message: { message_id: 1, chat: { id: 4242, type: 'private' }, from: { id: 9 }, text } }) }), { ...env, TELEGRAM_SECRET: 'right' }); return (await r.json()).text; };
+  const code = (await tg('/link')).match(/holder\/\?c=([0-9a-f]{10})/)[1];
+  // a signer, worked out here the textbook way: r = (kG).x, s = k⁻¹(e + r·d)
+  const P = 2n ** 256n - 2n ** 32n - 977n, N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141n, G = [0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798n, 0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8n];
+  const m = (a, q = P) => ((a % q) + q) % q, pw = (b, e, q) => { let r = 1n; b = m(b, q); while (e) { if (e & 1n) r = r * b % q; b = b * b % q; e >>= 1n; } return r; }, inv = (a, q) => pw(a, q - 2n, q);
+  const add = (a, b) => { if (!a) return b; if (!b) return a; if (a[0] === b[0] && a[1] !== b[1]) return null; const l = a[0] === b[0] ? m(3n * a[0] * a[0] * inv(2n * a[1], P)) : m((b[1] - a[1]) * inv(b[0] - a[0], P)); const x = m(l * l - a[0] - b[0]); return [x, m(l * (a[0] - x) - a[1])]; };
+  const mul = (p, n) => { let r = null; while (n) { if (n & 1n) r = add(r, p); p = add(p, p); n >>= 1n; } return r; };
+  const d = 0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdefn, Q = mul(G, d), addr = '0x' + k(Q[0].toString(16).padStart(64, '0') + Q[1].toString(16).padStart(64, '0')).slice(24);
+  const sign = (digest, key) => { const e = BigInt('0x' + digest), kk = 0xabcdef0123456789abcdef0123456789abcdef0123456789abcdef01234567n, R = mul(G, kk), r = m(R[0], N), s = m(inv(kk, N) * (e + r * key), N); return '0x' + r.toString(16).padStart(64, '0') + s.toString(16).padStart(64, '0') + (27 + Number(R[1] & 1n)).toString(16); };
+  const digest = personalDigest(holderMessage(code));
+  const [c0, bad] = await call('holder', { code, address: addr, sig: sign(digest, d + 1n) }); assert.equal(c0, 400); assert.match(bad.why, /not from that wallet/);
+  const [c1, ok] = await call('holder', { code, address: addr, sig: sign(digest, d) }); assert.equal(c1, 200); assert.equal(ok.ok, true); assert.equal(ok.holder, false);   // a fresh key holds no $SHUNT
+  const [c2] = await call('holder', { code, address: addr, sig: sign(digest, d) }); assert.equal(c2, 400);   // a code works once
+});

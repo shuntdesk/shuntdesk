@@ -623,14 +623,15 @@ async function telegram(st, env, request, body) {
   if (cmd === 'id') return reply(`This chat: <code>${chat}</code> (${tgEsc(msg.chat.type)}${msg.chat.title ? ', ' + tgEsc(msg.chat.title) : ''})`);
   if (!allow(st, 'tg:' + chat, 'tg', 40)) return reply('Slow down a little: 40 questions an hour per chat.');
   const site = 'https://shuntdesk.com', footer = '\n\n<i>A rule-based reading of public data. It can be wrong. Not advice.</i>';
-  if (cmd === 'start' || cmd === 'help') return reply(`<b>Shuntdesk</b> · every token rides the line\n\nAsk anything about Shuntdesk, a token, the crew desk or what just launched. Or use:\n\n/check <code>0x…</code> what Shuntdesk knows about a Robinhood Chain token\n/scan <code>0x…</code> Agent Scan: what the contract lets its owner do\n/ledger <code>0x…</code> Dev Ledger: what the launcher did with it\n/devscore <code>0x…</code> Dev Score: every launch by that dev\n/report <code>0x…</code> report a token; the bot reads it\n/spotters who reported what lost half\n/bondgame today's Will it bond?\n/proof everything about $SHUNT you can check\n/alarms on launch alarms in your group (admins)\n/watch <code>0x…</code> Tripwire: a private alarm when the owner or the big wallets move\n/daily today's daily shift in the Yard\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
+  if (cmd === 'start' || cmd === 'help') return reply(`<b>Shuntdesk</b> · every token rides the line\n\nAsk anything about Shuntdesk, a token, the crew desk or what just launched. Or use:\n\n/check <code>0x…</code> what Shuntdesk knows about a Robinhood Chain token\n/scan <code>0x…</code> Agent Scan: what the contract lets its owner do\n/ledger <code>0x…</code> Dev Ledger: what the launcher did with it\n/devscore <code>0x…</code> Dev Score: every launch by that dev\n/report <code>0x…</code> report a token; the bot reads it\n/spotters who reported what lost half\n/bondgame today's Will it bond?\n/proof everything about $SHUNT you can check\n/alarms on launch alarms in your group (admins)\n
+<b>For $SHUNT holders</b>\n/link connect your wallet\n/alarm your own alarms\n/boost burn $SHUNT to boost a full scan\n/watch <code>0x…</code> Tripwire: a private alarm when the owner or the big wallets move\n/daily today's daily shift in the Yard\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
   // anything that is not a command, or a token address with a question around it, goes to the conductor
   const question = clean.replace(/^\/\w+\s*/, '').replace(/0x[0-9a-fA-F]{40}/, '').trim();
   if (!cmd && (!found || question.length > 3)) return reply(await tgAsk(st, env, chat, clean, found ? found[0].toLowerCase() : null));
   if (cmd === 'watch' || cmd === 'unwatch' || cmd === 'watching') {
     if (group) return reply('Tripwire works in a private chat: open @shuntdesk_bot and send /watch there.');
     const T = st.trip || {}, mine = Object.entries(T).filter(([, w]) => w.chats.includes(chat));
-    if (cmd === 'watching') return reply(mine.length ? `<b>Tripwire</b> · watching ${mine.length} of 5\n\n${mine.map(([a, w]) => `• ${tgEsc(w.sym ? '$' + w.sym : a.slice(0, 8))} <code>${a}</code>`).join('\n')}` : 'Nothing on the tripwire. Send /watch <code>0x…</code>');
+    if (cmd === 'watching') return reply(mine.length ? `<b>Tripwire</b> · watching ${mine.length} of ${isHolder(st, chat) ? HOLD_TRIP : 5}\n\n${mine.map(([a, w]) => `• ${tgEsc(w.sym ? '$' + w.sym : a.slice(0, 8))} <code>${a}</code>`).join('\n')}` : 'Nothing on the tripwire. Send /watch <code>0x…</code>');
     if (!found) return reply(`Send /${cmd} followed by a token address: /${cmd} <code>0x…</code>`);
     const a = found[0].toLowerCase();
     if (cmd === 'unwatch') return reply(tripDrop(st, chat, a) ? 'Off the tripwire.' : 'That token was not on your tripwire.');
@@ -646,7 +647,31 @@ async function telegram(st, env, request, body) {
     const hp = v.powers.filter(p => p.level !== 'info' && p.level !== 'low');
     return reply(`<b>Agent Scan</b> · <code>${a.slice(0, 6)}…${a.slice(-4)}</code>\n${v.functions} functions, ${v.named} named${v.proxy ? ` · behind a ${tgEsc(v.proxy.kind)}` : ''}\n${v.owner ? (v.owner.live ? `Owner <code>${v.owner.address.slice(0, 6)}…${v.owner.address.slice(-4)}</code>` : 'Ownership renounced') : 'No owner() found'} · source ${v.source.verified ? 'verified' : v.source.verified === false ? 'not verified' : 'unknown'}\n\n${hp.length ? hp.slice(0, 8).map(p => `• <code>${tgEsc(p.fn)}</code>: ${tgEsc(p.what)}`).join('\n') : 'No function found that mints, pauses, blocks wallets or changes the tax.'}\n\n${tgEsc(v.summary.text)}\n\n${site}/scan/?a=${a}<i>\nRead from the bytecode. A function that exists may still be guarded. Not advice.</i>`);
   }
-  if (cmd === 'proof') {
+  if (cmd === 'link' || cmd === 'holder') {
+    if (group) return reply('Holder tools work in a private chat: open @shuntdesk_bot and send /link there.');
+    const h = st.holders?.[String(chat)];
+    if (cmd === 'holder' && h) return reply(`<b>Holder</b> · <code>${h.w.slice(0, 6)}…${h.w.slice(-4)}</code>\n${Math.round(h.bal).toLocaleString('en-US')} $SHUNT, read ${(m => m < 60 ? Math.round(m) + ' min' : Math.round(m / 60) + ' h')((Date.now() - h.t) / 60000)} ago\n${h.bal >= HOLD_MIN ? `Holder tools on: /alarm, Tripwire for ${HOLD_TRIP}, /boost` : `The holder tools open at ${HOLD_MIN.toLocaleString('en-US')} $SHUNT.`}\n\nLink another wallet: /link`);
+    const code = crypto.randomUUID().replace(/-/g, '').slice(0, 10); st.links = st.links || {}; st.links[code] = { chat: String(chat), t: Date.now() };
+    for (const [k, v] of Object.entries(st.links)) if (Date.now() - v.t > 30 * 60000) delete st.links[k];
+    return reply(`<b>Link a $SHUNT wallet</b>\n\nOpen this page, connect the wallet that holds $SHUNT and sign one message. It moves nothing and costs nothing.\n\n${site}/holder/?c=${code}\n\nThe link works for 30 minutes. Holder tools open at ${HOLD_MIN.toLocaleString('en-US')} $SHUNT.`);
+  }
+  if (cmd === 'alarm') {
+    if (group) return reply('Personal alarms work in a private chat.');
+    if (!isHolder(st, chat)) return reply(`Personal alarms are for $SHUNT holders (${HOLD_MIN.toLocaleString('en-US')} or more). Send /link to connect your wallet.`);
+    const h = st.holders[String(chat)], f = h.f = h.f || { clean: true, flags: false, curve: [] }, arg = clean.replace(/^\/\w+(@\w+)?\s*/, '').trim().toLowerCase();
+    if (/^clean\b/.test(arg)) f.clean = !/\boff\b/.test(arg);
+    else if (/^flags?\b/.test(arg)) f.flags = !/\boff\b/.test(arg);
+    else if (/^curve\b/.test(arg)) { const m = arg.match(/\d{1,2}/g)?.map(Number).filter(v => v >= 5 && v <= 99) || []; if (/\boff\b/.test(arg)) f.curve = []; else if (m.length) f.curve = [...new Set([...f.curve, ...m])].slice(-3); }
+    else if (/^off\b/.test(arg)) { f.clean = false; f.flags = false; f.curve = []; }
+    return reply(`<b>Your alarms</b>\n\n• clean reads of new tokens: <b>${f.clean ? 'on' : 'off'}</b>\n• new tokens with a red flag: <b>${f.flags ? 'on' : 'off'}</b>\n• Pons curves crossing: <b>${f.curve.length ? f.curve.map(v => v + '%').join(', ') : 'off'}</b>\n\nChange: /alarm clean on|off · /alarm flags on|off · /alarm curve 70 · /alarm curve off · /alarm off\nUp to 40 a day, in this chat.`);
+  }
+  if (cmd === 'boost') {
+    const tk = (clean.match(/0x[0-9a-fA-F]{40}(?![0-9a-fA-F])/) || [])[0], tx = (clean.match(/0x[0-9a-fA-F]{64}/) || [])[0];
+    if (!tk || !tx) return reply(`<b>Burn to boost</b>\n\nBurn ${BOOST_MIN.toLocaleString('en-US')} $SHUNT or more (send it to 0x000000000000000000000000000000000000dEaD), then send:\n/boost <code>0xTOKEN</code> <code>0xTRANSACTION</code>\n\nThe token gets a full scan (contract, launch, dev wallet, Dev Score, website) said in the Shuntdesk group and every group with alarms on. One burn, one boost.`);
+    const from = msg.from?.username ? '@' + msg.from.username : String(msg.from?.first_name || 'a holder').slice(0, 24);
+    const r = await boostToken(st, env, tk.toLowerCase(), tx.toLowerCase(), from);
+    return reply(r.ok ? r.text : tgEsc(r.why));
+  }  if (cmd === 'proof') {
     const [dl, x] = await Promise.all([devLedger(env, SHUNT).catch(() => null), xray(st, env, SHUNT).catch(() => null)]);
     const D = dl?.ok ? dl.ledger : null, n = v => v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : Math.round(v).toLocaleString('en-US');
     return reply(`<b>Proof · $SHUNT</b>\n<code>${SHUNT}</code>\n\n${D ? `Dev wallet bought ${n(D.bought + D.received)}, sold <b>${n(D.sold)}</b>, sent to other wallets ${n(D.toWallets)}, burned <b>${n(D.burned)}</b>, holds ${n(dl.holdsNow ?? 0)} now.\n${dl.burns.count} burns, ${(dl.burns.total / 1e7).toFixed(2)}% of supply in the dead address.\n` : ''}${x?.ok ? `Contract: ${x.functions} functions, ${x.powers.filter(p => p.level === 'high').length ? 'with a power: ' + x.powers.filter(p => p.level === 'high').map(p => p.what).join(', ') : 'no function that mints, pauses, blocks wallets or changes the tax'}${x.proxy ? ', behind a proxy' : ', not a proxy'}.\n` : ''}\nOpen source: github.com/shuntdesk/shuntdesk\nEvery call on record: huggingface.co/datasets/shuntdesk/verdicts\n\n${site}/proof/<i>\nRead from the chain right now. Not advice.</i>`);
@@ -1527,7 +1552,8 @@ async function tripAdd(st, env, chat, token) {
   const T = st.trip = st.trip || {};
   const mine = Object.entries(T).filter(([, w]) => w.chats.includes(chat));
   if (T[token]?.chats.includes(chat)) return { ok: true, why: 'already watching' };
-  if (mine.length >= 5) return { ok: false, why: 'five tokens a chat; /unwatch one first' };
+  const cap = isHolder(st, chat) ? HOLD_TRIP : 5;   // a $SHUNT holder's chat watches more
+  if (mine.length >= cap) return { ok: false, why: cap === 5 ? 'five tokens a chat; /unwatch one first, or link a $SHUNT wallet with /link for ' + HOLD_TRIP : HOLD_TRIP + ' tokens a chat; /unwatch one first' };
   if (!T[token] && Object.keys(T).length >= 150) return { ok: false, why: 'the tripwire is full right now' };
   if (!T[token]) {
     const x = await xray(st, env, token).catch(() => null);
@@ -1770,17 +1796,17 @@ async function launchAlarm(st, env, L, rows) {
     if (r.x === undefined || r.al) continue; r.al = 1;
     const fl = radarFlags(r), sym = tgEsc(r.s ? '$' + r.s : r.a.slice(0, 8)), age = r.c ? ago(r.t - r.c) + ' after launch' : 'soon after launch';
     const clean = !fl.length && r.x && r.g && !r.g.red && r.f[1] >= 50 && r.sc?.w && !(r.sc.f || []).length;
-    let text = null;
-    if (fl.length && L.al.red < 15) {
-      L.al.red++;
+    let redText = null, cleanText = null;
+    if (fl.length) {
       lab = lab || await labData(env).catch(() => null);
       const rule = fl.some(f => f.startsWith('bundles')) ? 'bundles' : fl.some(f => f.startsWith('snipers')) ? 'snipers' : null, R = rule && lab?.rules.find(x => x.key === rule);
       const stat = R && R.caughtThen.h24.n >= 20 ? `\nIn Shuntdesk's record, tokens with ${rule} over 5% lost half their price within a day ${Math.round(R.caughtThen.h24.rate * 100)}% of the time, against ${Math.round(R.othersThen.h24.rate * 100)}% for the rest.\n` : '';
-      text = `<b>Launch alarm</b> · ${sym}\n<code>${r.a}</code>\n\nRead ${age}:\n${fl.map(f => '• ' + tgEsc(f)).join('\n')}\n${stat}\nhttps://shuntdesk.com/ticket/?a=${r.a}\n\n<i>Findings from the chain, not a verdict on anyone. Not advice.</i>`;
-    } else if (clean && L.al.clean < 6) {
-      L.al.clean++;
-      text = `<b>Clean read</b> · ${sym}\n<code>${r.a}</code>\n\nRead ${age}: no contract power found, the sell test passes, no bundles, snipers or insiders over 5%, a website with nothing flagged, ${r.f[1]} holders.\n\nhttps://shuntdesk.com/ticket/?a=${r.a}\n\n<i>Clean now is not clean forever. Not advice.</i>`;
-    }
+      redText = `<b>Launch alarm</b> · ${sym}\n<code>${r.a}</code>\n\nRead ${age}:\n${fl.map(f => '• ' + tgEsc(f)).join('\n')}\n${stat}\nhttps://shuntdesk.com/ticket/?a=${r.a}\n\n<i>Findings from the chain, not a verdict on anyone. Not advice.</i>`;
+    } else if (clean) cleanText = `<b>Clean read</b> · ${sym}\n<code>${r.a}</code>\n\nRead ${age}: no contract power found, the sell test passes, no bundles, snipers or insiders over 5%, a website with nothing flagged, ${r.f[1]} holders.\n\nhttps://shuntdesk.com/ticket/?a=${r.a}\n\n<i>Clean now is not clean forever. Not advice.</i>`;
+    let text = null;
+    if (redText && L.al.red < 15) { L.al.red++; text = redText; } else if (cleanText && L.al.clean < 6) { L.al.clean++; text = cleanText; }
+    // holders who asked get theirs in their own chat, past the group's daily caps
+    holderLaunch(st, r, fl, redText, cleanText);
     if (text) tgQueue(st, chats, text);
   }
 }
@@ -1942,6 +1968,97 @@ async function weeklyData(st, env) {
     lab: top ? { rule: top.rule, rate: top.caughtThen.h24.rate, others: top.othersThen.h24.rate, lift: top.lift24h } : null,
     shunt: dl?.ok ? { burnedWeek: Math.round(burns.reduce((s, b) => s + b.amount, 0)), burnsWeek: burns.length, burnedAll: Math.round(dl.burns.total), sold: dl.ledger.sold } : null,
     reports: { week: rep.length, topSpotter: sp && sp.lostHalf ? sp : null } };
+}
+
+// ================= $SHUNT holders: a wallet tied to a Telegram chat by a signature, its balance read from the chain =================
+const HOLD_MIN = 1000000, BOOST_MIN = 500000, HOLD_TRIP = 25;
+// secp256k1, only what is needed to find who signed a personal_sign message (no key ever touches the server)
+const SP = 2n ** 256n - 2n ** 32n - 977n, SN = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141n;
+const GX = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798n, GY = 0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8n;
+const md = (a, m = SP) => ((a % m) + m) % m;
+const mpow = (b, e, m) => { let r = 1n; b = md(b, m); while (e > 0n) { if (e & 1n) r = r * b % m; b = b * b % m; e >>= 1n; } return r; };
+const minv = (a, m) => mpow(a, m - 2n, m);
+const jdbl = ([X, Y, Z]) => { if (Z === 0n || Y === 0n) return [0n, 1n, 0n]; const YY = md(Y * Y), S = md(4n * X * YY), M = md(3n * X * X), X2 = md(M * M - 2n * S); return [X2, md(M * (S - X2) - 8n * YY * YY), md(2n * Y * Z)]; };
+function jadd(P, Q) {
+  if (P[2] === 0n) return Q; if (Q[2] === 0n) return P;
+  const [X1, Y1, Z1] = P, [X2, Y2, Z2] = Q, Z1s = md(Z1 * Z1), Z2s = md(Z2 * Z2), U1 = md(X1 * Z2s), U2 = md(X2 * Z1s), S1 = md(Y1 * Z2s * Z2), S2 = md(Y2 * Z1s * Z1);
+  if (U1 === U2) return S1 === S2 ? jdbl(P) : [0n, 1n, 0n];
+  const H = md(U2 - U1), R = md(S2 - S1), H2 = md(H * H), H3 = md(H2 * H), U1H2 = md(U1 * H2), X3 = md(R * R - H3 - 2n * U1H2);
+  return [X3, md(R * (U1H2 - X3) - S1 * H3), md(H * Z1 * Z2)];
+}
+const jmul = (P, k) => { let R = [0n, 1n, 0n], A = P; while (k > 0n) { if (k & 1n) R = jadd(R, A); A = jdbl(A); k >>= 1n; } return R; };
+// the public key behind a signature over a 32-byte digest, as an address; null when the signature does not hold up
+export function ecrecoverDigest(digestHex, sigHex) {
+  const s0 = String(sigHex).replace(/^0x/, ''); if (s0.length < 130) return null;
+  const r = BigInt('0x' + s0.slice(0, 64)), s = BigInt('0x' + s0.slice(64, 128)); let v = parseInt(s0.slice(128, 130), 16); if (v >= 27) v -= 27;
+  if (r <= 0n || r >= SN || s <= 0n || s >= SN || (v !== 0 && v !== 1)) return null;
+  const y2 = md(r * r * r + 7n); let y = mpow(y2, (SP + 1n) / 4n, SP); if (md(y * y) !== y2) return null; if ((y & 1n) !== BigInt(v)) y = SP - y;
+  const e = BigInt('0x' + String(digestHex).replace(/^0x/, '')), ri = minv(r, SN);
+  const Q = jadd(jmul([GX, GY, 1n], md(-e * ri, SN)), jmul([r, y, 1n], md(s * ri, SN))); if (Q[2] === 0n) return null;
+  const zi = minv(Q[2], SP), zi2 = md(zi * zi), qx = md(Q[0] * zi2), qy = md(Q[1] * zi2 * zi);
+  return '0x' + keccak256(qx.toString(16).padStart(64, '0') + qy.toString(16).padStart(64, '0')).slice(24);
+}
+// what personal_sign signs: the Ethereum prefix, the length in bytes, the message
+export function personalDigest(msg) { const b = [...new TextEncoder().encode(msg)], pre = [...new TextEncoder().encode('\x19Ethereum Signed Message:\n' + b.length)]; return keccak256([...pre, ...b].map(x => x.toString(16).padStart(2, '0')).join('')); }
+export const holderMessage = code => `Shuntdesk holder link\nCode: ${code}\n\nSigning this proves you hold this wallet. It moves nothing and costs nothing.`;
+async function shuntBalance(w) { const r = await contractCall(SHUNT, '70a08231' + w.slice(2).padStart(64, '0')).catch(() => null); return r ? Number(BigInt(r) / 10n ** 15n) / 1e3 : null; }
+const isHolder = (st, chat) => { const h = st.holders?.[String(chat)]; return !!h && h.bal >= HOLD_MIN; };
+// a link code from the bot, then the signature from the page: the chat gets the wallet, the wallet's balance decides
+async function holderVerify(st, env, b) {
+  const code = String(b?.code || ''), w = String(b?.address || '').toLowerCase(), L = st.links?.[code];
+  if (!L || Date.now() - L.t > 30 * 60000) return [400, { ok: false, why: 'this link has run out: send /link to the bot again' }];
+  if (!isAddr(w)) return [400, { ok: false, why: 'no wallet' }];
+  const who = ecrecoverDigest(personalDigest(holderMessage(code)), b?.sig);
+  if (who !== w) return [400, { ok: false, why: 'the signature is not from that wallet' }];
+  const bal = await shuntBalance(w); if (bal === null) return [502, { ok: false, why: 'the chain did not answer, try again' }];
+  const H = st.holders = st.holders || {}; const prev = H[L.chat] || {};
+  H[L.chat] = { ...prev, w, bal, t: Date.now(), f: prev.f || { clean: true, flags: false, curve: [] } };
+  delete st.links[code];
+  const ok = bal >= HOLD_MIN, n = v => Math.round(v).toLocaleString('en-US');
+  await tgSend(env, L.chat, ok ? `<b>Holder linked</b> · <code>${w.slice(0, 6)}…${w.slice(-4)}</code>\n${n(bal)} $SHUNT\n\nYours now:\n• personal alarms in this chat: /alarm\n• Tripwire for up to ${HOLD_TRIP} tokens: /watch\n• burn to boost a full scan: /boost\n\nThe balance is read again every few hours.` : `<b>Wallet linked</b> · <code>${w.slice(0, 6)}…${w.slice(-4)}</code>\n${n(bal)} $SHUNT. The holder tools open at ${n(HOLD_MIN)} $SHUNT.`).catch(() => 0);
+  return [200, { ok: true, holder: ok, balance: bal, min: HOLD_MIN }];
+}
+// balances are read again, five chats a tick, every six hours
+async function holderRefresh(st) { const now = Date.now(); for (const h of Object.values(st.holders || {}).filter(h => now - h.t > 6 * HOUR).slice(0, 5)) { const b = await shuntBalance(h.w); if (b !== null) { h.bal = b; h.t = now; } } }
+// a holder's own alarms: queued for its chat, at most forty a day
+function holderSend(st, chat, text) { const h = st.holders[chat], d = new Date().toISOString().slice(0, 10); h.n = h.d === d ? h.n || 0 : 0; h.d = d; if (h.n >= 40) return; h.n++; tgQueue(st, [chat], text); }
+function holderLaunch(st, r, fl, redText, cleanText) {
+  for (const [chat, h] of Object.entries(st.holders || {})) { if (h.bal < HOLD_MIN || !h.f) continue; if (fl.length && h.f.flags && redText) holderSend(st, chat, redText); else if (!fl.length && h.f.clean && cleanText) holderSend(st, chat, cleanText); }
+}
+// curves crossing a holder's own marks, read from Bond Watch's last two reads of each curve
+async function holderCurves(st, env) {
+  const hs = Object.entries(st.holders || {}).filter(([, h]) => h.bal >= HOLD_MIN && h.f?.curve?.length); if (!hs.length) return;
+  const B = await bondsLoad(env); if (st.hcT === B.t) return; st.hcT = B.t;
+  for (const r of B.rows.filter(r => !r.g && (r.h || []).length >= 2)) {
+    const a = r.h.at(-2)[1], z = r.h.at(-1)[1];
+    for (const [chat, h] of hs) for (const m of h.f.curve) if (a < m && z >= m) { const k = r.t0 + ':' + m; h.sent = h.sent || {}; if (h.sent[k]) continue; h.sent[k] = 1;
+      holderSend(st, chat, `<b>Your alarm · curve past ${m}%</b> · ${tgEsc(r.s || r.t0.slice(0, 8))}\n<code>${r.t0}</code>\n\n${z.toFixed(1)}% of the curve: ${(r.q || 0).toFixed(2)} of ${r.th} ${tgEsc(r.u || 'ETH')}\n\nhttps://shuntdesk.com/ticket/?a=${r.t0}\n<i>Read from the curve contract. Not advice.</i>`); }
+    for (const [, h] of hs) if (h.sent && Object.keys(h.sent).length > 400) h.sent = {};
+  }
+}
+// burn to boost: a burn of $SHUNT to the dead address, sent with a token, buys that token a full scan said in the groups
+async function boostToken(st, env, token, tx, from) {
+  const B = st.boosts = st.boosts || {}; if (B[tx]) return { ok: false, why: 'that burn has already boosted a token' };
+  const rc = await rpc('eth_getTransactionReceipt', [tx]).catch(() => null); if (!rc || rc.status !== '0x1') return { ok: false, why: 'that transaction is not on chain, or it failed' };
+  const TR = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef', dead = '0x' + DEAD.slice(2).padStart(64, '0');
+  const burned = rc.logs.filter(l => l.address.toLowerCase() === SHUNT && l.topics[0] === TR && l.topics[2]?.toLowerCase() === dead).reduce((s, l) => s + Number(BigInt(l.data) / 10n ** 15n) / 1e3, 0);
+  if (burned < BOOST_MIN) return { ok: false, why: `that transaction burns ${Math.round(burned).toLocaleString('en-US')} $SHUNT; a boost takes ${BOOST_MIN.toLocaleString('en-US')} sent to 0x…dEaD` };
+  const blk = await rpc('eth_getBlockByNumber', [rc.blockNumber, false]).catch(() => null); if (blk && Date.now() - parseInt(blk.timestamp, 16) * 1000 > 48 * HOUR) return { ok: false, why: 'that burn is older than two days' };
+  B[tx] = { token, by: from, t: Date.now(), burned }; const ks = Object.keys(B); if (ks.length > 2000) delete B[ks[0]];
+  const [x, sc, dl, L] = await Promise.all([xray(st, env, token).catch(() => null), siteCheck(st, env, token, [], { summary: false }).catch(() => null), devLedger(env, token).catch(() => null), launch(env, token).catch(() => null)]);
+  const ds = dl?.ok ? await devScore(st, env, dl.dev).catch(() => null) : null;
+  const D = dl?.ok ? dl.ledger : null, got = D ? D.bought + D.received : 0, pc = v => got > 0 ? Math.round(v / got * 100) + '%' : '0%', n = v => Math.round(v).toLocaleString('en-US');
+  const powers = (x?.powers || []).filter(p => p.level === 'high').map(p => p.what);
+  const lines = [
+    `<b>Boosted scan</b> · ${tgEsc(L?.symbol ? '$' + L.symbol : token.slice(0, 8))}`, `<code>${token}</code>`, '',
+    x?.ok ? `Contract: ${x.functions} functions, ${powers.length ? 'powers: ' + tgEsc(powers.join(', ')) : 'none that mint, pause, block wallets or change the tax'}${x.proxy ? ', behind a proxy' : ''}` : 'Contract: could not be read',
+    L?.ok && L.launchpad ? `Launch: ${L.launchpad === 'pons' ? 'Pons' : tgEsc(L.launchpad)}${L.graduated ? ', bonded' : L.progress != null ? `, ${Math.round(L.progress)}% of the curve` : ''} · bundles ${pct(L.bundlerPct)} · snipers ${pct(L.sniperPct)}` : null,
+    D ? `Dev wallet: sold ${pc(D.sold)}, sent to wallets ${pc(D.toWallets)}, burned ${pc(D.burned)}, holds ${n(dl.holdsNow ?? 0)}` : null,
+    ds?.ok && ds.launched ? `Dev Score: ${ds.score ?? '—'} · ${ds.launched} launches, ${ds.dumped} dumped${ds.dumpedFirstHour ? `, ${ds.dumpedFirstHour} in the first hour` : ''}` : null,
+    sc?.ok ? (sc.flags.filter(f => f.level !== 'low').length ? `Site: ${tgEsc(sc.flags.filter(f => f.level !== 'low').map(f => f.text).slice(0, 2).join('; '))}` : sc.website ? 'Site: nothing flagged' : 'Site: no website found') : null,
+    '', `Boosted by ${tgEsc(from)}, who burned ${n(burned)} $SHUNT: https://robinhoodchain.blockscout.com/tx/${tx}`, `https://shuntdesk.com/ticket/?a=${token}`, '<i>Findings from the chain, not a verdict on anyone. Not advice.</i>'].filter(l => l !== null);
+  const text = lines.join('\n'); tgQueue(st, alarmChats(st, env), text);
+  return { ok: true, text };
 }
 
 // ---------- the daily line, posted to the community group at 13:00 UTC ----------
@@ -2134,6 +2251,8 @@ const api = {
         const rec = record(st); return json({ ok: true, token: SHUNT, ledger: dl?.ok ? dl : null, contract: x?.ok ? { functions: x.functions, named: x.named, unknown: x.unknown, proxy: !!x.proxy, owner: x.owner, powers: x.powers.filter(p => p.level === 'high').map(p => p.what), verified: x.source?.verified ?? null } : null,
           curve: L?.launchpad === 'pons' ? { progress: L.progress, graduated: L.graduated, raised: L.raised, need: L.need, holders: L.holders ?? null } : null,
           record: { calls: st.verdicts.length, clean: rec.after24h.CLEAN, danger: rec.after24h.DANGER }, pools: SHUNT_POOLS, links: { source: 'https://github.com/shuntdesk/shuntdesk', data: 'https://huggingface.co/datasets/shuntdesk/verdicts', x: 'https://x.com/shuntdesk', telegram: 'https://t.me/shuntdesk' } }); }
+      if (url.pathname === '/api/holder' && body) { if (!allow(st, ip, 'holder', 20)) return json({ ok: false, why: 'slow down' }, 429); const [code, out] = await holderVerify(st, env, body); await save(env, st); return json(out, code); }
+      if (url.pathname === '/api/holder') return json({ ok: true, message: holderMessage(String(url.searchParams.get('c') || '')), min: HOLD_MIN, boost: BOOST_MIN, trip: HOLD_TRIP });
       if (url.pathname === '/api/caught') return json(await caughtView(env));
       if (url.pathname === '/api/weekly') return json(await weeklyData(st, env));
       if (url.pathname === '/api/devscore') { const w = (url.searchParams.get('w') || '').toLowerCase(); if (!isAddr(w)) return json({ ok: false, why: 'bad address' }, 400); if (!scores.has(w) && !allow(st, ip, 'devscore', 30)) return json({ ok: false, why: 'slow down: 30 an hour' }, 429); return json(await devScore(st, env, w)); }
@@ -2187,6 +2306,8 @@ const api = {
     try { await groupDigest(st, env); } catch (e) {}
     try { await reportJudge(st, env); } catch (e) {}
     try { await bondGame(st, env); } catch (e) {}
+    try { await holderRefresh(st); } catch (e) {}
+    try { await holderCurves(st, env); } catch (e) {}
     try { await tgFlush(st, env); } catch (e) {}
     try { await handAlert(st, env); } catch (e) { st.handLast = { t: Date.now(), why: String(e.message || e).slice(0, 120) }; }
     try { await tripTick(st, env); } catch (e) { st.tripLast = { t: Date.now(), why: String(e.message || e).slice(0, 120) }; }
