@@ -1845,20 +1845,22 @@ export async function devScore(st, env, w) {
   const [grad, syms] = await Promise.all([multicall(read.map(x => [x.curve, SEL.grad])), multicall(read.map(x => [x.token, SEL.sym]))]);
   const per = await Promise.all(read.map(async (x, i) => {
     const txs = await bs(`module=account&action=tokentx&contractaddress=${x.token}&address=${w}&sort=asc&page=1&offset=500`).catch(() => []);
-    let got = 0, sold = 0, away = 0, burned = 0, soldHour = 0;
+    let got = 0, sold = 0, away = 0, burned = 0, soldHour = 0, pooled = 0; const awayTo = {};
     for (const t of txs) {
       const f = String(t.from).toLowerCase(), to = String(t.to).toLowerCase(), v = Number(BigInt(t.value || '0') / 10n ** 12n) / 1e6, at = Number(t.timeStamp) * 1000;
       if (to === w) { got += v; continue; } if (f !== w) continue;
-      if (to === DEAD || /^0x0{40}$/.test(to)) burned += v; else if (to === x.curve) { sold += v; if (at - x.at < HOUR) soldHour += v; } else away += v;
+      if (to === DEAD || /^0x0{40}$/.test(to)) burned += v; else if (to === x.curve) { sold += v; if (at - x.at < HOUR) soldHour += v; } else { away += v; awayTo[to] = (awayTo[to] || 0) + v; }
     }
+    // tokens sent to a contract (a pool, a locker) are liquidity, not a sale: the largest five recipients are checked for code
+    for (const [a, v] of Object.entries(awayTo).sort((p, q) => q[1] - p[1]).slice(0, 5)) { const code = await rpc('eth_getCode', [a, 'latest']).catch(() => '0x'); if (code && code !== '0x' && !isDelegated(code)) { pooled += v; away -= v; } }
     const out = sold + away;
     return { token: x.token, symbol: str(syms[i]) || x.token.slice(0, 8), launched: new Date(x.at).toISOString(), bonded: !!grad[i] && BigInt(grad[i]) === 1n,
-      got: Math.round(got), sold: Math.round(sold), sentAway: Math.round(away), burned: Math.round(burned), dumped: got > 0 && out / got >= 0.5, dumpedFirstHour: got > 0 && soldHour / got >= 0.5, burnedMost: got > 0 && burned / got >= 0.5 };
+      got: Math.round(got), sold: Math.round(sold), sentAway: Math.round(away), pooled: Math.round(pooled), burned: Math.round(burned), dumped: got > 0 && out / got >= 0.5, dumpedFirstHour: got > 0 && soldHour / got >= 0.5, burnedMost: got > 0 && burned / got >= 0.5 };
   }));
   const withTokens = per.filter(p => p.got > 0), dumped = withTokens.filter(p => p.dumped).length;
   const v = { ok: true, wallet: w, partial: missing > 0, indexFrom: reach ? new Date(reach).toISOString() : null, launched: launches.length, read: per.length, held: withTokens.length, bonded: per.filter(p => p.bonded).length, dumped, dumpedFirstHour: withTokens.filter(p => p.dumpedFirstHour).length,
     burnedMost: withTokens.filter(p => p.burnedMost).length, score: withTokens.length ? Math.round((1 - dumped / withTokens.length) * 100) : null, launches: per,
-    note: 'Every Pons launch by this wallet, from the factory log; the newest 15 read in full. A launch counts as dumped when the wallet sold into the curve or sent to other wallets half or more of what it got. The score is the share of its launches it did not dump. Read only, from the chain index. Not advice.' };
+    note: 'Every Pons launch by this wallet, from the factory log; the newest 15 read in full. A launch counts as dumped when the wallet sold into the curve or sent to other wallets half or more of what it got; tokens added to a pool or another contract count as liquidity, not as a sale. The score is the share of its launches it did not dump. Read only, from the chain index. Not advice.' };
   // a partial read is kept three minutes, a full one thirty
   scores.set(w, { t: v.partial ? now - 27 * 60000 : now, v }); if (scores.size > 200) scores.delete(scores.keys().next().value);
   return v;

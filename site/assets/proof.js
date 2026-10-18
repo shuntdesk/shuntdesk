@@ -14,9 +14,9 @@ async function paint() {
   if (!v?.ok) { $('#pf-ct').textContent = 'Not answering right now. Try again in a minute.'; return; }
   const dl = v.ledger;
   if (dl) {
-    const L = dl.ledger, got = L.bought + L.received, out = L.sold + L.toWallets + L.toContracts;
+    const L = dl.ledger, got = L.bought + L.received, out = L.sold + L.toWallets;   // a sale into the curve, or tokens sent to other wallets; liquidity added to a pool is shown apart
     $('#pf-got').textContent = n0(got); $('#pf-sold').textContent = n0(out); $('#pf-sold').className = 'v ' + (out ? 'short' : 'long');
-    $('#pf-sold-s').textContent = `${pct(out, got)} of what it got`;
+    $('#pf-sold-s').innerHTML = `${pct(out, got)} of what it got${L.toContracts ? ` · ${n0(L.toContracts)} added to a pool or contract, <a href="${BS}/address/${dl.dev}?tab=token_transfers" target="_blank" rel="noopener">see the transfer ↗</a>` : ''}`;
     $('#pf-burn').textContent = n0(dl.burns.total); $('#pf-burn-s').textContent = `${(dl.burns.total / 1e7).toFixed(2)}% of supply, ${dl.burns.count} burns`;
     $('#pf-hold').textContent = n0(dl.holdsNow);
     $('#pf-got-s').innerHTML = `on the curve · <a href="${BS}/address/${dl.dev}" target="_blank" rel="noopener">${dl.dev.slice(0, 6)}…${dl.dev.slice(-4)} ↗</a>`;
