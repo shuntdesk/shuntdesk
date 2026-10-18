@@ -1306,14 +1306,18 @@ const MC3 = '0xca11bde05977b3631167028862be2a173976ca11', BONDS = 'bonds-v5';
 // Pons curve and token selectors: keccak-256 of each signature, worked out once (the test checks them)
 const SEL = { real: '4f1f58fd', thr: '8b0bc501', grad: 'e7c2b772', sym: '95d89b41', nat: 'dc08e094', pair: '3de35b79', curve: '7165485d', qres: '9da771f4', tres: 'cbcb3171', fee: '24a9d853', ctax: 'c1bb8901' };
 async function selOf(sig) { return keccak256([...new TextEncoder().encode(sig)].map(b => b.toString(16).padStart(2, '0')).join('')).slice(0, 8); }
+const mcStat = { req: 0, fail: 0, err: null };   // how the multicalls are going, shown on /api/bonds
 async function multicall(calls) {   // calls: [target, selector] → hex result or null
   const out = [];
-  for (let i = 0; i < calls.length; i += 100) {   // a hundred calls a request: larger ones were turned away now and then
-    const part = calls.slice(i, i + 100), n = part.length, w = x => x.toString(16).padStart(64, '0');
+  // 250 calls a request: a Worker run may make only so many requests, and Bond Watch shares its run with every other job
+  for (let i = 0; i < calls.length; i += 250) {
+    const part = calls.slice(i, i + 250), n = part.length, w = x => x.toString(16).padStart(64, '0');
     let head = w(32) + w(n), body = '';
     part.forEach(([to, sel], k) => { head += w(n * 32 + k * 160); body += w(BigInt(to)) + w(1) + w(96) + w(4) + sel.padEnd(64, '0'); });
     let r = null;
-    for (let k = 0; k < 2 && !r; k++) { try { r = await rpc('eth_call', [{ to: MC3, data: '0x82ad56cb' + head + body }, 'latest']); } catch (e) { if (!k) await new Promise(z => setTimeout(z, 600)); } }   // once more after a pause
+    mcStat.req++;
+    for (let k = 0; k < 2 && !r; k++) { try { r = await rpc('eth_call', [{ to: MC3, data: '0x82ad56cb' + head + body }, 'latest']); } catch (e) { mcStat.err = String(e.message || e).slice(0, 100); if (!k) await new Promise(z => setTimeout(z, 600)); } }   // once more after a pause
+    if (!r) mcStat.fail++;
     if (!r) { out.push(...part.map(() => null)); continue; }
     const h = r.slice(2), word = o => BigInt('0x' + h.substr(o * 2, 64)), base = Number(word(32)) === n ? 64 : 64;
     for (let k = 0; k < n; k++) {
@@ -1386,7 +1390,7 @@ async function wideLogs(env, topic0, from, to) {
 }
 export async function bondTick(env) {
   const B = await bondsLoad(env), now = Date.now(); if (now - B.t < 10 * 60000) return; B.t = now;
-  let stage = 'head';
+  let stage = 'head'; mcStat.req = 0; mcStat.fail = 0; mcStat.err = null;
   try {
     // forward from the last read; on the first read the last 800,000 blocks (about 22 hours). Then one more window
     // back each tick until a week is covered: a week at once is more calls than one tick may make.
@@ -1410,10 +1414,10 @@ export async function bondTick(env) {
     for (const f of fresh) { const d = new Date(f.at).toISOString().slice(0, 10); const day = B.days.find(x => x.d === d) || (B.days.push({ d, l: 0, g: 0 }), B.days.at(-1)); day.l++; }
     B.days = B.days.sort((a, b) => a.d < b.d ? -1 : 1).slice(-14);
     B.block = head;
-    // the new ones go in a queue, newest first; each tick reads its threshold, symbol and quote for up to 1,200 of them,
+    // the new ones go in a queue, newest first; each tick reads its threshold, symbol and quote for up to 400 of them,
     // so a first read of a week of launches is done within a few hours and a failed read is tried again, three times
     B.todo = [...fresh, ...(B.todo || [])].sort((a, b) => b.at - a.at);
-    const batch = B.todo.splice(0, 1200);
+    const batch = B.todo.splice(0, 400);
     if (batch.length) {
       const res = await multicall(batch.flatMap(f => [[f.c, SEL.thr], [f.t0, SEL.sym], [f.c, SEL.nat], [f.c, SEL.pair], [f.c, SEL.fee], [f.c, SEL.ctax]]));
       // a curve quoted in a token rather than native ETH: name that token, once per token
@@ -1430,8 +1434,11 @@ export async function bondTick(env) {
     }    // every curve still on the board: what it has raised, and whether it bonded
     const live = B.rows.filter(r => !r.g);
     const before = new Map(live.map(r => [r.t0, { p: r.p, n: r.h.length }]));
-    const res = await multicall(live.flatMap(r => [[r.c, SEL.real], [r.c, SEL.grad], [r.c, SEL.qres], [r.c, SEL.tres], [r.c, SEL.fee], [r.c, SEL.ctax]]));
-    live.forEach((r, i) => { const q = res[i * 6], gd = res[i * 6 + 1], qr = res[i * 6 + 2], tr = res[i * 6 + 3], fb = res[i * 6 + 4], ct = res[i * 6 + 5]; if (fb) r.fee = (Number(BigInt(fb)) + (ct ? Number(BigInt(ct)) : 0)) / 10000; if (qr && tr) { r.vq = Number(BigInt(qr) / 10n ** 12n) / 1e6; r.vt = Number(BigInt(tr) / 10n ** 12n) / 1e6; } if (q) { const eth = Number(BigInt(q) / 10n ** 12n) / 1e6; r.q = eth; r.p = Math.min(100, eth / r.th * 100); r.h.push([now, Math.round(r.p * 100) / 100]); r.h = r.h.slice(-36); r.max = Math.max(r.max || 0, r.p); } if (gd && BigInt(gd) === 1n) { r.g = now; r.p = 100; } });
+    const res = await multicall(live.flatMap(r => [[r.c, SEL.real], [r.c, SEL.grad], [r.c, SEL.qres], [r.c, SEL.tres]]));
+    // the fee is read once per curve, not every tick: it is set at launch
+    const feeless = live.filter(r => r.fee == null), fees = feeless.length ? await multicall(feeless.flatMap(r => [[r.c, SEL.fee], [r.c, SEL.ctax]])) : [];
+    feeless.forEach((r, i) => { const fb = fees[i * 2], ct = fees[i * 2 + 1]; if (fb) r.fee = (Number(BigInt(fb)) + (ct ? Number(BigInt(ct)) : 0)) / 10000; });
+    live.forEach((r, i) => { const q = res[i * 4], gd = res[i * 4 + 1], qr = res[i * 4 + 2], tr = res[i * 4 + 3]; if (qr && tr) { r.vq = Number(BigInt(qr) / 10n ** 12n) / 1e6; r.vt = Number(BigInt(tr) / 10n ** 12n) / 1e6; } if (q) { const eth = Number(BigInt(q) / 10n ** 12n) / 1e6; r.q = eth; r.p = Math.min(100, eth / r.th * 100); r.h.push([now, Math.round(r.p * 100) / 100]); r.h = r.h.slice(-36); r.max = Math.max(r.max || 0, r.p); } if (gd && BigInt(gd) === 1n) { r.g = now; r.p = 100; } });
     // keep: every curve still open that has raised 1% or more, however old; a new one for its first six hours;
     // the bonded ones for two days. The largest 2,000 if it ever comes to that.
     // a curve whose progress has not been read yet stays until it is: a failed read is not a curve at 0%
@@ -1441,6 +1448,7 @@ export async function bondTick(env) {
     if (alerts.length) await bondAlerts(env, B, alerts, now).catch(() => 0);
     B.err = null;
   } catch (e) { B.err = (stage + ': ' + String(e.message || e)).slice(0, 160); }
+  B.mc = { ...mcStat };   // this tick's multicalls: how many went out, how many came back empty, the last error
   await env.KV.put(BONDS, JSON.stringify(B));
 }
 export async function bondView(env) {
@@ -1453,7 +1461,7 @@ export async function bondView(env) {
   // of the tracked launches that ever reached a mark, how many bonded: a rate that grows as the log does
   const reach = m => { const hit = B.rows.filter(r => (r.max || 0) >= m && now - r.at > 6 * HOUR); return { n: hit.length, bonded: hit.filter(r => r.g).length }; };
   const cover = B.head && B.floor ? Math.round((B.head - B.floor) / 36000) : 0;
-  return { ok: true, read: B.t, onCurve: B.rows.filter(r => !r.g).length, coverage: { hours: cover, complete: cover >= 167 && !(B.todo || []).length, queued: (B.todo || []).length }, days, week: { launched: L, bonded: G, rate: L ? G / L : null }, reached: { 25: reach(25), 50: reach(50), 75: reach(75) }, rows, bonded, err: B.err || null,
+  return { ok: true, read: B.t, multicall: B.mc || null, onCurve: B.rows.filter(r => !r.g).length, coverage: { hours: cover, complete: cover >= 167 && !(B.todo || []).length, queued: (B.todo || []).length }, days, week: { launched: L, bonded: G, rate: L ? G / L : null }, reached: { 25: reach(25), 50: reach(50), 75: reach(75) }, rows, bonded, err: B.err || null,
     note: 'Read from each Pons curve on chain: ETH raised against the ETH it needs to bond. The pace is the last hour; an estimate is only that pace carried on. Not advice.' };
 }
 
