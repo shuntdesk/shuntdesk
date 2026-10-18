@@ -19,7 +19,7 @@ async function paint() {
   $('#bw-50').textContent = of(v.reached[50]); $('#bw-75').textContent = of(v.reached[75]);
   const lb = v.bonded[0];
   $('#bw-last').textContent = lb ? lb.symbol : 'none yet'; $('#bw-last2').textContent = lb ? `${ageShort(Date.parse(lb.bonded))} ago, ${lb.hoursToBond} h after launch` : 'in the last two days';
-  const cv = v.coverage; $('#bw-read').textContent = `read ${ageShort(v.read)} ago · every ten minutes` + (cv && !cv.complete ? ` · still reading back: ${cv.hours} of 168 hours so far${cv.queued ? `, ${cv.queued.toLocaleString('en-US')} launches queued` : '}` : '');
+  const cv = v.coverage; $('#bw-read').textContent = `read ${ageShort(v.read)} ago · every ten minutes` + (cv && !cv.complete ? ` · still reading back: ${cv.hours} of 168 hours so far${cv.queued ? `, ${cv.queued.toLocaleString('en-US')} launches queued` : ''}` : '');
   const list = $('#bw-list'); list.querySelectorAll('.r:not(.h)').forEach(n => n.remove());
   list.insertAdjacentHTML('beforeend', v.rows.slice(0, 60).map(r => `<a class="r" href="/ticket/?a=${r.token}">
     <span class="sy">${esc(r.symbol)}<small>${r.token.slice(0, 6)}…${r.token.slice(-4)}</small></span>

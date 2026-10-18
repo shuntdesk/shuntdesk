@@ -10,7 +10,7 @@ const hex = s => '0x' + [...new TextEncoder().encode(s)].map(b => b.toString(16)
 async function start() {
   let info = null; try { info = await (await fetch('/api/holder?c=' + encodeURIComponent(code))).json(); } catch (e) {}
   if (info?.ok) { $('#hd-trip').textContent = info.trip + ' tokens'; $('#hd-boost').textContent = n0(info.boost) + ' $SHUNT'; $('#hd-min').innerHTML = `<p>Holder: ${n0(info.min)} $SHUNT. Pro: ${n0(info.pro || 5000000)} $SHUNT. Read from the linked wallet again every few hours. Tokens in a pool or still on the way do not count.</p>`; }
-  if (!/^[0-9a-f]{10}$/.test(code)) return;
+  if (!/^n?\d{1,20}x[0-9a-z]{1,10}x[0-9a-f]{12}$/.test(code)) return;
   $('#hd-state').textContent = 'the message you will sign';
   $('#hd-body').innerHTML = '<p>Your wallet will show this exact message. Signing it proves the wallet is yours; nothing is sent and nothing is spent.</p>';
   $('#hd-msg').hidden = false; $('#hd-msg').textContent = info?.message || '';

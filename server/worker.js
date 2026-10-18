@@ -657,8 +657,7 @@ async function telegram(st, env, request, body) {
     if (group) return reply('Holder tools work in a private chat: open @shuntdesk_bot and send /link there.');
     const h = st.holders?.[String(chat)];
     if (cmd === 'holder' && h) return reply(`<b>Holder</b> · <code>${h.w.slice(0, 6)}…${h.w.slice(-4)}</code>\n${Math.round(h.bal).toLocaleString('en-US')} $SHUNT, read ${(m => m < 60 ? Math.round(m) + ' min' : Math.round(m / 60) + ' h')((Date.now() - h.t) / 60000)} ago\n${tierOf(h.bal) ? `Tier: <b>${tierOf(h.bal)}</b>. Holder tools on: /alarm, Tripwire for ${HOLD_TRIP}, /boost, trusted dev alerts${h.bal >= HOLD_PRO ? ', Early Radar' : `. Early Radar opens at ${HOLD_PRO.toLocaleString('en-US')}`}` : `The holder tools open at ${HOLD_MIN.toLocaleString('en-US')} $SHUNT.`}\n\nLink another wallet: /link`);
-    const code = crypto.randomUUID().replace(/-/g, '').slice(0, 10); st.links = st.links || {}; st.links[code] = { chat: String(chat), t: Date.now() };
-    for (const [k, v] of Object.entries(st.links)) if (Date.now() - v.t > 30 * 60000) delete st.links[k];
+    const code = await linkMake(env, chat);
     return reply(`<b>Link a $SHUNT wallet</b>\n\nOpen this page, connect the wallet that holds $SHUNT and sign one message. It moves nothing and costs nothing.\n\n${site}/holder/?c=${code}\n\nThe link works for 30 minutes. Holder tools open at ${HOLD_MIN.toLocaleString('en-US')} $SHUNT.`);
   }
   if (cmd === 'alarm') {
@@ -1419,17 +1418,31 @@ const bondsLoad = async env => bondsMem || (bondsMem = await env.KV.get(BONDS).t
 // a locker: the index cannot tell a sale from a deposit there), or sent to other wallets (EIP-7702 wallets count as
 // wallets). In: bought from the curve, or received. Plus the burns of the token by anyone. Kept five minutes.
 const DEAD = '0x000000000000000000000000000000000000dead', ledgers = new Map();
+const INDEX_OUT = 'the chain index has run out of reads for today; it is back at 00:00 UTC';
+// the keyed index, strict: a refused or failed read throws (out of credits says so), "no records" is an empty list.
+// A failed read must never become zeros on a page: "sold 0" and "could not read" are different things.
+async function bsStrict(env, q) {
+  const r = await fetch(`https://api.blockscout.com/4663/api?${q}&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA, signal: AbortSignal.timeout(15000) });
+  if (r.status === 402 || r.status === 429) throw new Error(INDEX_OUT);
+  const j = await r.json().catch(() => null);
+  if (Array.isArray(j?.result)) return j.result;
+  if (/no (records|transactions|token transfers) found/i.test(j?.message || '')) return [];
+  throw new Error('the chain index did not answer: ' + String(j?.message || j?.error || r.status).slice(0, 60));
+}
 export async function devLedger(env, token) {
   const hit = ledgers.get(token), now = Date.now(); if (hit && now - hit.t < 5 * 60000) return hit.v;
   if (!env.BLOCKSCOUT_API_KEY) return { ok: false, why: 'not available right now' };
-  const bs = async q => { const r = await fetch(`https://api.blockscout.com/4663/api?${q}&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA, signal: AbortSignal.timeout(12000) }); const j = await r.json(); return Array.isArray(j.result) ? j.result : []; };
-  const sh = await handWallet(env, token, true).catch(() => null), dev = String(sh?.ponsBy || sh?.creator || '').toLowerCase() || null;
+  const bs = q => bsStrict(env, q);
+  const dRaw = await contractCall(token, 'd5f39488').catch(() => null), fromToken = dRaw && dRaw.length >= 66 ? '0x' + dRaw.slice(-40) : null;
+  let dev = fromToken && !/^0x0{40}$/.test(fromToken) ? fromToken : null, devFound = dev ? 'token contract' : null;
+  if (!dev) { if (bsLow()) return { ok: false, why: INDEX_OUT }; const sh = await handWallet(env, token, true).catch(() => null); dev = String(sh?.ponsBy || sh?.creator || '').toLowerCase() || null; devFound = sh?.ponsBy ? 'Pons launch log' : 'contract creation'; }
   if (!dev) return { ok: false, why: 'the launcher could not be found' };
   const c = await ponsCurve(token), curve = c?.curve || null;
-  const [txs, burns, dec, bal] = await Promise.all([
+  let txs, burns, dec, bal;
+  try { [txs, burns, dec, bal] = await Promise.all([
     bs(`module=account&action=tokentx&contractaddress=${token}&address=${dev}&sort=asc&page=1&offset=1000`),
     bs(`module=account&action=tokentx&contractaddress=${token}&address=${DEAD}&sort=desc&page=1&offset=200`),
-    contractCall(token, '313ce567'), contractCall(token, '70a08231' + dev.slice(2).padStart(64, '0'))]);
+    contractCall(token, '313ce567'), contractCall(token, '70a08231' + dev.slice(2).padStart(64, '0'))]); } catch (e) { return { ok: false, why: String(e.message || e).slice(0, 120) }; }
   const d = dec ? Number(BigInt(dec)) : 18, amt = v => Number(BigInt(v || '0') * 1000n / 10n ** BigInt(d)) / 1000;
   // the other ends: where it sent tokens, and where tokens came from (a router or pool sends what was bought through it)
   const others = [...new Set(txs.map(t => String(t.from).toLowerCase() === dev ? String(t.to).toLowerCase() : String(t.from).toLowerCase()).filter(a => a !== dev && a !== DEAD && !/^0x0{40}$/.test(a) && a !== curve))];
@@ -1444,7 +1457,7 @@ export async function devLedger(env, token) {
     L[kind] += v; moves.push({ kind, amount: v, to, at: new Date(at).toISOString(), tx: t.hash });
   }
   const burnRows = burns.filter(t => String(t.to).toLowerCase() === DEAD);
-  const v = { ok: true, token, dev, devFound: sh?.ponsBy ? 'Pons launch log' : 'contract creation', curve, ledger: L, holdsNow: bal ? amt(BigInt(bal).toString()) : null,
+  const v = { ok: true, token, dev, devFound, curve, ledger: L, holdsNow: bal ? amt(BigInt(bal).toString()) : null,
     moves: moves.slice(-40).reverse(), partial: txs.length >= 1000,
     burns: { total: burnRows.reduce((s, t) => s + amt(t.value), 0), count: burnRows.length, byDev: burnRows.filter(t => String(t.from).toLowerCase() === dev).length, last: burnRows.slice(0, 12).map(t => ({ amount: amt(t.value), from: String(t.from).toLowerCase(), at: new Date(Number(t.timeStamp) * 1000).toISOString(), tx: t.hash })) },
     note: 'Every transfer of this token in or out of the wallet that launched it, from the chain index. "Into contracts" may be a sale through a router or a deposit: the index cannot tell. Read only. Not advice.' };
@@ -1880,7 +1893,8 @@ const scores = new Map(), PONS_BORN = 26841846;   // the block the Pons V2 facto
 export async function devScore(st, env, w) {
   const hit = scores.get(w), now = Date.now(); if (hit && now - hit.t < 30 * 60000) return hit.v;
   if (!env.BLOCKSCOUT_API_KEY) return { ok: false, why: 'not available right now' };
-  const bs = async q => { const r = await fetch(`https://api.blockscout.com/4663/api?${q}&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA, signal: AbortSignal.timeout(12000) }); const j = await r.json(); return Array.isArray(j.result) ? j.result : []; };
+  const bs = q => bsStrict(env, q);
+  if (bsLow()) return { ok: false, why: INDEX_OUT };
   // the launches, from Shuntdesk's own launch index; it says how far back it reaches while it is still filling
   // read fresh from storage, at most a minute old: the copy in this instance's memory may be one another run is filling
   if (!lindexRead || now - lindexRead.t > 60000) lindexRead = { t: now, v: await env.KV.get(LINDEX).then(s => s ? JSON.parse(s) : { by: {}, floor: 0 }) };
@@ -1893,7 +1907,8 @@ export async function devScore(st, env, w) {
   const read = launches.slice(0, 15);
   const [grad, syms] = await Promise.all([multicall(read.map(x => [x.curve, SEL.grad])), multicall(read.map(x => [x.token, SEL.sym]))]);
   const per = await Promise.all(read.map(async (x, i) => {
-    const txs = await bs(`module=account&action=tokentx&contractaddress=${x.token}&address=${w}&sort=asc&page=1&offset=500`).catch(() => []);
+    const txs = await bs(`module=account&action=tokentx&contractaddress=${x.token}&address=${w}&sort=asc&page=1&offset=500`).catch(() => null);
+    if (txs === null) return { token: x.token, symbol: str(syms[i]) || x.token.slice(0, 8), launched: new Date(x.at).toISOString(), bonded: !!grad[i] && BigInt(grad[i]) === 1n, unread: true, got: 0, sold: 0, sentAway: 0, pooled: 0, burned: 0, dumped: false, dumpedFirstHour: false, burnedMost: false };
     let got = 0, sold = 0, away = 0, burned = 0, soldHour = 0, pooled = 0; const awayTo = {};
     for (const t of txs) {
       const f = String(t.from).toLowerCase(), to = String(t.to).toLowerCase(), v = Number(BigInt(t.value || '0') / 10n ** 12n) / 1e6, at = Number(t.timeStamp) * 1000;
@@ -1906,8 +1921,9 @@ export async function devScore(st, env, w) {
     return { token: x.token, symbol: str(syms[i]) || x.token.slice(0, 8), launched: new Date(x.at).toISOString(), bonded: !!grad[i] && BigInt(grad[i]) === 1n,
       got: Math.round(got), sold: Math.round(sold), sentAway: Math.round(away), pooled: Math.round(pooled), burned: Math.round(burned), dumped: got > 0 && out / got >= 0.5, dumpedFirstHour: got > 0 && soldHour / got >= 0.5, burnedMost: got > 0 && burned / got >= 0.5 };
   }));
+  const unread = per.filter(p => p.unread).length; if (unread && unread === per.length) return { ok: false, why: INDEX_OUT };
   const withTokens = per.filter(p => p.got > 0), dumped = withTokens.filter(p => p.dumped).length;
-  const v = { ok: true, wallet: w, partial: missing > 0, indexFrom: reach ? new Date(reach).toISOString() : null, launched: launches.length, read: per.length, held: withTokens.length, bonded: per.filter(p => p.bonded).length, dumped, dumpedFirstHour: withTokens.filter(p => p.dumpedFirstHour).length,
+  const v = { ok: true, wallet: w, unread, partial: missing > 0 || unread > 0, indexFrom: reach ? new Date(reach).toISOString() : null, launched: launches.length, read: per.length, held: withTokens.length, bonded: per.filter(p => p.bonded).length, dumped, dumpedFirstHour: withTokens.filter(p => p.dumpedFirstHour).length,
     burnedMost: withTokens.filter(p => p.burnedMost).length, score: withTokens.length ? Math.round((1 - dumped / withTokens.length) * 100) : null, launches: per,
     note: 'Every Pons launch by this wallet, from the factory log; the newest 15 read in full. A launch counts as dumped when the wallet sold into the curve or sent to other wallets half or more of what it got; tokens added to a pool or another contract count as liquidity, not as a sale. The score is the share of its launches it did not dump. Read only, from the chain index. Not advice.' };
   // a partial read is kept three minutes, a full one thirty
@@ -2021,20 +2037,27 @@ export function ecrecoverDigest(digestHex, sigHex) {
 }
 // what personal_sign signs: the Ethereum prefix, the length in bytes, the message
 export function personalDigest(msg) { const b = [...new TextEncoder().encode(msg)], pre = [...new TextEncoder().encode('\x19Ethereum Signed Message:\n' + b.length)]; return keccak256([...pre, ...b].map(x => x.toString(16).padStart(2, '0')).join('')); }
+// a link code: the chat and the minute it was made, sealed by an HMAC under the server's secret. It needs no storage, so a
+// restart or a stale read cannot lose it; it lasts 30 minutes and is used once.
+async function linkSeal(env, body) { const k = await crypto.subtle.importKey('raw', new TextEncoder().encode('link:' + (env.TELEGRAM_SECRET || 'shuntdesk')), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']); const s = new Uint8Array(await crypto.subtle.sign('HMAC', k, new TextEncoder().encode(body))); return [...s.slice(0, 6)].map(b => b.toString(16).padStart(2, '0')).join(''); }
+async function linkMake(env, chat) { const body = String(chat).replace('-', 'n') + 'x' + Math.floor(Date.now() / 60000).toString(36); return body + 'x' + await linkSeal(env, body); }
+async function linkOpen(env, code) { const m = String(code).match(/^(n?\d{1,20})x([0-9a-z]{1,10})x([0-9a-f]{12})$/); if (!m) return null; const body = m[1] + 'x' + m[2]; if (await linkSeal(env, body) !== m[3]) return null; const t = parseInt(m[2], 36) * 60000; if (Date.now() - t > 30 * 60000) return null; return { chat: m[1].replace('n', '-'), t }; }
 export const holderMessage = code => `Shuntdesk holder link\nCode: ${code}\n\nSigning this proves you hold this wallet. It moves nothing and costs nothing.`;
 async function shuntBalance(w) { const r = await contractCall(SHUNT, '70a08231' + w.slice(2).padStart(64, '0')).catch(() => null); return r ? Number(BigInt(r) / 10n ** 15n) / 1e3 : null; }
 const isHolder = (st, chat) => { const h = st.holders?.[String(chat)]; return !!h && h.bal >= HOLD_MIN; };
 // a link code from the bot, then the signature from the page: the chat gets the wallet, the wallet's balance decides
 async function holderVerify(st, env, b) {
-  const code = String(b?.code || ''), w = String(b?.address || '').toLowerCase(), L = st.links?.[code];
-  if (!L || Date.now() - L.t > 30 * 60000) return [400, { ok: false, why: 'this link has run out: send /link to the bot again' }];
+  const code = String(b?.code || ''), w = String(b?.address || '').toLowerCase(), L = await linkOpen(env, code);
+  st.linksUsed = st.linksUsed || {};
+  if (!L) return [400, { ok: false, why: 'this link has run out: send /link to the bot again' }];
+  if (st.linksUsed[code]) return [400, { ok: false, why: 'this link has been used: send /link to the bot again' }];
   if (!isAddr(w)) return [400, { ok: false, why: 'no wallet' }];
   const who = ecrecoverDigest(personalDigest(holderMessage(code)), b?.sig);
   if (who !== w) return [400, { ok: false, why: 'the signature is not from that wallet' }];
   const bal = await shuntBalance(w); if (bal === null) return [502, { ok: false, why: 'the chain did not answer, try again' }];
   const H = st.holders = st.holders || {}; const prev = H[L.chat] || {};
   H[L.chat] = { ...prev, w, bal, t: Date.now(), f: prev.f || { clean: true, flags: false, curve: [] } };
-  delete st.links[code];
+  st.linksUsed[code] = Date.now(); for (const [k, v] of Object.entries(st.linksUsed)) if (Date.now() - v > 40 * 60000) delete st.linksUsed[k];
   const ok = bal >= HOLD_MIN, n = v => Math.round(v).toLocaleString('en-US');
   await tgSend(env, L.chat, ok ? `<b>Holder linked</b> · <code>${w.slice(0, 6)}…${w.slice(-4)}</code>\n${n(bal)} $SHUNT\n\nTier: <b>${tierOf(bal)}</b>\n\nYours now:\n• personal alarms in this chat: /alarm\n• trusted devs and known dumpers launching, in this chat\n• Tripwire for up to ${HOLD_TRIP} tokens: /watch\n• follow wallets buying Pons tokens: /follow\n• burn to boost a full scan: /boost\n${bal >= HOLD_PRO ? '• Early Radar: clean Pons launches, minutes old\n' : `• Early Radar opens at ${HOLD_PRO.toLocaleString('en-US')} $SHUNT (Pro)\n`}\nThe balance is read again every few hours.` : `<b>Wallet linked</b> · <code>${w.slice(0, 6)}…${w.slice(-4)}</code>\n${n(bal)} $SHUNT. The holder tools open at ${n(HOLD_MIN)} $SHUNT.`).catch(() => 0);
   return [200, { ok: true, holder: ok, balance: bal, min: HOLD_MIN }];
@@ -2204,7 +2227,7 @@ const REAL = { USDG: USDG, WETH: WETH, NVDA: '0xd0601ce157db5bdc3162bbac2a2c8af5
 async function walletView(st, env, w) {
   if (!env.BLOCKSCOUT_API_KEY) return { ok: false, why: 'not available right now' };
   const j = await (await fetch(`https://api.blockscout.com/4663/api?module=account&action=tokenlist&address=${w}&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA, signal: AbortSignal.timeout(12000) })).json();
-  if (!Array.isArray(j.result)) return j.message === 'No tokens found' ? { ok: true, wallet: w, tokens: [] } : { ok: false, why: 'the explorer did not answer' };
+  if (!Array.isArray(j.result)) return j.message === 'No tokens found' ? { ok: true, wallet: w, tokens: [] } : { ok: false, why: bsLow() || j.error === 'Out of credits' ? INDEX_OUT : 'the explorer did not answer' };
   const B = await bondsLoad(env), eth = await ethUsd().catch(() => 0);
   const tokens = j.result.filter(t => /20/.test(t.type || '') && BigInt(t.balance || '0') > 0n).slice(0, 80).map(t => {
     const a = String(t.contractAddress).toLowerCase(), sym = word(t.symbol, 14), real = REAL[String(t.symbol || '').toUpperCase()];
