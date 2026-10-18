@@ -1695,7 +1695,7 @@ async function bondAlerts(env, B, rows, now) {
   for (const r of rows) {
     if (B.al.n >= 12) break;
     const h = r.h || [], a = h.find(x => now - x[0] <= 65 * 60000) || h[0], z = h.at(-1), pace = a && z && z[0] > a[0] ? (z[1] - a[1]) / ((z[0] - a[0]) / HOUR) : null;
-    const age = (now - r.at) / HOUR, ageTxt = age < 1 ? Math.round(age * 60) + ' min' : age.toFixed(age < 10 ? 1 : 0) + ' h', sym = tgEsc(r.s || r.t0.slice(0, 8));
+    const age = ((r.g || now) - r.at) / HOUR, ageTxt = age < 1 ? Math.round(age * 60) + ' min' : age.toFixed(age < 10 ? 1 : 0) + ' h', sym = tgEsc(r.s || r.t0.slice(0, 8));
     const text = r.g
       ? `<b>Bonded on Pons</b> · ${sym}\n<code>${r.t0}</code>\n\nCompleted its curve ${ageTxt} after launch.\n\nhttps://shuntdesk.com/ticket/?a=${r.t0}\n\n<i>Read from the curve contract. Not advice.</i>`
       : `<b>Close to bonding</b> · ${sym}\n<code>${r.t0}</code>\n\n${r.p.toFixed(1)}% of the curve: ${r.q.toFixed(2)} of ${r.th} ${tgEsc(r.u || 'ETH')}${pace != null ? `\nLast hour ${pace >= 0 ? '+' : ''}${pace.toFixed(1)} points${pace > 0.05 ? `, about ${((100 - r.p) / pace).toFixed(1)} h to bond at that pace` : ''}` : ''}\nLaunched ${ageTxt} ago\n\nhttps://shuntdesk.com/bonds\nhttps://shuntdesk.com/ticket/?a=${r.t0}\n\n<i>Read from the curve contract. A pace is only a pace. Not advice.</i>`;
