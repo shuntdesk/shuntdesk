@@ -15,6 +15,12 @@ async function start() {
   $('#hd-body').innerHTML = '<p>Your wallet will show this exact message. Signing it proves the wallet is yours; nothing is sent and nothing is spent.</p>';
   $('#hd-msg').hidden = false; $('#hd-msg').textContent = info?.message || '';
   $('#hd-go').hidden = false;
+  // no wallet in this browser (Telegram's own browser has none): say so up front, with the link to copy
+  if (!window.ethereum) {
+    $('#hd-out').innerHTML = 'NO WALLET IN THIS BROWSER. COPY THIS LINK AND OPEN IT IN THE BROWSER WHERE YOUR WALLET IS (A WALLET EXTENSION, OR THE BROWSER INSIDE YOUR WALLET APP). <button class="btn ghost" id="hd-copy" type="button" style="margin-top:10px">Copy the link</button>';
+    $('#hd-out').style.color = '#ff7a3d';
+    $('#hd-copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(location.href); $('#hd-copy').textContent = 'Copied'; } catch (e) { $('#hd-copy').textContent = location.href; } });
+  }
 }
 $('#hd-go').addEventListener('click', async () => {
   const eth = window.ethereum, out = $('#hd-out');
