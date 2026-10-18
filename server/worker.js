@@ -1518,9 +1518,12 @@ async function tgSend(env, chat, text) {
 const mailOk = e => /^[^\s@<>"']{1,64}@[^\s@<>"']{1,190}\.[a-z]{2,}$/i.test(e || '');
 async function sendMail(env, to, subject, html) {
   if (!env.RESEND_API_KEY) return 0;
-  const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + env.RESEND_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ from: env.RESEND_FROM || 'Shuntdesk <alerts@shuntdesk.com>', to: [to], subject, html }) });
+  // Resend turns away a request with no User-Agent, and a Worker's fetch sends none of its own
+  const r = await fetch('https://api.resend.com/emails', { method: 'POST', headers: { Authorization: 'Bearer ' + env.RESEND_API_KEY, 'Content-Type': 'application/json', 'User-Agent': 'shuntdesk/1.0 (+https://shuntdesk.com)' }, body: JSON.stringify({ from: env.RESEND_FROM || 'Shuntdesk <alerts@shuntdesk.com>', to: [to], subject, html }) });
+  if (r.status >= 300) mailErr = (await r.text().catch(() => '')).slice(0, 160);
   return r.status;
 }
+let mailErr = '';
 async function tripMail(st, env, b, origin) {
   const email = String(b?.email || '').trim().toLowerCase(), token = String(b?.token || '').toLowerCase();
   if (!mailOk(email) || !isAddr(token)) return [400, { ok: false, why: 'an email address and a token address, please' }];
@@ -1533,7 +1536,7 @@ async function tripMail(st, env, b, origin) {
   M[id] = { email, token, code, on: false, t: Date.now() };
   const link = `${origin}/api/trip/confirm?id=${id}&c=${code}`;
   const s = await sendMail(env, email, 'Confirm your Shuntdesk tripwire', `<p>Someone asked for Tripwire alerts on <b>${token}</b> to be sent to this address.</p><p><a href="${link}">Confirm and start the alerts</a></p><p>If it was not you, ignore this email and nothing will be sent.</p><p style="color:#888">Shuntdesk · shuntdesk.com · not advice</p>`);
-  if (s >= 300) { delete M[id]; return [502, { ok: false, why: 'the email could not be sent right now' }]; }
+  if (!s || s >= 300) { delete M[id]; return [502, { ok: false, why: `the email could not be sent right now (mail service ${s || 'not set up'}${mailErr ? ': ' + mailErr : ''})` }]; }
   return [200, { ok: true, why: 'check your inbox for the confirmation link' }];
 }
 async function tripMailLink(st, env, kind, id, c) {
@@ -1603,13 +1606,15 @@ async function walletIntel(st, env, w) {
     if (!env.ETHERSCAN_API_KEY) return null;
     try {
       const base = `https://api.etherscan.io/v2/api?chainid=${chainid}&module=account&action=txlist&address=${w}&apikey=${env.ETHERSCAN_API_KEY}`;
-      const [first, last] = await Promise.all([fetch(base + '&page=1&offset=1&sort=asc').then(r => r.json()), fetch(base + '&page=1&offset=100&sort=desc').then(r => r.json())]);
-      if (!Array.isArray(first.result) || !first.result.length) return { txs: 0 };
-      const recent = Array.isArray(last.result) ? last.result : [];
-      return { firstSeen: Number(first.result[0].timeStamp) * 1000, txs: recent.length >= 100 ? '100+' : recent.length, made: recent.filter(t => t.contractAddress && String(t.from).toLowerCase() === w).length };
+      // one call at a time, once more after a pause if the free plan's per-second limit answers instead: a refused read
+      // is unknown, never "no transactions"
+      const get = async q => { for (let k = 0; k < 2; k++) { const j = await (await fetch(base + q)).json(); if (Array.isArray(j.result)) return j.result; if (/no transactions/i.test(j.message || '')) return []; await new Promise(z => setTimeout(z, 1100)); } return null; };
+      const first = await get('&page=1&offset=1&sort=asc'); if (first === null) return null; if (!first.length) return { txs: 0 };
+      const recent = await get('&page=1&offset=100&sort=desc'); if (recent === null) return { firstSeen: Number(first[0].timeStamp) * 1000, txs: null, made: null };
+      return { firstSeen: Number(first[0].timeStamp) * 1000, txs: recent.length >= 100 ? '100+' : recent.length, made: recent.filter(t => t.contractAddress && String(t.from).toLowerCase() === w).length };
     } catch (e) { return null; }
   };
-  const [eth, base, ethH, arbH] = await Promise.all([risk('eth'), risk('base'), hist(1), hist(42161)]);
+  const [eth, base, [ethH, arbH]] = await Promise.all([risk('eth'), risk('base'), (async () => [await hist(1), await hist(42161)])()]);
   const tags = [...new Map([...(eth?.tags || []), ...(base?.tags || [])].map(t => [t.key, t])).values()].sort((a, b) => b.severity - a.severity);
   const v = { ok: true, wallet: w, risk: eth || base ? { overall: Math.max(eth?.overall || 0, base?.overall || 0), tags } : null, ethereum: ethH, arbitrum: arbH };
   intelCache.set(w, { t: now, v }); if (intelCache.size > 1000) intelCache.delete(intelCache.keys().next().value);
