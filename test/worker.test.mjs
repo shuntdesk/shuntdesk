@@ -145,3 +145,8 @@ test('burn to boost takes only a burn from the wallet linked to the chat', async
   // someone else's burn, from a chat with no linked wallet: refused before anything is read from the chain
   assert.match(await tg('/boost 0x5804beee8368132d32ad4b8818ce86eba9c4bd37 0x63f00e5caebb3d42e5311cd02c6af2cf5c73d8620f0f9ec7c4e88441f9cc1408'), /link the wallet you burn from first/);
 });
+
+test('the ledger route answers a bad address with 400 and a good one without a server error', async () => {
+  const r1 = await worker.fetch(new Request('http://x/api/ledger?a=nope'), env); assert.equal(r1.status, 400);
+  const r2 = await worker.fetch(new Request('http://x/api/ledger?a=0x0000000000000000000000000000000000000001'), env); assert.notEqual(r2.status, 500);
+});
