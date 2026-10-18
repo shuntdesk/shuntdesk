@@ -40,6 +40,12 @@ const word = (v, n = 14) => String(v ?? '').replace(/[^\w .$%-]/g, '').slice(0, 
 // PoolManager, read with extsload. Pools quoted in WETH or native ETH are converted with the ETH price read the
 // same way from the deepest WETH / USDG pool. The public node comes first; a keyed one stands behind it.
 const RPCS = ['https://rpc.mainnet.chain.robinhood.com'];
+// The keyed Blockscout index gives 100,000 credits a day (about 5,000 calls), reset at midnight UTC. Every answer says
+// how many are left; the background jobs stop leaning on it below a reserve, so what people open still answers.
+export const bsCredits = { left: null, t: 0 };
+const BS_RESERVE = 30000;
+const bsLow = () => bsCredits.left !== null && bsCredits.left < BS_RESERVE && new Date(bsCredits.t).getUTCDate() === new Date().getUTCDate();
+{ const f0 = globalThis.fetch; globalThis.fetch = async (u, o) => { const r = await f0(u, o); if (String(u?.url || u).includes('api.blockscout.com')) { const h = r.headers.get('x-credits-remaining'); if (h != null && h !== '') { bsCredits.left = Number(h); bsCredits.t = Date.now(); } else if (r.status === 402 || r.status === 429) { bsCredits.left = 0; bsCredits.t = Date.now(); } } return r; }; }
 const WETH = '0x0bd7d308f8e1639fab988df18a8011f41eacad73', USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168', ETH0 = '0x0000000000000000000000000000000000000000';
 const ETH_REF = { pool: '0x52e65b17fb6e5ba00ed806f37afcd2daa50271ca', q: 'usd', base0: true, d0: 18, d1: 6 };   // WETH / USDG, Uniswap v3
 async function rpc(method, params = []) {
@@ -1045,7 +1051,7 @@ async function radarTick(st, env) {
   if (!todo.length) return;
   const io = { rpc, wallet: (w, c) => handWallet(env, w, c), launches: async ws => (await handLaunches(env, ws)).launches || {}, pools: async () => ({}) };
   await Promise.all(todo.map(async r => {
-    const [x, gp, h, sc] = await Promise.all([xray(st, env, r.a).catch(() => null), goplus(env, r.a).catch(() => null), sameHand(r.a, io).catch(() => null), siteCheck(st, env, r.a, [], { summary: false }).catch(() => null)]);
+    const [x, gp, h, sc] = await Promise.all([xray(st, env, r.a).catch(() => null), goplus(env, r.a).catch(() => null), Promise.resolve(null), siteCheck(st, env, r.a, [], { summary: false }).catch(() => null)]);
     r.sc = sc?.ok ? { f: sc.flags.filter(f => f.level !== 'low').map(f => f.text.slice(0, 80)), w: sc.website ? 1 : 0 } : null;
     r.x = x?.ok ? { h: [...new Set(x.powers.filter(p => p.level === 'high').map(p => p.kind))], m: [...new Set(x.powers.filter(p => p.level === 'medium').map(p => p.kind))], o: x.owner ? (x.owner.live ? 1 : 0) : x.roles ? 2 : -1, p: x.proxy ? 1 : 0, n: x.functions } : null;
     const sr = gp ? serverRead(gp) : null;
@@ -1456,6 +1462,7 @@ async function wideLogs(env, topic0, from, to) {
     await new Promise(r => setTimeout(r, 1200));
   }
   if (!env?.BLOCKSCOUT_API_KEY) throw new Error(why);
+  if (bsLow()) throw new Error(why + ' · the index is kept for what people open today');
   const out = [];
   for (let page = 1; page <= 10; page++) {
     const r = await fetch(`https://api.blockscout.com/4663/api?module=logs&action=getLogs&address=${PONS}&topic0=${topic0}&fromBlock=${from}&toBlock=${to}&page=${page}&offset=1000&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA });
@@ -2100,7 +2107,8 @@ async function earlyRead(st, env, x, mayScore) {
   if (!lindexRead || Date.now() - lindexRead.t > 60000) lindexRead = { t: Date.now(), v: await env.KV.get(LINDEX).then(s => s ? JSON.parse(s) : { by: {} }) };
   const prior = (lindexRead.v.by[x.by.slice(2)] || []).filter(([tok]) => tok !== x.t.slice(2)).length;
   const R = st.devRec = st.devRec || {}; let rec = R[x.by] && Date.now() - R[x.by].t < 6 * HOUR ? R[x.by] : null, scored = false;
-  if (!rec && prior >= 2 && mayScore) { const d = await devScore(st, env, x.by).catch(() => null); if (d?.ok) { rec = R[x.by] = { t: Date.now(), score: d.score, launched: d.launched, held: d.held, dumped: d.dumped, dfh: d.dumpedFirstHour, bonded: d.bonded }; scored = true; const ks = Object.keys(R); if (ks.length > 500) delete R[ks[0]]; } }
+  // a Dev Score reads the index fifteen times: one every ten minutes at most, and none when the index runs low
+  if (!rec && prior >= 2 && mayScore && !bsLow() && Date.now() - (st.devRecT || 0) > 10 * 60000) { st.devRecT = Date.now(); const d = await devScore(st, env, x.by).catch(() => null); if (d?.ok) { rec = R[x.by] = { t: Date.now(), score: d.score, launched: d.launched, held: d.held, dumped: d.dumped, dfh: d.dumpedFirstHour, bonded: d.bonded }; scored = true; const ks = Object.keys(R); if (ks.length > 500) delete R[ks[0]]; } }
   const powers = (xr?.powers || []).filter(p => p.level === 'high').map(p => p.what), flags = [...powers, ...(sr?.red || [])];
   const who = rec ? `${rec.launched} Pons launches, ${rec.dumped} dumped${rec.dfh ? ` (${rec.dfh} in the first hour)` : ''}, ${rec.bonded} bonded · Dev Score ${rec.score ?? '—'}` : prior ? `${prior} Pons launch${prior > 1 ? 'es' : ''} before this one` : 'its first Pons launch on record';
   const link = `https://shuntdesk.com/ticket/?a=${x.t}`;
@@ -2311,7 +2319,7 @@ const api = {
       if (url.pathname === '/api/health') {
         const st0 = await load(env).catch(() => null);
         const T = '0x39dbed3a2bd333467115de45665cc57f813c4571', probe = async (u, h) => { try { const r = await fetch(u, { headers: { Accept: 'application/json', ...UA, ...h } }); return r.status; } catch (e) { return 'unreachable'; } };
-        return json({ dexscreener: await probe(DS + '/tokens/v1/robinhood/' + T), dexscreenerNoAgent: await (async () => { try { return (await fetch(DS + '/tokens/v1/robinhood/' + T)).status; } catch (e) { return 'unreachable'; } })(), goplus: await probe('https://api.gopluslabs.io/api/v1/token_security/4663?contract_addresses=' + T), geckoterminal: await probe('https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/' + T), yahoo: await probe('https://query1.finance.yahoo.com/v8/finance/chart/TSLA?interval=1m&range=1d'), looks: await looksLoad(env).then(L => ({ logged: L.rows.length, judged: L.rows.filter(r => r.p1 !== undefined).length, err: L.err || null })).catch(e => String(e.message || e)), handLast: st0?.handLast || null, codexToday: st0?.codex || null, rpc: await (async () => { try { return (await fetch('https://rpc.mainnet.chain.robinhood.com', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' })).status; } catch (e) { return 'unreachable'; } })(), chain: await (async () => { const o = { nodes: RPCS.length }; for (const [k, fn] of [['ethUsd', () => poolRatio(ETH_REF)], ['decimals', () => rpc('eth_call', [{ to: T, data: '0x313ce567' }, 'latest'])]]) { try { o[k] = String(await fn()).slice(0, 12); } catch (e) { o[k] = 'ERR ' + String(e.message || e).slice(0, 60); } } return o; })(), keys: { openrouter: !!env.OPENROUTER_API_KEY, goplus: !!env.GOPLUS_APP_KEY, codex: !!env.CODEX_API_KEY, coingecko: !!env.COINGECKO_API_KEY } });
+        return json({ blockscoutCredits: { ...bsCredits, low: bsLow() }, dexscreener: await probe(DS + '/tokens/v1/robinhood/' + T), dexscreenerNoAgent: await (async () => { try { return (await fetch(DS + '/tokens/v1/robinhood/' + T)).status; } catch (e) { return 'unreachable'; } })(), goplus: await probe('https://api.gopluslabs.io/api/v1/token_security/4663?contract_addresses=' + T), geckoterminal: await probe('https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/' + T), yahoo: await probe('https://query1.finance.yahoo.com/v8/finance/chart/TSLA?interval=1m&range=1d'), looks: await looksLoad(env).then(L => ({ logged: L.rows.length, judged: L.rows.filter(r => r.p1 !== undefined).length, err: L.err || null })).catch(e => String(e.message || e)), handLast: st0?.handLast || null, codexToday: st0?.codex || null, rpc: await (async () => { try { return (await fetch('https://rpc.mainnet.chain.robinhood.com', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' })).status; } catch (e) { return 'unreachable'; } })(), chain: await (async () => { const o = { nodes: RPCS.length }; for (const [k, fn] of [['ethUsd', () => poolRatio(ETH_REF)], ['decimals', () => rpc('eth_call', [{ to: T, data: '0x313ce567' }, 'latest'])]]) { try { o[k] = String(await fn()).slice(0, 12); } catch (e) { o[k] = 'ERR ' + String(e.message || e).slice(0, 60); } } return o; })(), keys: { openrouter: !!env.OPENROUTER_API_KEY, goplus: !!env.GOPLUS_APP_KEY, codex: !!env.CODEX_API_KEY, coingecko: !!env.COINGECKO_API_KEY } });
       }
       if (url.pathname === '/api/candles') { const a = (url.searchParams.get('a') || '').toLowerCase(); return isAddr(a) ? json(await candles(env, a)) : json({ rows: [], res: 1 }, 400); }
       if (url.pathname === '/api/pools') return json(await pools(env, url.searchParams.get('kind') === 'new' ? 'new' : 'trending'));
