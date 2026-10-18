@@ -624,7 +624,7 @@ async function telegram(st, env, request, body) {
   if (!allow(st, 'tg:' + chat, 'tg', 40)) return reply('Slow down a little: 40 questions an hour per chat.');
   const site = 'https://shuntdesk.com', footer = '\n\n<i>A rule-based reading of public data. It can be wrong. Not advice.</i>';
   if (cmd === 'start' || cmd === 'help') return reply(`<b>Shuntdesk</b> · every token rides the line\n\nAsk anything about Shuntdesk, a token, the crew desk or what just launched. Or use:\n\n/check <code>0x…</code> what Shuntdesk knows about a Robinhood Chain token\n/scan <code>0x…</code> Agent Scan: what the contract lets its owner do\n/ledger <code>0x…</code> Dev Ledger: what the launcher did with it\n/devscore <code>0x…</code> Dev Score: every launch by that dev\n/report <code>0x…</code> report a token; the bot reads it\n/spotters who reported what lost half\n/bondgame today's Will it bond?\n/proof everything about $SHUNT you can check\n/alarms on launch alarms in your group (admins)\n
-<b>For $SHUNT holders</b>\n/link connect your wallet\n/alarm your own alarms\n/boost burn $SHUNT to boost a full scan\n/watch <code>0x…</code> Tripwire: a private alarm when the owner or the big wallets move\n/daily today's daily shift in the Yard\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
+<b>For $SHUNT holders</b>\n/link connect your wallet\n/alarm your own alarms\n/follow <code>0x…</code> hear when a wallet buys a Pons token\n/boost burn $SHUNT to boost a full scan\n/watch <code>0x…</code> Tripwire: a private alarm when the owner or the big wallets move\n/daily today's daily shift in the Yard\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
   // anything that is not a command, or a token address with a question around it, goes to the conductor
   const question = clean.replace(/^\/\w+\s*/, '').replace(/0x[0-9a-fA-F]{40}/, '').trim();
   if (!cmd && (!found || question.length > 3)) return reply(await tgAsk(st, env, chat, clean, found ? found[0].toLowerCase() : null));
@@ -666,6 +666,18 @@ async function telegram(st, env, request, body) {
     else if (/^dev\b/.test(arg)) f.dev = !/\boff\b/.test(arg);
     else if (/^off\b/.test(arg)) { f.clean = false; f.flags = false; f.curve = []; f.early = false; f.dev = false; }
     return reply(`<b>Your alarms</b>\n\n• clean reads of new tokens: <b>${f.clean ? 'on' : 'off'}</b>\n• new tokens with a red flag: <b>${f.flags ? 'on' : 'off'}</b>\n• Pons curves crossing: <b>${f.curve.length ? f.curve.map(v => v + '%').join(', ') : 'off'}</b>\n• trusted devs and known dumpers launching: <b>${f.dev !== false ? 'on' : 'off'}</b>\n• Early Radar, clean launches minutes old (Pro, ${HOLD_PRO.toLocaleString('en-US')} $SHUNT): <b>${h.bal >= HOLD_PRO ? (f.early !== false ? 'on' : 'off') : 'locked'}</b>\n\nChange: /alarm clean on|off · /alarm flags on|off · /alarm curve 70 · /alarm curve off · /alarm dev on|off · /alarm early on|off · /alarm off\nUp to 40 a day, in this chat.`);
+  }
+  if (cmd === 'follow' || cmd === 'unfollow' || cmd === 'following') {
+    if (group) return reply('Follow works in a private chat with @shuntdesk_bot.');
+    if (!isHolder(st, chat)) return reply(`Following wallets is for $SHUNT holders (${HOLD_MIN.toLocaleString('en-US')} or more). Send /link to connect your wallet.`);
+    const h = st.holders[String(chat)], fw = h.fw = h.fw || {}, cap = followCap(h.bal);
+    if (cmd === 'following') { const ks = Object.keys(fw); return reply(ks.length ? `<b>Following</b> · ${ks.length} of ${cap}\n\n${ks.map(w => `• ${tgEsc(fw[w] || '')} <code>${w}</code>`).join('\n')}\n\n/unfollow <code>0x…</code> to stop` : 'Not following any wallet. /follow <code>0x…</code> name'); }
+    if (!found) return reply(`Send /${cmd} followed by a wallet: /${cmd} <code>0x…</code>${cmd === 'follow' ? ' and a name if you like' : ''}`);
+    const w = found[0].toLowerCase();
+    if (cmd === 'unfollow') { if (!(w in fw)) return reply('Not following that wallet.'); delete fw[w]; return reply('Stopped following it.'); }
+    if (!(w in fw) && Object.keys(fw).length >= cap) return reply(`${cap} wallets is the most for your tier; /unfollow one first.`);
+    fw[w] = clean.replace(/^\/\w+(@\w+)?\s*/, '').replace(/0x[0-9a-fA-F]{40}/, '').trim().slice(0, 24);
+    return reply(`<b>Following</b> ${tgEsc(fw[w] || '')} <code>${w}</code>\n\nYou will hear from me when it buys a Pons token, with a short read of the token. Checked every three minutes. /following to see your list.`);
   }
   if (cmd === 'boost') {
     const tk = (clean.match(/0x[0-9a-fA-F]{40}(?![0-9a-fA-F])/) || [])[0], tx = (clean.match(/0x[0-9a-fA-F]{64}/) || [])[0];
@@ -2017,15 +2029,15 @@ async function holderVerify(st, env, b) {
   H[L.chat] = { ...prev, w, bal, t: Date.now(), f: prev.f || { clean: true, flags: false, curve: [] } };
   delete st.links[code];
   const ok = bal >= HOLD_MIN, n = v => Math.round(v).toLocaleString('en-US');
-  await tgSend(env, L.chat, ok ? `<b>Holder linked</b> · <code>${w.slice(0, 6)}…${w.slice(-4)}</code>\n${n(bal)} $SHUNT\n\nTier: <b>${tierOf(bal)}</b>\n\nYours now:\n• personal alarms in this chat: /alarm\n• trusted devs and known dumpers launching, in this chat\n• Tripwire for up to ${HOLD_TRIP} tokens: /watch\n• burn to boost a full scan: /boost\n${bal >= HOLD_PRO ? '• Early Radar: clean Pons launches, minutes old\n' : `• Early Radar opens at ${HOLD_PRO.toLocaleString('en-US')} $SHUNT (Pro)\n`}\nThe balance is read again every few hours.` : `<b>Wallet linked</b> · <code>${w.slice(0, 6)}…${w.slice(-4)}</code>\n${n(bal)} $SHUNT. The holder tools open at ${n(HOLD_MIN)} $SHUNT.`).catch(() => 0);
+  await tgSend(env, L.chat, ok ? `<b>Holder linked</b> · <code>${w.slice(0, 6)}…${w.slice(-4)}</code>\n${n(bal)} $SHUNT\n\nTier: <b>${tierOf(bal)}</b>\n\nYours now:\n• personal alarms in this chat: /alarm\n• trusted devs and known dumpers launching, in this chat\n• Tripwire for up to ${HOLD_TRIP} tokens: /watch\n• follow wallets buying Pons tokens: /follow\n• burn to boost a full scan: /boost\n${bal >= HOLD_PRO ? '• Early Radar: clean Pons launches, minutes old\n' : `• Early Radar opens at ${HOLD_PRO.toLocaleString('en-US')} $SHUNT (Pro)\n`}\nThe balance is read again every few hours.` : `<b>Wallet linked</b> · <code>${w.slice(0, 6)}…${w.slice(-4)}</code>\n${n(bal)} $SHUNT. The holder tools open at ${n(HOLD_MIN)} $SHUNT.`).catch(() => 0);
   return [200, { ok: true, holder: ok, balance: bal, min: HOLD_MIN }];
 }
 // balances are read again, five chats a tick, every six hours
 async function holderRefresh(st) { const now = Date.now(); for (const h of Object.values(st.holders || {}).filter(h => now - h.t > 6 * HOUR).slice(0, 5)) { const b = await shuntBalance(h.w); if (b !== null) { h.bal = b; h.t = now; } } }
 // a holder's own alarms: queued for its chat, at most forty a day
-function holderSend(st, chat, text) { const h = st.holders[chat], d = new Date().toISOString().slice(0, 10); h.n = h.d === d ? h.n || 0 : 0; h.d = d; if (h.n >= 40) return; h.n++; tgQueue(st, [chat], text); }
+function holderSend(st, chat, text, kind = 'other') { const h = st.holders[chat], d = new Date().toISOString().slice(0, 10); h.n = h.d === d ? h.n || 0 : 0; h.d = d; if (h.n >= 40) return; h.n++; h.wk = h.wk || {}; h.wk[kind] = (h.wk[kind] || 0) + 1; tgQueue(st, [chat], text); }
 function holderLaunch(st, r, fl, redText, cleanText) {
-  for (const [chat, h] of Object.entries(st.holders || {})) { if (h.bal < HOLD_MIN || !h.f) continue; if (fl.length && h.f.flags && redText) holderSend(st, chat, redText); else if (!fl.length && h.f.clean && cleanText) holderSend(st, chat, cleanText); }
+  for (const [chat, h] of Object.entries(st.holders || {})) { if (h.bal < HOLD_MIN || !h.f) continue; if (fl.length && h.f.flags && redText) holderSend(st, chat, redText, 'flag'); else if (!fl.length && h.f.clean && cleanText) holderSend(st, chat, cleanText, 'clean'); }
 }
 // curves crossing a holder's own marks, read from Bond Watch's last two reads of each curve
 async function holderCurves(st, env) {
@@ -2034,7 +2046,7 @@ async function holderCurves(st, env) {
   for (const r of B.rows.filter(r => !r.g && (r.h || []).length >= 2)) {
     const a = r.h.at(-2)[1], z = r.h.at(-1)[1];
     for (const [chat, h] of hs) for (const m of h.f.curve) if (a < m && z >= m) { const k = r.t0 + ':' + m; h.sent = h.sent || {}; if (h.sent[k]) continue; h.sent[k] = 1;
-      holderSend(st, chat, `<b>Your alarm · curve past ${m}%</b> · ${tgEsc(r.s || r.t0.slice(0, 8))}\n<code>${r.t0}</code>\n\n${z.toFixed(1)}% of the curve: ${(r.q || 0).toFixed(2)} of ${r.th} ${tgEsc(r.u || 'ETH')}\n\nhttps://shuntdesk.com/ticket/?a=${r.t0}\n<i>Read from the curve contract. Not advice.</i>`); }
+      holderSend(st, chat, `<b>Your alarm · curve past ${m}%</b> · ${tgEsc(r.s || r.t0.slice(0, 8))}\n<code>${r.t0}</code>\n\n${z.toFixed(1)}% of the curve: ${(r.q || 0).toFixed(2)} of ${r.th} ${tgEsc(r.u || 'ETH')}\n\nhttps://shuntdesk.com/ticket/?a=${r.t0}\n<i>Read from the curve contract. Not advice.</i>`, 'curve'); }
     for (const [, h] of hs) if (h.sent && Object.keys(h.sent).length > 400) h.sent = {};
   }
 }
@@ -2100,10 +2112,59 @@ async function earlyRead(st, env, x, mayScore) {
   st.earlyLast = [{ t: x.t, sym: str(sy) || null, min: mins, flags: flags.length, read: !!xr?.ok, sell: !!sr, curve: c ? Math.round(c.progress * 10) / 10 : null, prior, rec: rec ? { score: rec.score, launched: rec.launched, dumped: rec.dumped } : null, early: !flags.length && !!xr?.ok && !!c && c.progress >= 3, dev: trusted ? 'trusted' : dumper ? 'dumper' : null }, ...(st.earlyLast || [])].slice(0, 20);
   for (const [chat, h] of Object.entries(st.holders || {})) {
     // an early read goes out only for a launch with nothing found and buyers already in: a hundred launch an hour
-    if (h.bal >= HOLD_PRO && h.f?.early !== false && !flags.length && xr?.ok && c && c.progress >= 3) holderSend(st, chat, early);
-    if (devText && h.bal >= HOLD_MIN && h.f?.dev !== false) holderSend(st, chat, devText);
+    if (h.bal >= HOLD_PRO && h.f?.early !== false && !flags.length && xr?.ok && c && c.progress >= 3) holderSend(st, chat, early, 'early');
+    if (devText && h.bal >= HOLD_MIN && h.f?.dev !== false) holderSend(st, chat, devText, 'dev');
   }
   return scored;
+}
+
+// ---------- Follow wallet (holders): a followed wallet buying a Pons token is said in the follower's chat ----------
+// Every three minutes the transfers into all followed wallets since the last look are read in one query (one topic,
+// the receivers). A transfer of a Pons token (it answers curve()) that came from its curve or from a contract (a router)
+// is a buy. One message a wallet and token every six hours, with a short read of the token.
+const followCap = bal => bal >= HOLD_PRO ? 25 : 10;
+const curveOf = new Map();
+export async function followTick(st, env) {
+  const fol = Object.entries(st.holders || {}).filter(([, h]) => h.bal >= HOLD_MIN && h.fw && Object.keys(h.fw).length); if (!fol.length) return;
+  const F = st.follow = st.follow || { block: 0, t: 0 }, now = Date.now(); if (now - F.t < 3 * 60000 - 5000) return; F.t = now;
+  const head = parseInt(await rpc('eth_blockNumber'), 16), from = Math.max(F.block ? F.block + 1 : head - 1800, head - 90000); if (from > head) return;
+  const to = Math.min(head, from + 29999);
+  const ws = [...new Set(fol.flatMap(([, h]) => Object.keys(h.fw)))].slice(0, 200);
+  const logs = await rpc('eth_getLogs', [{ topics: ['0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef', null, ws.map(w => '0x' + w.slice(2).padStart(64, '0'))], fromBlock: hex(from), toBlock: hex(to) }]);   // the node takes 30,000 blocks at most without an address
+  F.block = to;
+  const seen = F.seen = F.seen || {}; for (const k in seen) if (now - seen[k] > 6 * HOUR) delete seen[k];
+  const codes = {}; let fresh = 0;
+  for (const l of (logs || []).filter(l => l.topics.length === 3).slice(0, 60)) {
+    const tok = l.address.toLowerCase(), src = wordAddr(l.topics[1]), to = wordAddr(l.topics[2]), key = to + ':' + tok;
+    if (seen[key]) continue;
+    if (!curveOf.has(tok)) { const c = await contractCall(tok, SEL.curve).catch(() => null); curveOf.set(tok, c && c.length >= 66 ? '0x' + c.slice(-40) : null); if (curveOf.size > 3000) curveOf.delete(curveOf.keys().next().value); }
+    const curve = curveOf.get(tok); if (!curve || /^0x0{40}$/.test(curve)) continue;   // not a Pons token
+    if (src !== curve) { if (codes[src] === undefined) codes[src] = await rpc('eth_getCode', [src, 'latest']).catch(() => '0x'); if (!codes[src] || codes[src] === '0x' || isDelegated(codes[src])) continue; }   // from a wallet: a gift, not a buy
+    if (++fresh > 5) { F.block = parseInt(l.blockNumber, 16) - 1; break; }   // five buys read a run; the rest wait for the next
+    seen[key] = now;
+    const amt = Number(BigInt(l.data) / 10n ** 15n) / 1e3, [c, sy, xr] = await Promise.all([ponsCurve(tok).catch(() => null), contractCall(tok, SEL.sym).catch(() => null), xray(st, env, tok).catch(() => null)]);
+    const sym = tgEsc(str(sy) ? '$' + str(sy) : tok.slice(0, 8)), powers = (xr?.powers || []).filter(p => p.level === 'high').map(p => p.what);
+    for (const [chat, h] of fol) { const lab = h.fw[to]; if (lab === undefined) continue;
+      holderSend(st, chat, `<b>Followed wallet bought</b> · ${sym}\n<code>${tok}</code>\n\n${tgEsc(lab || to.slice(0, 6) + '…' + to.slice(-4))} got ${Math.round(amt).toLocaleString('en-US')} ${sym}\n${c ? (c.graduated ? 'Bonded on Pons' : `Curve ${c.progress.toFixed(1)}%: ${c.raised.toFixed(3)} of ${c.need} ETH`) + '\n' : ''}${xr?.ok ? (powers.length ? 'Contract powers: ' + tgEsc(powers.join(', ')) : 'No function that mints, pauses, blocks wallets or changes the tax') : ''}\n\nhttps://shuntdesk.com/ticket/?a=${tok}\nhttps://robinhoodchain.blockscout.com/tx/${l.transactionHash}\n<i>Following a wallet is not advice.</i>`, 'follow'); }
+  }
+}
+
+// ---------- the weekly recap (holders), Monday 02:00 UTC: their week in their own chat ----------
+async function holderWeekly(st, env) {
+  const now = new Date(), wk = now.toISOString().slice(0, 10);
+  if (now.getUTCDay() !== 1 || now.getUTCHours() < 2) return;
+  if (st.hwDay !== wk) { st.hwDay = wk; st.hwSent = {}; }   // ten holders a run, until every one has had theirs
+  const W = st.hwData?.d === wk ? st.hwData.v : (st.hwData = { d: wk, v: await weeklyData(st, env).catch(() => null) }).v, n = v => Math.round(v || 0).toLocaleString('en-US');
+  const names = { clean: 'clean reads', flag: 'red flags', curve: 'curve marks', early: 'early reads', dev: 'dev alerts', follow: 'followed wallet buys', other: 'other' };
+  const due = Object.entries(st.holders || {}).filter(([c, h]) => h.bal >= HOLD_MIN && !st.hwSent[c]).slice(0, 10); if (!due.length) return;
+  for (const [chat, h] of due) {
+    st.hwSent[chat] = 1;
+    const got = Object.entries(h.wk || {}).filter(([, v]) => v).map(([k, v]) => `${v} ${names[k] || k}`).join(' · ') || 'none';
+    const mine = Object.entries(st.trip || {}).filter(([, w]) => w.chats.includes(chat)).slice(0, 10);
+    const rows = await Promise.all(mine.map(async ([a, w]) => { const c = await ponsCurve(a).catch(() => null); return `• ${tgEsc(w.sym ? '$' + w.sym : a.slice(0, 8))}${c ? (c.graduated ? ' · bonded' : ` · curve ${c.progress.toFixed(0)}%`) : ''}`; }));
+    const text = `<b>Your week on the line</b> · ${tierOf(h.bal)}\n\nAlerts you got: ${got}\n${Object.keys(h.fw || {}).length ? `Wallets you follow: ${Object.keys(h.fw).length}\n` : ''}${rows.length ? `\nOn your Tripwire:\n${rows.join('\n')}\n` : ''}${W?.pons ? `\nPons this week: ${n(W.pons.launched)} launches, ${n(W.pons.bonded)} bonded\n` : ''}${W?.radar ? `The radar caught ${W.radar.caught} of ${W.radar.flagged} flagged, and missed ${W.radar.missed}\n` : ''}${W?.shunt ? `$SHUNT burned this week: ${n(W.shunt.burnedWeek)}\n` : ''}\nYour balance: ${n(h.bal)} $SHUNT\n\nshuntdesk.com/weekly`;
+    tgQueue(st, [chat], text); h.wk = {};
+  }
 }
 
 // ---------- the daily line, posted to the community group at 13:00 UTC ----------
@@ -2355,6 +2416,8 @@ const api = {
     try { await holderCurves(st, env); } catch (e) {}
     try { await earlyFeed(st, env); } catch (e) {}
     try { await earlyTick(st, env); } catch (e) {}
+    try { await followTick(st, env); } catch (e) {}
+    try { await holderWeekly(st, env); } catch (e) {}
     try { await tgFlush(st, env); } catch (e) {}
     try { await handAlert(st, env); } catch (e) { st.handLast = { t: Date.now(), why: String(e.message || e).slice(0, 120) }; }
     try { await tripTick(st, env); } catch (e) { st.tripLast = { t: Date.now(), why: String(e.message || e).slice(0, 120) }; }
