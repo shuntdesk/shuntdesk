@@ -32,6 +32,7 @@ async function paint() {
   $('#pf-cv').innerHTML = cv ? `<p><b>${cv.graduated ? 'Bonded' : (Math.round(cv.progress * 10) / 10) + '%'}</b>${cv.graduated ? '' : ` to bond: ${cv.raised?.toFixed(3)} of ${cv.need} ETH`}.</p>${cv.holders ? `<p>${n0(cv.holders)} holders.</p>` : ''}<p><a href="https://ponsfamily.com/launchpad/${CA}" target="_blank" rel="noopener">The token on Pons ↗</a></p>` : 'Could not read the curve right now.';
   const r = v.record, held = s => s.n ? `${s.right} of ${s.n}` : 'none checked yet';
   $('#pf-rec').innerHTML = `<p><b>${n0(r.calls)}</b> calls on record, each priced an hour and a day later.</p><p>CLEAN calls up a day later: ${held(r.clean)}.<br>DANGER calls down a day later: ${held(r.danger)}.</p><p><a href="/report/">The daily report →</a></p>`;
+  $('#pf-pool').innerHTML = (v.pools || []).length ? v.pools.map(p => `<p><b>${esc(p.dex)} · ${esc(p.pair)}</b>, fee ${esc(p.fee)}, ${esc(p.range)}, no hook.</p><p>Added by the dev wallet: ${p.eth} ETH and ${n0(p.shunt)} SHUNT, at ${n0(p.startPrice)} SHUNT to 1 ETH, the curve's price at the time.</p><p><a href="${BS}/tx/${p.tx}" target="_blank" rel="noopener">The transaction ↗</a></p>`).join('') : '<p>No pool added yet.</p>';
   $('#pf-links').innerHTML = `<a href="${v.links.source}" target="_blank" rel="noopener">The source code, open on GitHub ↗</a><a href="${v.links.data}" target="_blank" rel="noopener">Every call, as open data ↗</a><a href="/lab/">Every rule against what happened →</a><a href="/caught/">What the radar caught, and missed →</a>`;
 }
 paint();

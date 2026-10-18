@@ -1743,6 +1743,8 @@ async function bondAlerts(env, B, rows, now) {
 }
 // ================= the comeback pack: proof, launch alarms, reports, dev score, caught, will it bond, badge, weekly =================
 const SHUNT = '0x7e517e779b85895894becad80c9bb69b4cb1c4d6';
+// the liquidity the dev wallet added, each one checked on chain when it was added (pool, price, range, amounts)
+const SHUNT_POOLS = [{ dex: 'Uniswap v4', pair: 'ETH / SHUNT', fee: '0.9%', hook: null, range: 'full range', poolId: '0x4e3eb80c7424d8b0a31e601e605033c6c9b207f652acd166d434ac08a2e7cccf', position: 3887075, eth: 0.009917, shunt: 3065658.741, startPrice: 309207317, at: '2026-10-18T18:04:13Z', tx: '0x84878f9a6a216c03277580d13880f733259f090d29caa4218d7aa9783f760390' }];
 const ago = ms => { const m = ms / 60000; return m < 60 ? Math.max(1, Math.round(m)) + ' min' : m < 1440 ? (m / 60).toFixed(m < 600 ? 1 : 0) + ' h' : Math.round(m / 1440) + ' d'; };
 // what the radar found on one logged token, in words: contract powers, the sell test, and the launch holdings the
 // Verdict Lab shows to matter (bundles, snipers, insiders over 5%)
@@ -2131,7 +2133,7 @@ const api = {
       if (url.pathname === '/api/proof') { const [dl, x, L] = await Promise.all([devLedger(env, SHUNT).catch(() => null), xray(st, env, SHUNT).catch(() => null), launch(env, SHUNT).catch(() => null)]);
         const rec = record(st); return json({ ok: true, token: SHUNT, ledger: dl?.ok ? dl : null, contract: x?.ok ? { functions: x.functions, named: x.named, unknown: x.unknown, proxy: !!x.proxy, owner: x.owner, powers: x.powers.filter(p => p.level === 'high').map(p => p.what), verified: x.source?.verified ?? null } : null,
           curve: L?.launchpad === 'pons' ? { progress: L.progress, graduated: L.graduated, raised: L.raised, need: L.need, holders: L.holders ?? null } : null,
-          record: { calls: st.verdicts.length, clean: rec.after24h.CLEAN, danger: rec.after24h.DANGER }, links: { source: 'https://github.com/shuntdesk/shuntdesk', data: 'https://huggingface.co/datasets/shuntdesk/verdicts', x: 'https://x.com/shuntdesk', telegram: 'https://t.me/shuntdesk' } }); }
+          record: { calls: st.verdicts.length, clean: rec.after24h.CLEAN, danger: rec.after24h.DANGER }, pools: SHUNT_POOLS, links: { source: 'https://github.com/shuntdesk/shuntdesk', data: 'https://huggingface.co/datasets/shuntdesk/verdicts', x: 'https://x.com/shuntdesk', telegram: 'https://t.me/shuntdesk' } }); }
       if (url.pathname === '/api/caught') return json(await caughtView(env));
       if (url.pathname === '/api/weekly') return json(await weeklyData(st, env));
       if (url.pathname === '/api/devscore') { const w = (url.searchParams.get('w') || '').toLowerCase(); if (!isAddr(w)) return json({ ok: false, why: 'bad address' }, 400); if (!scores.has(w) && !allow(st, ip, 'devscore', 30)) return json({ ok: false, why: 'slow down: 30 an hour' }, 429); return json(await devScore(st, env, w)); }
