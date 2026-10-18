@@ -1409,6 +1409,9 @@ export async function bondTick(env) {
     }
     if (first) B.days = [];
     B.floor = back ? back[0] : floor; B.head = head;
+    // when each one bonded, from its graduation log's block: a curve first read after it bonded keeps its real time
+    B.ga = B.ga || {}; for (const l of grads) B.ga[wordAddr(l.topics[1])] = now - (head - parseInt(l.blockNumber, 16)) * 100;
+    for (const k in B.ga) if (now - B.ga[k] > 9 * 24 * HOUR) delete B.ga[k];
     for (const l of grads) { const d = new Date(now - (head - parseInt(l.blockNumber, 16)) * 100).toISOString().slice(0, 10); const day = B.days.find(x => x.d === d) || (B.days.push({ d, l: 0, g: 0 }), B.days.at(-1)); day.g++; }
     stage = 'curves';
     for (const f of fresh) { const d = new Date(f.at).toISOString().slice(0, 10); const day = B.days.find(x => x.d === d) || (B.days.push({ d, l: 0, g: 0 }), B.days.at(-1)); day.l++; }
@@ -1438,7 +1441,7 @@ export async function bondTick(env) {
     // the fee is read once per curve, not every tick: it is set at launch
     const feeless = live.filter(r => r.fee == null), fees = feeless.length ? await multicall(feeless.flatMap(r => [[r.c, SEL.fee], [r.c, SEL.ctax]])) : [];
     feeless.forEach((r, i) => { const fb = fees[i * 2], ct = fees[i * 2 + 1]; if (fb) r.fee = (Number(BigInt(fb)) + (ct ? Number(BigInt(ct)) : 0)) / 10000; });
-    live.forEach((r, i) => { const q = res[i * 4], gd = res[i * 4 + 1], qr = res[i * 4 + 2], tr = res[i * 4 + 3]; if (qr && tr) { r.vq = Number(BigInt(qr) / 10n ** 12n) / 1e6; r.vt = Number(BigInt(tr) / 10n ** 12n) / 1e6; } if (q) { const eth = Number(BigInt(q) / 10n ** 12n) / 1e6; r.q = eth; r.p = Math.min(100, eth / r.th * 100); r.h.push([now, Math.round(r.p * 100) / 100]); r.h = r.h.slice(-36); r.max = Math.max(r.max || 0, r.p); } if (gd && BigInt(gd) === 1n) { r.g = now; r.p = 100; } });
+    live.forEach((r, i) => { const q = res[i * 4], gd = res[i * 4 + 1], qr = res[i * 4 + 2], tr = res[i * 4 + 3]; if (qr && tr) { r.vq = Number(BigInt(qr) / 10n ** 12n) / 1e6; r.vt = Number(BigInt(tr) / 10n ** 12n) / 1e6; } if (q) { const eth = Number(BigInt(q) / 10n ** 12n) / 1e6; r.q = eth; r.p = Math.min(100, eth / r.th * 100); r.h.push([now, Math.round(r.p * 100) / 100]); r.h = r.h.slice(-36); r.max = Math.max(r.max || 0, r.p); } if (gd && BigInt(gd) === 1n) { r.g = B.ga?.[r.t0] || now; r.p = 100; } });
     // keep: every curve still open that has raised 1% or more, however old; a new one for its first six hours;
     // the bonded ones for two days. The largest 2,000 if it ever comes to that.
     // a curve whose progress has not been read yet stays until it is: a failed read is not a curve at 0%
@@ -1456,7 +1459,8 @@ export async function bondView(env) {
   const speed = r => { const h = r.h || [], a = h.find(x => now - x[0] <= 65 * 60000) || h[0], z = h.at(-1); if (!a || !z || z[0] === a[0]) return null; return (z[1] - a[1]) / ((z[0] - a[0]) / HOUR); };
   const rows = B.rows.filter(r => !r.g && r.p != null).map(r => { const v = speed(r); return { token: r.t0, symbol: r.s, launcher: r.by, launched: new Date(r.at).toISOString(), progress: Math.round(r.p * 10) / 10, raised: r.q, need: r.th, unit: r.u || 'ETH', perHour: v == null ? null : Math.round(v * 10) / 10, etaHours: v > 0.05 ? Math.round((100 - r.p) / v * 10) / 10 : null, peak: Math.round((r.max || 0) * 10) / 10 }; })
     .sort((a, b) => b.progress - a.progress).slice(0, 80);
-  const bonded = B.rows.filter(r => r.g).sort((a, b) => b.g - a.g).slice(0, 20).map(r => ({ token: r.t0, symbol: r.s, bonded: new Date(r.g).toISOString(), hoursToBond: Math.round((r.g - r.at) / HOUR * 10) / 10 }));
+  const gt = r => B.ga?.[r.t0] || r.g;   // the graduation log's time where it is known
+  const bonded = B.rows.filter(r => r.g).sort((a, b) => gt(b) - gt(a)).slice(0, 20).map(r => ({ token: r.t0, symbol: r.s, bonded: new Date(gt(r)).toISOString(), hoursToBond: Math.round((gt(r) - r.at) / HOUR * 10) / 10 }));
   const days = B.days.slice(-7), L = days.reduce((s, d) => s + d.l, 0), G = days.reduce((s, d) => s + d.g, 0);
   // of the tracked launches that ever reached a mark, how many bonded: a rate that grows as the log does
   const reach = m => { const hit = B.rows.filter(r => (r.max || 0) >= m && now - r.at > 6 * HOUR); return { n: hit.length, bonded: hit.filter(r => r.g).length }; };
