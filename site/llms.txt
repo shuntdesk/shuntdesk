@@ -37,6 +37,7 @@ The same reads as MCP tools (token, verdicts, crew_desk, pons_graduations, daily
 
 - Exit Door: https://shuntdesk.com/exit/?a=0x…&usd=500 shows what a buy of that size gets back if sold straight away, and if the developer, a funded group, launch snipers and bundles, or the ten largest wallets sell first. An estimate from pool depth and sell tax.
 - Same Hand: https://shuntdesk.com/hand/?a=0x… follows a launcher's first funds back two steps and lists every Pons launch by the wallets on that trail, with how many pools are now under $1K. A shared funder is a link, not proof.
+- Verdict Lab: https://shuntdesk.com/lab/ sets every candidate verdict rule against what happened to the tokens it would have caught (lost half their price an hour and a day later), from the radar's log. JSON: GET https://shuntdesk.com/api/v1/lab
 - Dev Ledger: on every ticket and at GET https://shuntdesk.com/api/v1/devledger?a=0x… : every transfer of a token in or out of the wallet that launched it (found from the Pons launch log or the contract creation), sorted into bought, received, sold into the curve, sent into other contracts, sent to other wallets and burned, with what it holds now and every burn of the token. "Into other contracts" may be a sale through a router or a deposit.
 - Stock gap: https://shuntdesk.com/stocks/ sets each stock token's chain price against the stock's latest trade and last close.
 

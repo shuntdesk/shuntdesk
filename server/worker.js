@@ -623,7 +623,7 @@ async function telegram(st, env, request, body) {
   if (cmd === 'id') return reply(`This chat: <code>${chat}</code> (${tgEsc(msg.chat.type)}${msg.chat.title ? ', ' + tgEsc(msg.chat.title) : ''})`);
   if (!allow(st, 'tg:' + chat, 'tg', 40)) return reply('Slow down a little: 40 questions an hour per chat.');
   const site = 'https://shuntdesk.com', footer = '\n\n<i>A rule-based reading of public data. It can be wrong. Not advice.</i>';
-  if (cmd === 'start' || cmd === 'help') return reply(`<b>Shuntdesk</b> · every token rides the line\n\nAsk anything about Shuntdesk, a token, the crew desk or what just launched. Or use:\n\n/check <code>0x…</code> what Shuntdesk knows about a Robinhood Chain token\n/scan <code>0x…</code> Agent Scan: what the contract lets its owner do\n/watch <code>0x…</code> Tripwire: a private alarm when the owner or the big wallets move\n/daily today's daily shift in the Yard\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
+  if (cmd === 'start' || cmd === 'help') return reply(`<b>Shuntdesk</b> · every token rides the line\n\nAsk anything about Shuntdesk, a token, the crew desk or what just launched. Or use:\n\n/check <code>0x…</code> what Shuntdesk knows about a Robinhood Chain token\n/scan <code>0x…</code> Agent Scan: what the contract lets its owner do\n/ledger <code>0x…</code> Dev Ledger: what the launcher did with it\n/watch <code>0x…</code> Tripwire: a private alarm when the owner or the big wallets move\n/daily today's daily shift in the Yard\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
   // anything that is not a command, or a token address with a question around it, goes to the conductor
   const question = clean.replace(/^\/\w+\s*/, '').replace(/0x[0-9a-fA-F]{40}/, '').trim();
   if (!cmd && (!found || question.length > 3)) return reply(await tgAsk(st, env, chat, clean, found ? found[0].toLowerCase() : null));
@@ -646,7 +646,13 @@ async function telegram(st, env, request, body) {
     const hp = v.powers.filter(p => p.level !== 'info' && p.level !== 'low');
     return reply(`<b>Agent Scan</b> · <code>${a.slice(0, 6)}…${a.slice(-4)}</code>\n${v.functions} functions, ${v.named} named${v.proxy ? ` · behind a ${tgEsc(v.proxy.kind)}` : ''}\n${v.owner ? (v.owner.live ? `Owner <code>${v.owner.address.slice(0, 6)}…${v.owner.address.slice(-4)}</code>` : 'Ownership renounced') : 'No owner() found'} · source ${v.source.verified ? 'verified' : v.source.verified === false ? 'not verified' : 'unknown'}\n\n${hp.length ? hp.slice(0, 8).map(p => `• <code>${tgEsc(p.fn)}</code>: ${tgEsc(p.what)}`).join('\n') : 'No function found that mints, pauses, blocks wallets or changes the tax.'}\n\n${tgEsc(v.summary.text)}\n\n${site}/scan/?a=${a}<i>\nRead from the bytecode. A function that exists may still be guarded. Not advice.</i>`);
   }
-  if (cmd === 'desk') {
+  if (cmd === 'ledger' || cmd === 'dev') {
+    if (!found) return reply(`Send /${cmd} followed by a token address: /${cmd} <code>0x…</code>`);
+    const a = found[0].toLowerCase(), v = await devLedger(env, a).catch(() => null);
+    if (!v?.ok) return reply(tgEsc(v?.why || 'The chain index did not answer. Try again in a minute.'));
+    const L = v.ledger, got = L.bought + L.received, n = x => x >= 1e6 ? (x / 1e6).toFixed(2) + 'M' : Math.round(x).toLocaleString('en-US'), pc = x => got > 0 ? ` (${Math.round(x / got * 100)}%)` : '';
+    return reply(`<b>Dev Ledger</b> · <code>${a.slice(0, 6)}…${a.slice(-4)}</code>\nLauncher <code>${v.dev.slice(0, 6)}…${v.dev.slice(-4)}</code>, from the ${tgEsc(v.devFound)}\n\n${L.received ? 'Bought or received' : 'Bought on the curve'}: <b>${n(got)}</b>\nSold into the curve: <b>${n(L.sold)}</b>${pc(L.sold)}\nInto other contracts: ${n(L.toContracts)}${pc(L.toContracts)}\nSent to other wallets: ${n(L.toWallets)}${pc(L.toWallets)}\nBurned: ${n(L.burned)}${pc(L.burned)}\nHolds now: <b>${v.holdsNow == null ? '?' : n(v.holdsNow)}</b>\n\n${v.burns.count ? `${v.burns.count} burns of it in all, ${v.burns.byDev} by the launcher.\n\n` : ''}${site}/ticket/?a=${a}<i>\nEvery transfer in and out of the launcher, from the chain index. "Into other contracts" can be a sale through a router or a deposit. Not advice.</i>`);
+  }  if (cmd === 'desk') {
     const [, d] = await agentData(st, env, 'desk', ''), last = d.closed[0];
     return reply(`<b>Crew desk</b> · paper USDG\n\nEquity <b>${money(d.equity)}</b> (${d.equity >= d.start ? '+' : ''}${money(d.equity - d.start)} since ${money(d.start)})\nOpen positions: ${d.open.length}\n${last ? `Last closed: ${tgEsc(last.symbol)} ${last.side} <b>${last.pnl >= 0 ? '+' : ''}${last.pnl}</b> (${tgEsc(last.why)})` : 'No trade closed yet.'}${last?.postMortem ? `\n\n<i>${tgEsc(last.postMortem)}</i>` : ''}\n\n${site}/desk/`);
   }
@@ -673,6 +679,8 @@ async function telegram(st, env, request, body) {
   else lines.push('No verdict on file yet: nobody has run the seven checks on it.');
   if (s) lines.push('', s.redFlags.length ? `Security read: <b>${s.redFlags.length} red flag${s.redFlags.length > 1 ? 's' : ''}</b>: ${tgEsc(s.redFlags.slice(0, 3).join(', '))}` : 'Security read: no red flag found by GoPlus.', s.holders ? `Holders: ${Number(s.holders).toLocaleString('en-US')}` : '');
   if (L) lines.push('', `Launch: ${L.launchpad === 'pons' ? 'Pons' : tgEsc(L.launchpad)}${L.graduated ? ', graduated' : L.progress != null ? `, ${Math.round(L.progress)}% to graduation` : ''}`, `Snipers ${pct(L.sniperPct)} · bundles ${pct(L.bundlerPct)} · insiders ${pct(L.insiderPct)} · developer ${pct(L.devPct)}`);
+  const dl = await devLedger(env, a).catch(() => null);
+  if (dl?.ok) { const D = dl.ledger, got = D.bought + D.received, pc = x => got > 0 ? Math.round(x / got * 100) + '%' : '0'; lines.push('', got > 0 ? `Dev: sold ${pc(D.sold)} into the curve, sent ${pc(D.toWallets)} to other wallets, ${pc(D.toContracts)} into contracts, burned ${pc(D.burned)}. /ledger for more` : 'Dev: never held any of it.'); }
   if (x.crewPosition) lines.push('', `Crew desk holds a <b>${x.crewPosition.side}</b> at ${x.crewPosition.leverage}x.`);
   lines.push('', `Full seven checks: ${x.fullCheck}`);
   return reply(lines.filter((l, i, arr) => !(l === '' && arr[i - 1] === '')).join('\n') + footer);
@@ -690,6 +698,7 @@ async function agentData(st, env, p, a) {
   if (p === 'bonds') return [200, await bondView(env)];
   if (p === 'site') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a token address' }]; return [200, await siteCheck(st, env, a)]; }
   if (p === 'radar') return [200, await radarView(env)];
+  if (p === 'lab') return [200, await labData(env)];
   if (p === 'wallet') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a wallet address' }]; return [200, await walletView(st, env, a)]; }
   if (p === 'devledger' || p === 'ledger') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a token address on Robinhood Chain' }]; return [200, await devLedger(env, a)]; }
   if (p === 'xray' || p === 'scan') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a token address on Robinhood Chain' }]; return [200, await xray(st, env, a)]; }
@@ -978,6 +987,60 @@ async function radarView(env) {
   return { ok: true, logged: L.rows.length, scanned: scanned.length, flagged: withFlag.length,
     record: { flagged: { n: judged(withFlag).length, fellHalf1h: fell(withFlag) }, clean: { n: judged(scanned.filter(r => !flags(r).length)).length, fellHalf1h: fell(scanned.filter(r => !flags(r).length)) } },
     rows, note: 'Every new token on Robinhood Chain with 25 or more holders, read 30 to 90 minutes after launch and scanned on its own: Agent Scan, a GoPlus security read and the launcher trail. Flags are findings, not a verdict. Not advice.' };
+}
+
+// ---------- Verdict Lab: every rule set against what really happened ----------
+// The Radar log holds each new token as it looked 30 to 90 minutes after launch, what the scans found, and its price
+// an hour and a day later. For each rule, the tokens it would catch, and how many of them lost half their price,
+// against every token in the log. A token with no price later (its pool gone) counts as lost. This is the record
+// the next version of the verdict will be tuned on; the rules shown are candidates, not the verdict itself.
+let labMem = { t: 0, v: null };
+export function labRules() {
+  const has = (r, k) => (r.x?.h || []).includes(k);
+  return [
+    ['mint', 'Agent Scan: can mint', r => r.x ? has(r, 'mint') : null],
+    ['pause', 'Agent Scan: can freeze transfers', r => r.x ? has(r, 'pause') : null],
+    ['block', 'Agent Scan: can block wallets', r => r.x ? has(r, 'block') : null],
+    ['tax', 'Agent Scan: can change the tax', r => r.x ? has(r, 'tax') : null],
+    ['proxy', 'Agent Scan: code can be swapped (proxy)', r => r.x ? !!r.x.p || has(r, 'upgrade') : null],
+    ['owner', 'Agent Scan: a live owner', r => r.x ? r.x.o === 1 : null],
+    ['honeypot', 'GoPlus: the sell test fails', r => r.g ? !!r.g.hp : null],
+    ['selltax', 'GoPlus: sell tax 10% or more', r => r.g && r.g.st != null ? r.g.st >= 10 : null],
+    ['red', 'GoPlus: any red flag', r => r.g ? r.g.red > 0 : null],
+    ['site', 'Site Check: a flag on the website or links', r => r.sc ? r.sc.f.length > 0 : null],
+    ['nosite', 'Site Check: no website at all', r => r.sc ? !r.sc.w : null],
+    ['serial', 'Same Hand: the trail launched 5 or more tokens', r => r.sh ? r.sh.n >= 5 : null],
+    ['top25', 'Ten largest wallets hold over 25%', r => r.f[2] > 25],
+    ['top50', 'Ten largest wallets hold over 50%', r => r.f[2] > 50],
+    ['few', 'Under 50 holders', r => r.f[1] < 50],
+    ['snipers', 'Launch snipers hold over 5%', r => r.f[3] > 5],
+    ['bundles', 'Bundles hold over 5%', r => r.f[4] > 5],
+    ['insiders', 'Insiders hold over 5%', r => r.f[5] > 5],
+    ['dev', 'The developer holds over 10%', r => r.f[6] > 10],
+    ['thin', 'Liquidity under $2,000', r => r.f[0] < 2000],
+    // not a warning: the split that explains others. A token still on its curve trades against the curve, a graduated one in a pool
+    ['oncurve', 'Still on its Pons curve when logged (a split, not a warning)', r => /^pons/i.test(r.pad || '') && !r.g],
+  ];
+}
+export function labView(rows) {
+  const mv = (r, k) => r[k] !== undefined && r.p0 ? (r[k] ? r[k] / r.p0 - 1 : -1) : null;
+  const stat = (set, k) => { const s = set.map(r => mv(r, k)).filter(v => v != null); if (!s.length) return { n: 0 }; const srt = [...s].sort((a, b) => a - b);
+    return { n: s.length, lostHalf: s.filter(v => v <= -0.5).length, rate: s.filter(v => v <= -0.5).length / s.length, median: srt[Math.floor(srt.length / 2)] }; };
+  const base = { h1: stat(rows, 'p1'), h24: stat(rows, 'p24') };
+  const rules = labRules().map(([key, label, f]) => {
+    const read = rows.filter(r => f(r) !== null), hit = read.filter(r => f(r)), miss = read.filter(r => !f(r));
+    const a = { h1: stat(hit, 'p1'), h24: stat(hit, 'p24') }, b = { h1: stat(miss, 'p1'), h24: stat(miss, 'p24') };
+    const lift = (x, y) => x.n >= 20 && y.n >= 20 && y.rate > 0 ? x.rate / y.rate : null;
+    return { key, rule: label, read: read.length, caught: hit.length, caughtShare: read.length ? hit.length / read.length : 0, caughtThen: a, othersThen: b, lift1h: lift(a.h1, b.h1), lift24h: lift(a.h24, b.h24) };
+  });
+  return { base, rules };
+}
+async function labData(env) {
+  const now = Date.now(); if (labMem.v && now - labMem.t < 10 * 60000) return labMem.v;
+  const L = await looksLoad(env), rows = L.rows.filter(r => r.f && r.p0);
+  const v = { ok: true, logged: rows.length, since: rows.length ? new Date(Math.min(...rows.map(r => r.t))).toISOString() : null, scanned: rows.filter(r => r.x !== undefined).length, ...labView(rows),
+    note: 'Each new token on Robinhood Chain with 25 or more holders, as it looked 30 to 90 minutes after launch, and its price an hour and a day later. "Lost half" is a fall of 50% or more; a token with no price later counts as lost. Lift is how much more often the tokens a rule catches lost half than the ones it does not, shown once both sides have 20 or more. Past results, not a forecast. The verdict does not use these rules until a change is published.' };
+  labMem = { t: now, v }; return v;
 }
 
 // distance between two tokens as they looked: liquidity and holders on a log scale, shares in points
@@ -1366,12 +1429,16 @@ export async function bondTick(env) {
       });
     }    // every curve still on the board: what it has raised, and whether it bonded
     const live = B.rows.filter(r => !r.g);
+    const before = new Map(live.map(r => [r.t0, { p: r.p, n: r.h.length }]));
     const res = await multicall(live.flatMap(r => [[r.c, SEL.real], [r.c, SEL.grad], [r.c, SEL.qres], [r.c, SEL.tres], [r.c, SEL.fee], [r.c, SEL.ctax]]));
     live.forEach((r, i) => { const q = res[i * 6], gd = res[i * 6 + 1], qr = res[i * 6 + 2], tr = res[i * 6 + 3], fb = res[i * 6 + 4], ct = res[i * 6 + 5]; if (fb) r.fee = (Number(BigInt(fb)) + (ct ? Number(BigInt(ct)) : 0)) / 10000; if (qr && tr) { r.vq = Number(BigInt(qr) / 10n ** 12n) / 1e6; r.vt = Number(BigInt(tr) / 10n ** 12n) / 1e6; } if (q) { const eth = Number(BigInt(q) / 10n ** 12n) / 1e6; r.q = eth; r.p = Math.min(100, eth / r.th * 100); r.h.push([now, Math.round(r.p * 100) / 100]); r.h = r.h.slice(-36); r.max = Math.max(r.max || 0, r.p); } if (gd && BigInt(gd) === 1n) { r.g = now; r.p = 100; } });
     // keep: every curve still open that has raised 1% or more, however old; a new one for its first six hours;
     // the bonded ones for two days. The largest 2,000 if it ever comes to that.
     // a curve whose progress has not been read yet stays until it is: a failed read is not a curve at 0%
     B.rows = B.rows.filter(r => r.g ? now - r.g < 48 * HOUR : (r.max == null && now - r.at < 7 * 24 * HOUR) || r.max >= 1 || now - r.at < 6 * HOUR).sort((a, b) => (b.p || 0) - (a.p || 0)).slice(0, 2000);
+    // bond alerts for the group: a curve seen below 85% that is now at or over it, and a tracked curve that bonded
+    const alerts = live.filter(r => { const was = before.get(r.t0); return was && was.n > 0 && was.p != null && ((r.g && was.p < 100) || (!r.g && was.p < 85 && r.p >= 85)); });
+    if (alerts.length) await bondAlerts(env, B, alerts, now).catch(() => 0);
     B.err = null;
   } catch (e) { B.err = (stage + ': ' + String(e.message || e)).slice(0, 160); }
   await env.KV.put(BONDS, JSON.stringify(B));
@@ -1594,6 +1661,21 @@ async function siteCheck(st, env, token, extra = [], opts = {}) {
   return v;
 }
 
+// ---------- bond alerts, posted to the community group ----------
+// When a Pons curve Shuntdesk has been reading crosses 85%, and when one bonds. Read from the curve, at most twelve a day.
+async function bondAlerts(env, B, rows, now) {
+  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_GROUP) return;
+  const day = new Date(now).toISOString().slice(0, 10); B.al = B.al?.d === day ? B.al : { d: day, n: 0 };
+  for (const r of rows) {
+    if (B.al.n >= 12) break;
+    const h = r.h || [], a = h.find(x => now - x[0] <= 65 * 60000) || h[0], z = h.at(-1), pace = a && z && z[0] > a[0] ? (z[1] - a[1]) / ((z[0] - a[0]) / HOUR) : null;
+    const age = (now - r.at) / HOUR, ageTxt = age < 1 ? Math.round(age * 60) + ' min' : age.toFixed(age < 10 ? 1 : 0) + ' h', sym = tgEsc(r.s || r.t0.slice(0, 8));
+    const text = r.g
+      ? `<b>Bonded on Pons</b> · ${sym}\n<code>${r.t0}</code>\n\nCompleted its curve ${ageTxt} after launch.\n\nhttps://shuntdesk.com/ticket/?a=${r.t0}\n\n<i>Read from the curve contract. Not advice.</i>`
+      : `<b>Close to bonding</b> · ${sym}\n<code>${r.t0}</code>\n\n${r.p.toFixed(1)}% of the curve: ${r.q.toFixed(2)} of ${r.th} ${tgEsc(r.u || 'ETH')}${pace != null ? `\nLast hour ${pace >= 0 ? '+' : ''}${pace.toFixed(1)} points${pace > 0.05 ? `, about ${((100 - r.p) / pace).toFixed(1)} h to bond at that pace` : ''}` : ''}\nLaunched ${ageTxt} ago\n\nhttps://shuntdesk.com/bonds\nhttps://shuntdesk.com/ticket/?a=${r.t0}\n\n<i>Read from the curve contract. A pace is only a pace. Not advice.</i>`;
+    if (await tgSend(env, env.TELEGRAM_GROUP, text).catch(() => 0) === 200) B.al.n++;
+  }
+}
 // ---------- the daily line, posted to the community group at 13:00 UTC ----------
 // The site's own numbers for the last day, so the group hears from the line every day: the crew desk, the calls,
 // what the radar found, and the Pons curves closest to bonding. Once a day, nothing invented.
@@ -1739,6 +1821,7 @@ const api = {
       if (url.pathname === '/api/launch') { const a = (url.searchParams.get('a') || '').toLowerCase(); return isAddr(a) ? json(await launch(env, a)) : json({ ok: false, why: 'bad address' }, 400); }
       if (url.pathname === '/api/stocks') return json(await stockRefs());
       if (url.pathname === '/api/bonds') return json(await bondView(env));
+      if (url.pathname === '/api/lab') return json(await labData(env));
       if (url.pathname === '/api/ledger') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); return json(await devLedger(env, a)); }
       if (url.pathname === '/api/radar') return json(await radarView(env));
       if (url.pathname === '/api/hand/launches') { const ws = [...new Set((url.searchParams.get('w') || '').toLowerCase().split(',').filter(isAddr))].slice(0, 40); return ws.length ? json(await handLaunches(env, ws)) : json({ ok: false, why: 'pass ?w= up to 40 wallets, comma separated' }, 400); }

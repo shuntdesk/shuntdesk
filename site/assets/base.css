@@ -924,3 +924,8 @@ html.simple.light ::selection { background: #2ed3a0; color: #060708; }
 .dl-burns a b { font-family: var(--disp); font-size: 22px; color: #ff7a3d; } .dl-burns a:hover i { color: var(--ink); } .dl-burns i { font-style: normal; }
 #dl-dev { color: var(--long); }
 @media (max-width: 600px) { .dl-burns a { grid-template-columns: 1fr auto; } .dl-burns a i { display: none; } }
+/* ---------- Verdict Lab ---------- */
+.lablist .r { grid-template-columns: 2.4fr 1.1fr 1.2fr .8fr 1.2fr .8fr !important; }
+.lablist .r small { display: block; color: var(--dim); font-size: 11px; margin-top: 2px; } .lablist .mut { color: var(--dim); }
+.lablist .r .sy { font-family: "Barlow", system-ui, sans-serif; font-weight: 600; font-size: 15px; letter-spacing: 0; text-transform: none; }
+@media (max-width: 760px) { .lablist .r { grid-template-columns: 1.6fr 1fr 1fr !important; } .lablist .r > :nth-child(3), .lablist .r > :nth-child(4) { display: none; } }

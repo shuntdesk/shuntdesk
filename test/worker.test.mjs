@@ -89,3 +89,20 @@ test('Exit Door prices a Pons curve as the curve answers: virtual reserves, 2.5%
   // straight back out: the round trip costs the two fees, about 4.9%
   assert.ok(Math.abs(d.now / (0.3 * eth) - 0.975 * 0.975) < 0.002, `back ${d.now}`);
 });
+
+test('Telegram: /ledger asks for an address, and /help lists it', async () => {
+  const tg = async text => { const r = await worker.fetch(new Request('http://x/api/tg', { method: 'POST', headers: { 'x-telegram-bot-api-secret-token': 'right' }, body: JSON.stringify({ message: { message_id: 1, chat: { id: 777, type: 'private' }, text } }) }), { ...env, TELEGRAM_SECRET: 'right' }); return (await r.json()).text; };
+  assert.match(await tg('/ledger'), /Send \/ledger followed by a token address/);
+  assert.match(await tg('/help'), /\/ledger/);
+});
+
+test('Verdict Lab counts what each rule caught and how those tokens did', async () => {
+  const { labView } = await import('../server/worker.js');
+  // 40 tokens: the 20 with a mint power all lost half within the hour, the 20 without held
+  const rows = Array.from({ length: 40 }, (_, i) => ({ f: [5000, 100, 20, 0, 0, 0, 0], p0: 1, p1: i < 20 ? 0.3 : 1.1, p24: i < 20 ? 0 : 1.2, x: { h: i < 20 ? ['mint'] : [], m: [], o: -1, p: 0, n: 10 } }));
+  const v = labView(rows), mint = v.rules.find(r => r.key === 'mint');
+  assert.equal(v.base.h1.n, 40); assert.equal(v.base.h1.lostHalf, 20);
+  assert.equal(mint.caught, 20); assert.equal(mint.caughtThen.h1.rate, 1); assert.equal(mint.othersThen.h1.rate, 0);
+  assert.equal(mint.caughtThen.h24.lostHalf, 20);   // no price a day later counts as lost
+  assert.equal(v.rules.find(r => r.key === 'honeypot').read, 0);   // no GoPlus read: not counted either way
+});

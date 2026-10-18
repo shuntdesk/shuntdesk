@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Every rule a verdict could use, set against what really happened to the tokens it would have caught: how many lost half their price an hour and a day later.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shuntdesk">
+<meta property="og:title" content="Verdict Lab — Shuntdesk">
+<meta property="og:description" content="Every verdict rule, set against what really happened.">
+<meta property="og:url" content="https://shuntdesk.com/lab/">
+<meta property="og:image" content="https://shuntdesk.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shuntdesk. One score. Three tracks.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://shuntdesk.com/og.png">
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#060708">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/simple.css">
+<title>Verdict Lab — Shuntdesk</title>
+<script src="/assets/ui-mode.js"></script>
+</head>
+<body class="sub">
+<canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
+<main class="page">
+  <div class="ph">
+    <div><div class="eyebrow">Verdict Lab</div><h1 class="disp">Every rule.<br><span class="acc">Against what happened.</span></h1></div>
+    <div class="side"><p class="note" style="max-width:460px;margin:0">BEFORE A RULE CHANGES THE VERDICT, IT HAS TO EARN IT HERE: THE TOKENS IT WOULD HAVE CAUGHT, AND HOW MANY OF THEM LOST HALF THEIR PRICE.</p></div>
+  </div>
+  <div class="stats">
+    <div class="stub stat"><div class="in"><div class="cap"><b>Tokens in the record</b></div><div class="v" id="lb-n">···</div><small id="lb-since">new tokens with 25+ holders</small></div></div>
+    <div class="stub stat"><div class="in"><div class="cap"><b>Scanned in full</b></div><div class="v" id="lb-s">···</div><small>by the radar, on its own</small></div></div>
+    <div class="stub stat"><div class="in"><div class="cap"><b>Lost half in an hour</b></div><div class="v sm" id="lb-h1">···</div><small>of every token, the baseline</small></div></div>
+    <div class="stub stat"><div class="in"><div class="cap"><b>Lost half in a day</b></div><div class="v sm" id="lb-h24">···</div><small>of every token, the baseline</small></div></div>
+  </div>
+  <div class="stub n"><div class="in">
+    <div class="cap"><b>The rules</b><span id="lb-read">sorted by how much more often the tokens they catch lost half in a day</span></div>
+    <div class="dep lablist" id="lb-list"><div class="r h"><span>RULE</span><span>CAUGHT</span><span>LOST HALF · 1H</span><span>LIFT · 1H</span><span>LOST HALF · 1D</span><span>LIFT · 1D</span></div></div>
+  </div></div>
+  <p class="note" style="margin-top:14px" id="lb-note">Each new token on Robinhood Chain with 25 or more holders is logged 30 to 90 minutes after launch, scanned by the radar, and priced again an hour and a day later. "Lost half" is a fall of 50% or more; a token with no price later counts as lost. Lift is how many times more often the tokens a rule catches lost half than the ones it does not; it shows once both sides have 20 tokens or more. A lift near 1 means the rule tells you little. A token nobody trades keeps its last price, so thin pools rarely show a fall: a low lift on a liquidity or holder rule can mean quiet, not safe. Past results, not a forecast. These are candidates: the verdict does not change until a change is published. Not advice.</p>
+</main>
+<footer class="foot"></footer>
+<script type="module" src="/assets/lab.js"></script>
+</body>
+</html>
