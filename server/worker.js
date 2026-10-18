@@ -1388,6 +1388,12 @@ async function wideLogs(env, topic0, from, to) {
   }
   return out;
 }
+// a log's time. The node's blockTimestamp reads 0 on this chain, so each tick reads the time of two blocks, the head and
+// one a week back, and places every block between them at the chain's real pace (a fixed tenth of a second drifts hours
+// over a week). The index's timeStamp is used where it is given.
+let clock = null;
+const logTime = (l, now, head) => { const ts = l.timeStamp ? parseInt(l.timeStamp, String(l.timeStamp).startsWith('0x') ? 16 : 10) : 0; if (ts > 0) return ts * 1000;
+  const b = parseInt(l.blockNumber, 16); return clock ? clock.t - (clock.head - b) * clock.rate : now - (head - b) * 100; };
 export async function bondTick(env) {
   const B = await bondsLoad(env), now = Date.now(); if (now - B.t < 10 * 60000) return; B.t = now;
   let stage = 'head'; mcStat.req = 0; mcStat.fail = 0; mcStat.err = null;
@@ -1395,6 +1401,7 @@ export async function bondTick(env) {
     // forward from the last read; on the first read the last 800,000 blocks (about 22 hours). Then one more window
     // back each tick until a week is covered: a week at once is more calls than one tick may make.
     const head = parseInt(await rpc('eth_blockNumber'), 16), first = !B.block, from = first ? head - 799999 : B.block + 1;
+    try { const bt = async n => parseInt((await rpc('eth_getBlockByNumber', ['0x' + n.toString(16), false])).timestamp, 16) * 1000, back = 7 * 864000, [t1, t0] = await Promise.all([bt(head), bt(head - back)]); clock = t1 > t0 ? { head, t: t1, rate: (t1 - t0) / back } : null; } catch (e) { clock = null; }
     const wins = []; for (let a = from; a <= head; a += 400000) wins.push([a, Math.min(head, a + 399999)]);
     const floor = first ? from : B.floor || from, back = floor > head - 7 * 864000 ? [Math.max(head - 7 * 864000, floor - 400000), floor - 1] : null;
     if (back) wins.push(back);
@@ -1403,16 +1410,18 @@ export async function bondTick(env) {
     for (const [a, z] of wins) {
       stage = 'launch log';
       const logs = await wideLogs(env, T_LAUNCH, a, z);
-      for (const l of logs) { const token = wordAddr(l.topics[1]); if (!have.has(token)) { have.add(token); fresh.push({ t0: token, c: wordAddr(l.topics[2]), by: wordAddr(l.topics[3]), b: parseInt(l.blockNumber, 16), at: now - (head - parseInt(l.blockNumber, 16)) * 100 }); } }
+      for (const l of logs) { const token = wordAddr(l.topics[1]); if (!have.has(token)) { have.add(token); fresh.push({ t0: token, c: wordAddr(l.topics[2]), by: wordAddr(l.topics[3]), b: parseInt(l.blockNumber, 16), at: logTime(l, now, head) }); } }
       stage = 'bond log';
       grads.push(...await wideLogs(env, T_GRAD, a, z));
     }
     if (first) B.days = [];
     B.floor = back ? back[0] : floor; B.head = head;
     // when each one bonded, from its graduation log's block: a curve first read after it bonded keeps its real time
-    B.ga = B.ga || {}; for (const l of grads) B.ga[wordAddr(l.topics[1])] = now - (head - parseInt(l.blockNumber, 16)) * 100;
+    B.ga = B.ga || {}; for (const l of grads) B.ga[wordAddr(l.topics[1])] = logTime(l, now, head);
     for (const k in B.ga) if (now - B.ga[k] > 9 * 24 * HOUR) delete B.ga[k];
-    for (const l of grads) { const d = new Date(now - (head - parseInt(l.blockNumber, 16)) * 100).toISOString().slice(0, 10); const day = B.days.find(x => x.d === d) || (B.days.push({ d, l: 0, g: 0 }), B.days.at(-1)); day.g++; }
+    // once: the graduation logs of the last week read again, two windows a tick, so bonds recorded before this was kept get their real time
+    if (!B.gaDone) { B.gaPos = B.gaPos || head; for (let k = 0; k < 2 && !B.gaDone; k++) { stage = 'bond times'; const z = B.gaPos, a0 = Math.max(head - 7 * 864000, z - 399999); for (const l of await wideLogs(env, T_GRAD, a0, z)) B.ga[wordAddr(l.topics[1])] = logTime(l, now, head); B.gaPos = a0 - 1; if (a0 <= head - 7 * 864000) B.gaDone = 1; } }
+    for (const l of grads) { const d = new Date(logTime(l, now, head)).toISOString().slice(0, 10); const day = B.days.find(x => x.d === d) || (B.days.push({ d, l: 0, g: 0 }), B.days.at(-1)); day.g++; }
     stage = 'curves';
     for (const f of fresh) { const d = new Date(f.at).toISOString().slice(0, 10); const day = B.days.find(x => x.d === d) || (B.days.push({ d, l: 0, g: 0 }), B.days.at(-1)); day.l++; }
     B.days = B.days.sort((a, b) => a.d < b.d ? -1 : 1).slice(-14);
