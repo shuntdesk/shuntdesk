@@ -189,7 +189,7 @@ async function devCard(res) {
   box.innerHTML = [[n0(got), L.received ? 'Bought or received' : 'Bought on the curve'], [n0(L.sold) + pct(L.sold), 'Sold into the curve'], [n0(L.toContracts) + pct(L.toContracts), 'Into other contracts'],
     [n0(L.toWallets) + pct(L.toWallets), 'Sent to other wallets'], [n0(L.burned) + pct(L.burned), 'Burned'], [v.holdsNow == null ? '?' : n0(v.holdsNow), 'Holds now']]
     .map(([a, b]) => `<div><b>${a}</b><span>${b}</span></div>`).join('');
-  $('#dv-by').textContent = `launcher ${v.dev.slice(0, 6)}…${v.dev.slice(-4)}, found from the ${v.devFound}`;
+  $('#dv-by').innerHTML = `launcher ${v.dev.slice(0, 6)}…${v.dev.slice(-4)}, found from the ${esc(v.devFound)} · <a href="/dev/?w=${v.dev}">every launch by this dev →</a>`;
   $('#dv-n').textContent = (v.partial ? 'The launcher has over 1,000 transfers of it; the first 1,000 are counted. ' : '') + '"Into other contracts" can be a sale through a router or a deposit: the chain index cannot tell which.';
 }// Agent Scan, under the verdict: what the contract lets its controller do
 let scanFor = '';

@@ -106,3 +106,11 @@ test('Verdict Lab counts what each rule caught and how those tokens did', async 
   assert.equal(mint.caughtThen.h24.lostHalf, 20);   // no price a day later counts as lost
   assert.equal(v.rules.find(r => r.key === 'honeypot').read, 0);   // no GoPlus read: not counted either way
 });
+
+test('Will it bond refuses a bad handle and an incomplete set of calls; /alarms in a DM explains itself', async () => {
+  const [c1, o1] = await call('bondgame', { handle: 'x', picks: [] }); assert.equal(c1, 400); assert.match(o1.why, /handle|not set/);
+  const tg = async text => { const r = await worker.fetch(new Request('http://x/api/tg', { method: 'POST', headers: { 'x-telegram-bot-api-secret-token': 'right' }, body: JSON.stringify({ message: { message_id: 1, chat: { id: 778, type: 'private' }, from: { id: 5 }, text } }) }), { ...env, TELEGRAM_SECRET: 'right' }); return (await r.json()).text; };
+  assert.match(await tg('/alarms on'), /admin sends \/alarms on/);
+  assert.match(await tg('/report'), /Send \/report followed by a token address/);
+  assert.match(await tg('/spotters'), /No report has been priced|Top spotters/);
+});

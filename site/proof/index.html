@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Everything about $SHUNT and Shuntdesk you can check yourself: the dev wallet, every burn, the contract, the record of calls, the source and the open data.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shuntdesk">
+<meta property="og:title" content="Proof — Shuntdesk">
+<meta property="og:description" content="Everything about $SHUNT and Shuntdesk you can check yourself: the dev wallet, every burn, the contract, the record of calls, the source and the open data.">
+<meta property="og:url" content="https://shuntdesk.com/proof/">
+<meta property="og:image" content="https://shuntdesk.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shuntdesk. One score. Three tracks.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://shuntdesk.com/og.png">
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#060708">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/simple.css">
+<title>Proof — Shuntdesk</title>
+<script src="/assets/ui-mode.js"></script>
+</head>
+<body class="sub">
+<canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
+<main class="page">
+
+  <div class="ph"><div><div class="eyebrow">Proof · $SHUNT</div><h1 class="disp">Don't trust us.<br><span class="acc">Check us.</span></h1></div>
+    <div class="side"><p class="note" style="max-width:460px;margin:0">EVERY LINE ON THIS PAGE IS READ FROM THE CHAIN OR LINKS TO SOMETHING YOU CAN OPEN. NOTHING HERE IS A CLAIM YOU HAVE TO TAKE ON FAITH.</p></div></div>
+  <div class="stats"><div class="stub stat"><div class="in"><div class="cap"><b>Dev bought</b></div><div class="v" id="pf-got">···</div><small id="pf-got-s">on the curve, the launcher wallet</small></div></div><div class="stub stat"><div class="in"><div class="cap"><b>Dev sold</b></div><div class="v" id="pf-sold">···</div><small id="pf-sold-s">into the curve or anywhere else</small></div></div><div class="stub stat"><div class="in"><div class="cap"><b>Burned</b></div><div class="v" id="pf-burn">···</div><small id="pf-burn-s">sent to the dead address</small></div></div><div class="stub stat"><div class="in"><div class="cap"><b>Dev holds now</b></div><div class="v" id="pf-hold">···</div><small id="pf-hold-s">the launcher wallet today</small></div></div></div>
+  <div class="pf-grid">
+    <div class="stub n"><div class="in"><div class="cap"><b>The contract</b><span>read from its bytecode</span></div><div id="pf-ct" class="pf-body">Reading…</div></div></div>
+    <div class="stub n"><div class="in"><div class="cap"><b>The curve</b><span>read from the Pons curve</span></div><div id="pf-cv" class="pf-body">Reading…</div></div></div>
+    <div class="stub n"><div class="in"><div class="cap"><b>The record</b><span>every call, priced later</span></div><div id="pf-rec" class="pf-body">Reading…</div></div></div>
+    <div class="stub n"><div class="in"><div class="cap"><b>Open</b><span>the code and the data</span></div><div class="pf-body pf-links" id="pf-links"></div></div></div>
+  </div>
+  <div class="stub n" style="margin-top:14px"><div class="in"><div class="cap"><b>Every burn</b><span id="pf-bn">from the dev wallet</span></div><div class="dl-burns" id="pf-burns"></div></div></div>
+  <div class="stub n" style="margin-top:14px"><div class="in"><div class="cap"><b>The badge</b><span>for any token, on any site</span></div>
+    <p class="pf-body" style="margin-top:6px">Any project can show its live Shuntdesk read on its own site. Replace the address with the token's:</p>
+    <img id="pf-badge" alt="The $SHUNT badge" style="margin:14px 0;max-width:100%">
+    <pre class="pf-code" id="pf-embed"></pre></div></div>
+  <p class="note" style="margin-top:14px">Read from Robinhood Chain and the chain index when this page opened. Not advice.</p>
+</main>
+<footer class="foot"></footer>
+<script type="module" src="/assets/proof.js"></script>
+</body>
+</html>

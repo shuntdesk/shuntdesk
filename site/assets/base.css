@@ -929,3 +929,23 @@ html.simple.light ::selection { background: #2ed3a0; color: #060708; }
 .lablist .r small { display: block; color: var(--dim); font-size: 11px; margin-top: 2px; } .lablist .mut { color: var(--dim); }
 .lablist .r .sy { font-family: "Barlow", system-ui, sans-serif; font-weight: 600; font-size: 15px; letter-spacing: 0; text-transform: none; }
 @media (max-width: 760px) { .lablist .r { grid-template-columns: 1.6fr 1fr 1fr !important; } .lablist .r > :nth-child(3), .lablist .r > :nth-child(4) { display: none; } }
+/* ---------- the comeback pages: proof, caught, dev score, will it bond, weekly ---------- */
+.pf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+.pf-body { font-size: 16px; line-height: 1.55; color: #cfcdc8; } .pf-body p { margin: 8px 0; } .pf-body b { color: var(--ink); } .pf-body a { color: var(--long); }
+.pf-links { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.pf-code { white-space: pre-wrap; word-break: break-all; font-family: var(--mono); font-size: 12px; color: #bdbbb6; background: rgba(237,235,230,.05); padding: 14px; border: 1px solid var(--hair); }
+.pf-form { display: flex; gap: 10px; flex-wrap: wrap; margin: 26px 0 10px; } .pf-form input { flex: 1 1 320px; min-width: 0; background: rgba(10,11,13,.8); border: 1px solid rgba(237,235,230,.25); color: var(--ink); font-family: var(--mono); font-size: 15px; padding: 14px 16px; }
+.calist .r { grid-template-columns: minmax(130px, 1fr) 120px minmax(220px, 2fr) 100px 30px !important; }
+.dvlist .r { grid-template-columns: minmax(130px, 1fr) 120px 100px 110px 100px minmax(150px, 1fr) !important; }
+.bg-list { display: grid; gap: 8px; margin-top: 10px; }
+.bg-row { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(160px, 1.4fr) auto; gap: 18px; align-items: center; padding: 12px 0; border-top: 1px solid var(--hair); }
+.bg-row .sy { font-family: var(--mono); font-weight: 700; color: var(--ink); } .bg-row .sy small { display: block; color: var(--dim); font-weight: 400; font-size: 11px; }
+.bg-bar { position: relative; height: 26px; background: rgba(237,235,230,.06); } .bg-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(46,211,160,.45); } .bg-bar b { position: relative; font-family: var(--mono); font-size: 12px; padding-left: 10px; line-height: 26px; }
+.bg-pick { display: flex; gap: 6px; } .bg-pick button { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; padding: 9px 12px; background: rgba(237,235,230,.06); color: var(--mut); border: 1px solid var(--hair); cursor: pointer; }
+.bg-pick button.on { background: var(--long); color: #060708; border-color: var(--long); } .bg-pick button.on.no { background: var(--short); border-color: var(--short); color: #fff; } .bg-pick button[disabled] { cursor: default; opacity: .75; }
+@media (max-width: 760px) {
+  .pf-grid { grid-template-columns: 1fr; }
+  .calist .r { grid-template-columns: 1fr 90px !important; } .calist .r > :nth-child(2), .calist .r > :nth-child(5) { display: none; } .calist .r > :nth-child(3) { grid-column: 1 / -1; order: 3; font-size: 12px; }
+  .dvlist .r { grid-template-columns: 1fr 1fr !important; } .dvlist .r > :nth-child(2), .dvlist .r > :nth-child(3) { display: none; }
+  .bg-row { grid-template-columns: 1fr; gap: 8px; }
+}
