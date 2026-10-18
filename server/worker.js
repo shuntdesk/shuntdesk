@@ -650,7 +650,7 @@ async function telegram(st, env, request, body) {
   if (cmd === 'link' || cmd === 'holder') {
     if (group) return reply('Holder tools work in a private chat: open @shuntdesk_bot and send /link there.');
     const h = st.holders?.[String(chat)];
-    if (cmd === 'holder' && h) return reply(`<b>Holder</b> · <code>${h.w.slice(0, 6)}…${h.w.slice(-4)}</code>\n${Math.round(h.bal).toLocaleString('en-US')} $SHUNT, read ${(m => m < 60 ? Math.round(m) + ' min' : Math.round(m / 60) + ' h')((Date.now() - h.t) / 60000)} ago\n${h.bal >= HOLD_MIN ? `Holder tools on: /alarm, Tripwire for ${HOLD_TRIP}, /boost` : `The holder tools open at ${HOLD_MIN.toLocaleString('en-US')} $SHUNT.`}\n\nLink another wallet: /link`);
+    if (cmd === 'holder' && h) return reply(`<b>Holder</b> · <code>${h.w.slice(0, 6)}…${h.w.slice(-4)}</code>\n${Math.round(h.bal).toLocaleString('en-US')} $SHUNT, read ${(m => m < 60 ? Math.round(m) + ' min' : Math.round(m / 60) + ' h')((Date.now() - h.t) / 60000)} ago\n${tierOf(h.bal) ? `Tier: <b>${tierOf(h.bal)}</b>. Holder tools on: /alarm, Tripwire for ${HOLD_TRIP}, /boost, trusted dev alerts${h.bal >= HOLD_PRO ? ', Early Radar' : `. Early Radar opens at ${HOLD_PRO.toLocaleString('en-US')}`}` : `The holder tools open at ${HOLD_MIN.toLocaleString('en-US')} $SHUNT.`}\n\nLink another wallet: /link`);
     const code = crypto.randomUUID().replace(/-/g, '').slice(0, 10); st.links = st.links || {}; st.links[code] = { chat: String(chat), t: Date.now() };
     for (const [k, v] of Object.entries(st.links)) if (Date.now() - v.t > 30 * 60000) delete st.links[k];
     return reply(`<b>Link a $SHUNT wallet</b>\n\nOpen this page, connect the wallet that holds $SHUNT and sign one message. It moves nothing and costs nothing.\n\n${site}/holder/?c=${code}\n\nThe link works for 30 minutes. Holder tools open at ${HOLD_MIN.toLocaleString('en-US')} $SHUNT.`);
@@ -662,8 +662,10 @@ async function telegram(st, env, request, body) {
     if (/^clean\b/.test(arg)) f.clean = !/\boff\b/.test(arg);
     else if (/^flags?\b/.test(arg)) f.flags = !/\boff\b/.test(arg);
     else if (/^curve\b/.test(arg)) { const m = arg.match(/\d{1,2}/g)?.map(Number).filter(v => v >= 5 && v <= 99) || []; if (/\boff\b/.test(arg)) f.curve = []; else if (m.length) f.curve = [...new Set([...f.curve, ...m])].slice(-3); }
-    else if (/^off\b/.test(arg)) { f.clean = false; f.flags = false; f.curve = []; }
-    return reply(`<b>Your alarms</b>\n\n• clean reads of new tokens: <b>${f.clean ? 'on' : 'off'}</b>\n• new tokens with a red flag: <b>${f.flags ? 'on' : 'off'}</b>\n• Pons curves crossing: <b>${f.curve.length ? f.curve.map(v => v + '%').join(', ') : 'off'}</b>\n\nChange: /alarm clean on|off · /alarm flags on|off · /alarm curve 70 · /alarm curve off · /alarm off\nUp to 40 a day, in this chat.`);
+    else if (/^early\b/.test(arg)) f.early = !/\boff\b/.test(arg);
+    else if (/^dev\b/.test(arg)) f.dev = !/\boff\b/.test(arg);
+    else if (/^off\b/.test(arg)) { f.clean = false; f.flags = false; f.curve = []; f.early = false; f.dev = false; }
+    return reply(`<b>Your alarms</b>\n\n• clean reads of new tokens: <b>${f.clean ? 'on' : 'off'}</b>\n• new tokens with a red flag: <b>${f.flags ? 'on' : 'off'}</b>\n• Pons curves crossing: <b>${f.curve.length ? f.curve.map(v => v + '%').join(', ') : 'off'}</b>\n• trusted devs and known dumpers launching: <b>${f.dev !== false ? 'on' : 'off'}</b>\n• Early Radar, clean launches minutes old (Pro, ${HOLD_PRO.toLocaleString('en-US')} $SHUNT): <b>${h.bal >= HOLD_PRO ? (f.early !== false ? 'on' : 'off') : 'locked'}</b>\n\nChange: /alarm clean on|off · /alarm flags on|off · /alarm curve 70 · /alarm curve off · /alarm dev on|off · /alarm early on|off · /alarm off\nUp to 40 a day, in this chat.`);
   }
   if (cmd === 'boost') {
     const tk = (clean.match(/0x[0-9a-fA-F]{40}(?![0-9a-fA-F])/) || [])[0], tx = (clean.match(/0x[0-9a-fA-F]{64}/) || [])[0];
@@ -2015,7 +2017,7 @@ async function holderVerify(st, env, b) {
   H[L.chat] = { ...prev, w, bal, t: Date.now(), f: prev.f || { clean: true, flags: false, curve: [] } };
   delete st.links[code];
   const ok = bal >= HOLD_MIN, n = v => Math.round(v).toLocaleString('en-US');
-  await tgSend(env, L.chat, ok ? `<b>Holder linked</b> · <code>${w.slice(0, 6)}…${w.slice(-4)}</code>\n${n(bal)} $SHUNT\n\nYours now:\n• personal alarms in this chat: /alarm\n• Tripwire for up to ${HOLD_TRIP} tokens: /watch\n• burn to boost a full scan: /boost\n\nThe balance is read again every few hours.` : `<b>Wallet linked</b> · <code>${w.slice(0, 6)}…${w.slice(-4)}</code>\n${n(bal)} $SHUNT. The holder tools open at ${n(HOLD_MIN)} $SHUNT.`).catch(() => 0);
+  await tgSend(env, L.chat, ok ? `<b>Holder linked</b> · <code>${w.slice(0, 6)}…${w.slice(-4)}</code>\n${n(bal)} $SHUNT\n\nTier: <b>${tierOf(bal)}</b>\n\nYours now:\n• personal alarms in this chat: /alarm\n• trusted devs and known dumpers launching, in this chat\n• Tripwire for up to ${HOLD_TRIP} tokens: /watch\n• burn to boost a full scan: /boost\n${bal >= HOLD_PRO ? '• Early Radar: clean Pons launches, minutes old\n' : `• Early Radar opens at ${HOLD_PRO.toLocaleString('en-US')} $SHUNT (Pro)\n`}\nThe balance is read again every few hours.` : `<b>Wallet linked</b> · <code>${w.slice(0, 6)}…${w.slice(-4)}</code>\n${n(bal)} $SHUNT. The holder tools open at ${n(HOLD_MIN)} $SHUNT.`).catch(() => 0);
   return [200, { ok: true, holder: ok, balance: bal, min: HOLD_MIN }];
 }
 // balances are read again, five chats a tick, every six hours
@@ -2059,6 +2061,49 @@ async function boostToken(st, env, token, tx, from) {
     '', `Boosted by ${tgEsc(from)}, who burned ${n(burned)} $SHUNT: https://robinhoodchain.blockscout.com/tx/${tx}`, `https://shuntdesk.com/ticket/?a=${token}`, '<i>Findings from the chain, not a verdict on anyone. Not advice.</i>'].filter(l => l !== null);
   const text = lines.join('\n'); tgQueue(st, alarmChats(st, env), text);
   return { ok: true, text };
+}
+
+// ---------- Early Radar (Pro holders) and Trusted Dev Alert (all holders): new Pons launches, read minutes after launch ----------
+// A minute's launches from the factory log go in a queue; three minutes after each launch the contract, the sell test,
+// the curve and the launcher's record are read, two a minute. A launcher with two or more launches before gets its
+// Dev Score (one a minute, kept six hours): a clean record or a record of dumping is said to the holders who asked.
+const HOLD_PRO = 5000000;
+const tierOf = bal => bal >= HOLD_PRO ? 'Pro' : bal >= HOLD_MIN ? 'Holder' : null;
+export async function earlyFeed(st, env) {
+  if (!Object.values(st.holders || {}).some(h => h.bal >= HOLD_MIN)) return;   // nobody to tell
+  const E = st.early = st.early || { block: 0, q: [], t: 0 }, now = Date.now(); if (now - E.t < 55000) return; E.t = now;
+  const head = parseInt(await rpc('eth_blockNumber'), 16), from = E.block ? E.block + 1 : head - 1200; if (from > head) return;
+  const logs = await wideLogs(env, T_LAUNCH, from, Math.min(head, from + 20000)); E.block = Math.min(head, from + 20000);
+  for (const l of logs) E.q.push({ t: wordAddr(l.topics[1]), c: wordAddr(l.topics[2]), by: wordAddr(l.topics[3]), at: logTime(l, now, head) });
+  E.q = E.q.filter(x => now - x.at < 30 * 60000).slice(-80);
+}
+export async function earlyTick(st, env) {
+  const E = st.early; if (!E?.q?.length) return;
+  const now = Date.now(), due = E.q.filter(x => now - x.at >= 3 * 60000).slice(0, 2); let scored = false;
+  for (const x of due) { E.q = E.q.filter(y => y !== x); scored = await earlyRead(st, env, x, !scored).catch(() => scored) || scored; }
+}
+async function earlyRead(st, env, x, mayScore) {
+  const [xr, gp, c, sy] = await Promise.all([xray(st, env, x.t).catch(() => null), goplus(env, x.t).catch(() => null), ponsCurve(x.t).catch(() => null), contractCall(x.t, SEL.sym).catch(() => null)]);
+  const sym = tgEsc(str(sy) ? '$' + str(sy) : x.t.slice(0, 8)), mins = Math.max(1, Math.round((Date.now() - x.at) / 60000)), sr = gp ? serverRead(gp) : null;
+  if (!lindexRead || Date.now() - lindexRead.t > 60000) lindexRead = { t: Date.now(), v: await env.KV.get(LINDEX).then(s => s ? JSON.parse(s) : { by: {} }) };
+  const prior = (lindexRead.v.by[x.by.slice(2)] || []).filter(([tok]) => tok !== x.t.slice(2)).length;
+  const R = st.devRec = st.devRec || {}; let rec = R[x.by] && Date.now() - R[x.by].t < 6 * HOUR ? R[x.by] : null, scored = false;
+  if (!rec && prior >= 2 && mayScore) { const d = await devScore(st, env, x.by).catch(() => null); if (d?.ok) { rec = R[x.by] = { t: Date.now(), score: d.score, launched: d.launched, held: d.held, dumped: d.dumped, dfh: d.dumpedFirstHour, bonded: d.bonded }; scored = true; const ks = Object.keys(R); if (ks.length > 500) delete R[ks[0]]; } }
+  const powers = (xr?.powers || []).filter(p => p.level === 'high').map(p => p.what), flags = [...powers, ...(sr?.red || [])];
+  const who = rec ? `${rec.launched} Pons launches, ${rec.dumped} dumped${rec.dfh ? ` (${rec.dfh} in the first hour)` : ''}, ${rec.bonded} bonded · Dev Score ${rec.score ?? '—'}` : prior ? `${prior} Pons launch${prior > 1 ? 'es' : ''} before this one` : 'its first Pons launch on record';
+  const link = `https://shuntdesk.com/ticket/?a=${x.t}`;
+  const early = `<b>Early read</b> · ${sym} · ${mins} min after launch\n<code>${x.t}</code>\n\n${flags.length ? `Found:\n${flags.slice(0, 6).map(f => '• ' + tgEsc(f)).join('\n')}` : xr?.ok ? 'No function that mints, pauses, blocks wallets or changes the tax.' + (sr ? ' The sell test passes.' : ' The security read is not ready yet.') : 'The contract could not be read yet.'}\n${c ? `Curve ${c.progress.toFixed(1)}%: ${c.raised.toFixed(3)} of ${c.need} ETH\n` : ''}Launcher <code>${x.by.slice(0, 6)}…${x.by.slice(-4)}</code>: ${who}\n\n${link}\n<i>An early read is only that: holders, bundles and the website come later. Not advice.</i>`;
+  const trusted = rec && rec.held >= 3 && rec.dumped === 0 && (rec.score ?? 0) >= 80, dumper = rec && rec.dfh >= 1;
+  const devText = trusted ? `<b>Trusted dev launched</b> · ${sym}\n<code>${x.t}</code>\n\nThe launcher <code>${x.by.slice(0, 6)}…${x.by.slice(-4)}</code> has ${rec.launched} Pons launches on record and dumped none of them; ${rec.bonded} bonded. Dev Score ${rec.score}.\n\n${link}\nshuntdesk.com/dev/?w=${x.by}\n<i>A clean past is not a promise. Not advice.</i>`
+    : dumper ? `<b>Known dumper launched</b> · ${sym}\n<code>${x.t}</code>\n\nThe launcher <code>${x.by.slice(0, 6)}…${x.by.slice(-4)}</code> has ${rec.launched} Pons launches on record: ${rec.dumped} dumped, ${rec.dfh} within the first hour. Dev Score ${rec.score ?? '—'}.\n\n${link}\nshuntdesk.com/dev/?w=${x.by}\n<i>From the chain, not a verdict on anyone. Not advice.</i>` : null;
+  // the last twenty reads, kept to see what the radar saw and why it spoke or stayed quiet
+  st.earlyLast = [{ t: x.t, sym: str(sy) || null, min: mins, flags: flags.length, read: !!xr?.ok, sell: !!sr, curve: c ? Math.round(c.progress * 10) / 10 : null, prior, rec: rec ? { score: rec.score, launched: rec.launched, dumped: rec.dumped } : null, early: !flags.length && !!xr?.ok && !!c && c.progress >= 3, dev: trusted ? 'trusted' : dumper ? 'dumper' : null }, ...(st.earlyLast || [])].slice(0, 20);
+  for (const [chat, h] of Object.entries(st.holders || {})) {
+    // an early read goes out only for a launch with nothing found and buyers already in: a hundred launch an hour
+    if (h.bal >= HOLD_PRO && h.f?.early !== false && !flags.length && xr?.ok && c && c.progress >= 3) holderSend(st, chat, early);
+    if (devText && h.bal >= HOLD_MIN && h.f?.dev !== false) holderSend(st, chat, devText);
+  }
+  return scored;
 }
 
 // ---------- the daily line, posted to the community group at 13:00 UTC ----------
@@ -2252,7 +2297,7 @@ const api = {
           curve: L?.launchpad === 'pons' ? { progress: L.progress, graduated: L.graduated, raised: L.raised, need: L.need, holders: L.holders ?? null } : null,
           record: { calls: st.verdicts.length, clean: rec.after24h.CLEAN, danger: rec.after24h.DANGER }, pools: SHUNT_POOLS, links: { source: 'https://github.com/shuntdesk/shuntdesk', data: 'https://huggingface.co/datasets/shuntdesk/verdicts', x: 'https://x.com/shuntdesk', telegram: 'https://t.me/shuntdesk' } }); }
       if (url.pathname === '/api/holder' && body) { if (!allow(st, ip, 'holder', 20)) return json({ ok: false, why: 'slow down' }, 429); const [code, out] = await holderVerify(st, env, body); await save(env, st); return json(out, code); }
-      if (url.pathname === '/api/holder') return json({ ok: true, message: holderMessage(String(url.searchParams.get('c') || '')), min: HOLD_MIN, boost: BOOST_MIN, trip: HOLD_TRIP });
+      if (url.pathname === '/api/holder') return json({ ok: true, message: holderMessage(String(url.searchParams.get('c') || '')), min: HOLD_MIN, pro: HOLD_PRO, boost: BOOST_MIN, trip: HOLD_TRIP });
       if (url.pathname === '/api/caught') return json(await caughtView(env));
       if (url.pathname === '/api/weekly') return json(await weeklyData(st, env));
       if (url.pathname === '/api/devscore') { const w = (url.searchParams.get('w') || '').toLowerCase(); if (!isAddr(w)) return json({ ok: false, why: 'bad address' }, 400); if (!scores.has(w) && !allow(st, ip, 'devscore', 30)) return json({ ok: false, why: 'slow down: 30 an hour' }, 429); return json(await devScore(st, env, w)); }
@@ -2308,6 +2353,8 @@ const api = {
     try { await bondGame(st, env); } catch (e) {}
     try { await holderRefresh(st); } catch (e) {}
     try { await holderCurves(st, env); } catch (e) {}
+    try { await earlyFeed(st, env); } catch (e) {}
+    try { await earlyTick(st, env); } catch (e) {}
     try { await tgFlush(st, env); } catch (e) {}
     try { await handAlert(st, env); } catch (e) { st.handLast = { t: Date.now(), why: String(e.message || e).slice(0, 120) }; }
     try { await tripTick(st, env); } catch (e) { st.tripLast = { t: Date.now(), why: String(e.message || e).slice(0, 120) }; }
