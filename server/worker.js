@@ -372,11 +372,18 @@ async function secondRead(st, env, b, ip) {
 // Add it to a client as a remote server at https://shuntdesk.com/mcp. Read-only, no key, 120 calls an hour per caller.
 const MCP_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 const ADDR = { type: 'string', pattern: '^0x[0-9a-fA-F]{40}$', description: 'A token address on Robinhood Chain (chain id 4663)' };
+const AGENT_LIMIT = { shared: 20, devscore: 30, wallet: 30 };
 const TOOLS = [
   { name: 'token', title: 'What Shuntdesk knows about one token', p: 'token', description: 'The latest Shuntdesk verdict on a Robinhood Chain token (CLEAN, RISKY or DANGER, scored out of 100) and how its price moved an hour and a day later, a fresh server-side security read (red flags, holders), launch facts for Pons tokens (snipers, bundles, insiders, developer share, curve progress) and the crew desk position. verdict is null when nobody has run the checks yet; the reply carries the link that runs them. A verdict is a rule-based reading and can be wrong. Not advice.', inputSchema: { type: 'object', properties: { address: ADDR }, required: ['address'], additionalProperties: false } },
   { name: 'verdicts', title: 'Latest verdicts', p: 'verdicts', description: 'The 50 latest verdicts Shuntdesk filed, each with its price at the call and an hour and a day later, and how many CLEAN and DANGER calls held an hour later.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'crew_desk', title: 'The crew desk', p: 'desk', description: 'The public paper desk that bets on Shuntdesk verdicts: equity in paper USDG, open positions, and the last 20 closed trades, each with a post-mortem. All money is simulated.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'pons_graduations', title: 'Fresh Pons graduations', p: 'graduated', description: 'Tokens that just completed the Pons bonding curve on Robinhood Chain, read from the Pons V2 factory log.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
+  { name: 'scan', title: 'Contract X-ray', p: 'scan', description: 'Reads a Robinhood Chain token contract: the functions it answers to, which can mint, pause, block wallets, change the tax or swap the code, whether it sits behind a proxy, and who owns it.', inputSchema: { type: 'object', properties: { address: ADDR }, required: ['address'], additionalProperties: false } },
+  { name: 'dev_ledger', title: 'Dev Ledger', p: 'ledger', description: 'Where the launcher of a Robinhood Chain token sent its tokens: sold, sent to wallets, sent to contracts, burned, still held. Read from the chain index; a part that could not be read is said as unread, never as zero.', inputSchema: { type: 'object', properties: { address: ADDR }, required: ['address'], additionalProperties: false } },
+  { name: 'curve_sim', title: 'Curve Simulator data', p: 'sim', description: 'The live reserves, progress, bond mark and fee of a Pons bonding curve, read from its contract, so a buy and a sell can be worked the way the curve works them: constant product on the virtual reserves, the fee off the ETH in and out, no more out than the curve has raised.', inputSchema: { type: 'object', properties: { address: ADDR }, required: ['address'], additionalProperties: false } },
+  { name: 'twins', title: 'Twin Finder', p: 'twins', description: 'Contracts in the Shuntdesk radar log that run exactly the same code as this token (through a proxy or a clone, the same implementation), and how many lost half their price. Pons tokens all share the factory code, so for them it points to the launcher instead.', inputSchema: { type: 'object', properties: { address: ADDR }, required: ['address'], additionalProperties: false } },
+  { name: 'dev_score', title: 'Dev Score', p: 'devscore', description: 'The record of a launcher wallet on Pons: every token it launched, how many bonded, how many lost half, and how much the wallet sold. Pass the launcher wallet, not the token.', inputSchema: { type: 'object', properties: { address: { ...ADDR, description: 'A launcher wallet on Robinhood Chain' } }, required: ['address'], additionalProperties: false } },
+  { name: 'shared_bags', title: 'Shared Bags', p: 'shared', description: 'The wallets among the largest holders of two tokens that hold both, with the share each one holds of each token. Pools, curves and contracts left out. Holding both is a link, not proof of a group.', inputSchema: { type: 'object', properties: { address: ADDR, other: { ...ADDR, description: 'The second token address' } }, required: ['address', 'other'], additionalProperties: false } },
   { name: 'daily_report', title: 'Daily report', p: 'report', description: 'The crew desk over the last 24 hours: balance and change, verdict counts, how many calls held, best and worst trade, with a one-paragraph summary.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
 ];
 async function mcp(st, env, request, body, ip) {
@@ -388,7 +395,7 @@ async function mcp(st, env, request, body, ip) {
     const ok = result => ({ jsonrpc: '2.0', id: m.id, result }), fail = (code, message) => ({ jsonrpc: '2.0', id: m.id, error: { code, message } });
     if (m.method === 'initialize') {
       const want = m.params?.protocolVersion, v = MCP_VERSIONS.includes(want) ? want : MCP_VERSIONS[0];
-      return ok({ protocolVersion: v, capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'shuntdesk', title: 'Shuntdesk', version: '1.1.0' },
+      return ok({ protocolVersion: v, capabilities: { tools: { listChanged: false } }, serverInfo: { name: 'shuntdesk', title: 'Shuntdesk', version: '1.2.0' },
         instructions: 'Read-only tools for Robinhood Chain tokens from shuntdesk.com. Quote a verdict as a rule-based reading of public data that can be wrong, never as advice, and link https://shuntdesk.com/ticket/?a=<address>.' });
     }
     if (m.method === 'ping') return ok({});
@@ -396,9 +403,10 @@ async function mcp(st, env, request, body, ip) {
     if (m.method === 'tools/call') {
       const tool = TOOLS.find(t => t.name === m.params?.name); if (!tool) return fail(-32602, 'Unknown tool: ' + String(m.params?.name).slice(0, 40));
       if (!allow(st, ip, 'agent', 120)) return ok({ isError: true, content: [{ type: 'text', text: 'Rate limited: 120 calls an hour.' }] });
-      const a = String(m.params?.arguments?.address || '').toLowerCase();
-      if (tool.p === 'token' && !isAddr(a)) return ok({ isError: true, content: [{ type: 'text', text: 'address must be 0x followed by 40 hex characters' }] });
-      const [code, out] = await agentData(st, env, tool.p, a);
+      const a = String(m.params?.arguments?.address || '').toLowerCase(), b = String(m.params?.arguments?.other || '').toLowerCase();
+      if (AGENT_LIMIT[tool.p] && !allow(st, ip, 'agent-' + tool.p, AGENT_LIMIT[tool.p])) return ok({ isError: true, content: [{ type: 'text', text: `Rate limited: ${AGENT_LIMIT[tool.p]} calls an hour for this tool.` }] });
+      if (tool.inputSchema.required?.includes('address') && !isAddr(a)) return ok({ isError: true, content: [{ type: 'text', text: 'address must be 0x followed by 40 hex characters' }] });
+      const [code, out] = await agentData(st, env, tool.p, a, b);
       return ok({ isError: code !== 200, content: [{ type: 'text', text: JSON.stringify(out, null, 1) }], structuredContent: out });
     }
     return fail(-32601, 'Method not found: ' + m.method.slice(0, 40));
@@ -776,7 +784,8 @@ async function telegram(st, env, request, body) {
 }
 
 // the agent interface's reads, shared by /api/v1/* and the MCP tools
-async function agentData(st, env, p, a) {
+async function agentData(st, env, p, a, b = '') {
+  const need = 'pass ?a=0x… a token address on Robinhood Chain';
   if (p === 'token') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a token address on Robinhood Chain' }]; const r = await agentToken(st, env, a); await save(env, st); return [200, r]; }
   if (p === 'verdicts') return [200, { verdicts: st.verdicts.slice(0, 50).map(v => ({ token: v.addr, symbol: v.sym, verdict: v.verdict, score: v.score, desk: v.platform, at: new Date(v.t).toISOString(), priceAtVerdict: v.p0, after1h: v.p1h || null, after24h: v.p24h || null })), record: record(st).after1h }];
   if (p === 'desk') return [200, { paper: true, start: START, equity: Math.round(equity(st) * 100) / 100, cash: Math.round(st.cash * 100) / 100, open: st.pos.map(x => ({ token: x.addr, symbol: x.sym, side: x.side, leverage: x.lev, entry: x.entry, mark: x.mark || x.entry, net: Math.round(worth(x).net * 100) / 100 })), closed: st.hist.slice(0, 20).map(h => ({ token: h.addr, symbol: h.sym, side: h.side, leverage: h.lev, entry: h.entry, exit: h.exit, pnl: Math.round(h.pnl * 100) / 100, why: h.why, postMortem: h.note?.text || null, at: new Date(h.t).toISOString() })) }];
@@ -790,7 +799,11 @@ async function agentData(st, env, p, a) {
   if (p === 'lab') return [200, await labData(env)];
   if (p === 'wallet') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a wallet address' }]; return [200, await walletView(st, env, a)]; }
   if (p === 'devledger' || p === 'ledger') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a token address on Robinhood Chain' }]; return [200, await devLedger(env, a)]; }
-  if (p === 'xray' || p === 'scan') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a token address on Robinhood Chain' }]; return [200, await xray(st, env, a)]; }
+  if (p === 'xray' || p === 'scan') { if (!isAddr(a)) return [400, { error: need }]; return [200, await xray(st, env, a)]; }
+  if (p === 'sim') { if (!isAddr(a)) return [400, { error: need }]; return [200, await curveSim(a)]; }
+  if (p === 'twins') { if (!isAddr(a)) return [400, { error: need }]; return [200, await twins(env, a)]; }
+  if (p === 'devscore') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… the launcher wallet' }]; return [200, await devScore(st, env, a)]; }
+  if (p === 'shared') { if (!isAddr(a) || !isAddr(b) || a === b) return [400, { error: 'pass ?a=0x…&b=0x… two different token addresses' }]; return [200, await sharedBags(env, a, b)]; }
   return [404, { error: 'unknown endpoint', see: 'https://shuntdesk.com/llms.txt' }];
 }
 
@@ -2503,7 +2516,8 @@ const api = {
       // the agent interface: read-only, CORS open, 120 calls an hour per caller
       if (url.pathname.startsWith('/api/v1/')) {
         if (!allow(st, ip, 'agent', 120)) return json({ error: 'rate limited: 120 calls an hour' }, 429);
-        const [code, out] = await agentData(st, env, url.pathname.slice(8), (url.searchParams.get('a') || '').toLowerCase());
+        const ep = url.pathname.slice(8); if (AGENT_LIMIT[ep] && !allow(st, ip, 'agent-' + ep, AGENT_LIMIT[ep])) return json({ error: `rate limited: ${AGENT_LIMIT[ep]} calls an hour for ${ep}` }, 429);
+        const [code, out] = await agentData(st, env, ep, (url.searchParams.get('a') || '').toLowerCase(), (url.searchParams.get('b') || '').toLowerCase());
         return json(out, code);
       }
       if (url.pathname === '/mcp' || url.pathname === '/api/mcp') return mcp(st, env, request, body, ip);

@@ -10,3 +10,6 @@
 
 /assets/vendor/*
   Cache-Control: public, max-age=604800
+
+/agents/SKILL.md
+  Content-Type: text/markdown; charset=utf-8

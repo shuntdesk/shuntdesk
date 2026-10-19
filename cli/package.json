@@ -1,0 +1,16 @@
+{
+  "name": "shuntdesk",
+  "version": "1.0.0",
+  "description": "Read Robinhood Chain tokens from a terminal: contract powers, verdicts, Pons curve simulation, dev ledgers, launcher records, code twins and shared holders. Read-only, no key.",
+  "type": "module",
+  "bin": { "shuntdesk": "bin/shuntdesk.mjs" },
+  "exports": { "./curve": "./lib/curve.mjs" },
+  "files": ["bin", "lib", "skill", "README.md", "LICENSE"],
+  "engines": { "node": ">=18" },
+  "keywords": ["robinhood-chain", "pons", "token-scanner", "crypto", "cli", "bonding-curve", "rug-check", "ai-agent", "mcp"],
+  "homepage": "https://shuntdesk.com",
+  "repository": { "type": "git", "url": "git+https://github.com/shuntdesk/shuntdesk.git", "directory": "cli" },
+  "bugs": "https://github.com/shuntdesk/shuntdesk/issues",
+  "license": "MIT",
+  "author": "Shuntdesk"
+}

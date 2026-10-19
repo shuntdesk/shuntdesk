@@ -18,10 +18,19 @@ Read-only JSON, no key, CORS open, 120 calls an hour per caller. All money figur
 - GET https://shuntdesk.com/api/v1/report : the last 24 hours of the crew desk, with a one-paragraph summary.
 - GET https://shuntdesk.com/api/v1/lookalikes?a=0x… : Lookalikes. Tokens in Shuntdesk's hourly log (every new token with 25+ holders, read 30 to 90 minutes after launch) that looked closest to this one, and how they moved an hour and a day later. Past results of other tokens, not a forecast.
 - GET https://shuntdesk.com/api/v1/stocks : the stocks behind Robinhood Chain's stock tokens (Yahoo Finance): latest trade, last close, market session.
+- GET https://shuntdesk.com/api/v1/scan?a=0x… : the contract read from its bytecode: powers (mint, pause, block wallets, change the tax, swap the code), owner, proxy, source.
+- GET https://shuntdesk.com/api/v1/sim?a=0x… : a Pons curve's live reserves, progress, bond mark and fee, read from the curve contract, to work a buy and a sell the way the curve does.
+- GET https://shuntdesk.com/api/v1/twins?a=0x… : contracts in the radar's log running exactly the same code, and how many lost half.
+- GET https://shuntdesk.com/api/v1/devscore?a=0x… : a launcher wallet's record on Pons (pass the wallet, not the token). 30 an hour.
+- GET https://shuntdesk.com/api/v1/shared?a=0x…&b=0x… : the top wallets holding both of two tokens. 20 an hour.
 
 ## MCP
 
-The same reads as MCP tools (token, verdicts, crew_desk, pons_graduations, daily_report) over Streamable HTTP: add https://shuntdesk.com/mcp as a remote server. Read-only, no key.
+The same reads as MCP tools (token, scan, dev_ledger, curve_sim, twins, dev_score, shared_bags, verdicts, crew_desk, pons_graduations, daily_report) over Streamable HTTP: add https://shuntdesk.com/mcp as a remote server. Read-only, no key.
+
+## CLI and agent skill
+
+npx shuntdesk <scan|token|sim|ledger|dev|twins|shared> 0x… (add --json for the raw answer). The npm package "shuntdesk" also carries skill/shuntdesk/SKILL.md, an agent skill that says when to call these reads and how to report them: a part not read is said as not read, never as zero, and nothing is called safe. The skill alone: https://shuntdesk.com/agents/SKILL.md
 
 ## Telegram
 

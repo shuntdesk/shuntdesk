@@ -16,6 +16,14 @@ function run(c, E, X = 0) {
   const gross = Math.min(Q2 * tok / (T2 + tok), real), back = gross * (1 - f);
   return { tok, avg: E / tok, impact: (Q1 / T1) / (Q / T) - 1, after: Math.min(100, (c.realEth + inn) / c.need * 100), afterX: Math.min(100, real / c.need * 100), back, bonds: c.realEth + inn >= c.need };
 }
+// the least ETH others must put in after the buy for a straight sell to give it back; null when the curve bonds first
+function breakEven(c, E) {
+  const room = (c.need - c.realEth - E * (1 - c.fee)) / (1 - c.fee);
+  if (run(c, E).back >= E) return 0;
+  if (!(room > 0) || run(c, E, room).back < E) return null;
+  let lo = 0, hi = room; for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (run(c, E, m).back >= E) hi = m; else lo = m; }
+  return hi;
+}
 let job = 0;
 async function go(a, E) {
   const id = ++job; history.replaceState(null, '', `?a=${a}&e=${E}`); $('#sm-out').hidden = true; $('#sm-msg').textContent = 'READING THE CURVE…';
@@ -28,7 +36,7 @@ async function go(a, E) {
   $('#sm-tok').textContent = n0(r.tok); $('#sm-tok-s').textContent = `average $${(r.avg * c.ethUsd).toPrecision(3)} a token, ${usd(E, c)} in`;
   $('#sm-imp').textContent = pc(r.impact); $('#sm-imp').className = 'v ' + (r.impact > 0.1 ? 'short' : '');
   $('#sm-cv').textContent = r.after.toFixed(1) + '%'; $('#sm-cv-s').textContent = r.bonds ? 'this buy would reach the bond mark' : `${(c.need - c.realEth - E * (1 - c.fee)).toFixed(3)} ETH left to bond`;
-  $('#sm-back').textContent = e4(r.back); $('#sm-back').className = 'v ' + (r.back < E * 0.9 ? 'short' : ''); $('#sm-back-s').textContent = `${usd(r.back, c)} · ${pc(r.back / E - 1)} on the round trip`;
+  $('#sm-back').textContent = e4(r.back); $('#sm-back').className = 'v ' + (r.back < E * 0.9 ? 'short' : ''); const be = breakEven(c, E); $('#sm-back-s').textContent = `${usd(r.back, c)} · ${pc(r.back / E - 1)} on the round trip · ${be == null ? 'the curve bonds before it breaks even' : `breaks even when others put in ${e4(be)}`}`;
   const A = $('#sm-after'); A.querySelectorAll('.r:not(.h)').forEach(x => x.remove());
   A.insertAdjacentHTML('beforeend', [0.05, 0.1, 0.25, 0.5, 1, 2].map(X => { const q = run(c, E, X); return `<div class="r"><span>${X} ETH</span><span>${q.afterX.toFixed(1)}%</span><span class="${q.back >= E ? 'long' : 'short'}">${e4(q.back)}</span><span>${pc(q.back / E - 1)}</span></div>`; }).join(''));
   const S = $('#sm-sizes'); S.querySelectorAll('.r:not(.h)').forEach(x => x.remove());
