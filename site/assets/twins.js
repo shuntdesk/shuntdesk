@@ -15,7 +15,7 @@ async function go(a) {
   $('#tw-msg').textContent = ''; $('#tw-out').hidden = false;
   $('#tw-f').textContent = v.functions; $('#tw-n').textContent = v.twins.toLocaleString('en-US');
   $('#tw-l').textContent = v.judged ? `${v.lostHalf} of ${v.judged}` : '—'; $('#tw-l').className = 'v sm ' + (v.judged && v.lostHalf / v.judged >= 0.5 ? 'short' : '');
-  $('#tw-m').textContent = v.marked.toLocaleString('en-US');
+  $('#tw-m').textContent = v.marked.toLocaleString('en-US'); if (v.logged) $('#tw-m-s').textContent = `of ${v.logged.toLocaleString('en-US')} logged tokens compared so far`;
   const l = $('#tw-list'); l.querySelectorAll('.r:not(.h), p').forEach(x => x.remove());
   l.insertAdjacentHTML('beforeend', v.rows.length ? v.rows.map(r => `<a class="r" href="/replay/?a=${r.token}"><span class="sy">${esc(r.symbol || r.token.slice(0, 8))}<small>${r.token.slice(0, 6)}…${r.token.slice(-4)}</small></span><span>${when(r.read)}</span><span></span><span class="${r.worst != null && r.worst <= -0.5 ? 'short' : ''}">${r.worst == null ? 'no result yet' : r.worst <= -1 ? 'no price' : pc(r.worst)}</span><span class="go">→</span></a>`).join('') : '<p class="note" style="margin:10px 0">No twin in the log yet.</p>');
   $('#tw-note').textContent = v.note;

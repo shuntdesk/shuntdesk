@@ -2231,29 +2231,45 @@ export async function curveSim(token) {
 }
 // Twin Finder: the set of functions a contract answers to, as one short mark. Copied contracts differ in their constants,
 // rarely in their functions. Every Pons token is the factory's own code, so for them the launcher says more than the code.
-async function codeMark(a) {
-  const code = await rpc('eth_getCode', [a, 'latest']).catch(() => null); if (!code || code === '0x' || isDelegated(code)) return null;
-  let sels = dispatcher(code).sort();
-  if (sels.length < 4) {   // a proxy: its functions live in the implementation the EIP-1967 slot names
-    const slot = await rpc('eth_getStorageAt', [a, '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc', 'latest']).catch(() => null), impl = slot && !/^0x0*$/.test(slot) ? '0x' + slot.slice(-40) : null;
-    const ic = impl ? await rpc('eth_getCode', [impl, 'latest']).catch(() => null) : null; if (ic && ic !== '0x') sels = dispatcher(ic).sort();
-  }
-  if (sels.length < 4) return null;
-  return { m: keccak256(sels.join('')).slice(0, 16), n: sels.length };
+// many calls in one request to the plain node: one result per call, null for a call that was not answered
+async function rpcBatch(calls) {
+  if (!calls.length) return [];
+  const r = await fetch(RPCS[0], { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(calls.map(([method, params], id) => ({ jsonrpc: '2.0', id, method, params }))), signal: AbortSignal.timeout(20000) });
+  if (!r.ok) throw new Error('node said ' + r.status);
+  const j = await r.json(), out = calls.map(() => null); if (Array.isArray(j)) for (const x of j) if (x && typeof x.result === 'string' && x.id in out) out[x.id] = x.result;
+  return out;
 }
-async function twinsTick(env) {   // the radar's log gets each token's mark, five a run, from the plain node (no index credits)
-  const L = await looksLoad(env), todo = L.rows.filter(r => r.x && r.cm === undefined).slice(-5); if (!todo.length) return;
-  for (const r of todo) { const k = await codeMark(r.a).catch(() => null); r.cm = k ? k.m : null; }
-  await env.KV.put(LOOKS, JSON.stringify(L));
+const IMPL_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc', CLONE = /^0x363d3d373d3d3d363d73([0-9a-f]{40})5af43d82803e903d91602b57fd5bf3$/i;
+// each contract's mark: the hash of the functions it answers to (through an EIP-1167 clone or an EIP-1967 proxy to its implementation);
+// null when there is no code to compare, undefined when the node did not answer
+async function codeMarks(addrs) {
+  const codes = await rpcBatch(addrs.map(a => ['eth_getCode', [a, 'latest']])), out = addrs.map(() => undefined), impl = addrs.map(() => null);
+  const proxied = [];
+  codes.forEach((c, i) => { if (c === null) return; if (c === '0x' || isDelegated(c)) { out[i] = null; return; }
+    const cl = CLONE.exec(c); if (cl) { impl[i] = '0x' + cl[1].toLowerCase(); return; }
+    const s = dispatcher(c); if (s.length >= 4) out[i] = s; else proxied.push(i); });
+  const slots = await rpcBatch(proxied.map(i => ['eth_getStorageAt', [addrs[i], IMPL_SLOT, 'latest']]));
+  proxied.forEach((i, k) => { const s = slots[k]; if (s === null) return; if (/^0x0*$/.test(s)) out[i] = dispatcher(codes[i]); else impl[i] = '0x' + s.slice(-40); });
+  const need = [...new Set(impl.filter((x, i) => x && out[i] === undefined))], ic = await rpcBatch(need.map(a => ['eth_getCode', [a, 'latest']])), IC = new Map(need.map((a, k) => [a, ic[k]]));
+  impl.forEach((x, i) => { if (!x || out[i] !== undefined) return; const c = IC.get(x); if (c !== null && c !== undefined) out[i] = c === '0x' ? [] : dispatcher(c); });
+  return out.map(s => s === undefined ? undefined : s === null || s.length < 4 ? null : { m: keccak256([...s].sort().join('')).slice(0, 16), n: s.length });
+}
+async function codeMark(a) { const [k] = await codeMarks([a]); if (k === undefined) throw new Error('code not read'); return k; }
+async function twinsTick(env) {   // the radar's log gets each token's mark, sixty a run in three requests, from the plain node (no index credits)
+  const L = await looksLoad(env), todo = L.rows.filter(r => r.x && r.ck === undefined).slice(-60); let n = 0;
+  if (todo.length) { const ks = await codeMarks(todo.map(r => r.a)); todo.forEach((r, i) => { if (ks[i] !== undefined) { r.ck = ks[i] ? ks[i].m : false; n++; } }); }
+  for (const r of L.rows) if ('cm' in r) { delete r.cm; n++; }
+  if (n) await env.KV.put(LOOKS, JSON.stringify(L));
 }
 export async function twins(env, a) {
-  const [k, cv] = await Promise.all([codeMark(a), contractCall(a, SEL.curve).catch(() => null)]);
+  const [k, cv] = await Promise.all([codeMark(a).catch(() => undefined), contractCall(a, SEL.curve).catch(() => null)]);
   if (cv && cv.length >= 66 && !/^0x0{64}$/.test(cv)) return { ok: true, token: a, pons: true, note: 'A Pons token: every Pons token runs the same factory code, so its twins are every Pons token. What sets one apart is who launched it: open Dev Score.' };
+  if (k === undefined) return { ok: false, why: 'the contract could not be read right now: try again in a minute' };
   if (!k) return { ok: false, why: 'no contract code to compare' };
-  const L = await looksLoad(env), same = L.rows.filter(r => r.cm === k.m && r.a !== a);
+  const L = await looksLoad(env), same = L.rows.filter(r => r.ck === k.m && r.a !== a);
   const judged = same.filter(r => lookMove(r, 'p24') !== null || lookMove(r, 'p1') !== null), worst = r => Math.min(...['p1', 'p24'].map(x => lookMove(r, x)).filter(v => v !== null));
   const lost = judged.filter(r => worst(r) <= -0.5);
-  return { ok: true, token: a, functions: k.n, twins: same.length, judged: judged.length, lostHalf: lost.length, marked: L.rows.filter(r => r.cm !== undefined).length,
+  return { ok: true, token: a, functions: k.n, twins: same.length, judged: judged.length, lostHalf: lost.length, marked: L.rows.filter(r => typeof r.ck === 'string').length, logged: L.rows.filter(r => r.x).length,
     rows: same.sort((p, q) => q.t - p.t).slice(0, 30).map(r => ({ token: r.a, symbol: r.s, read: new Date(r.t).toISOString(), worst: judged.includes(r) ? worst(r) : null })),
     note: 'Twins are contracts in Shuntdesk\'s radar log that answer to exactly the same set of functions. The log covers new tokens with 25 or more holders since it began; older tokens are marked as the log fills. Same functions is not the same people. Not advice.' };
 }
@@ -2262,14 +2278,16 @@ const bagsCache = new Map();
 async function sharedBags(env, a, b) {
   const key = [a, b].sort().join(':'), hit = bagsCache.get(key); if (hit && Date.now() - hit.t < 30 * 60000) return hit.v;
   if (bsLow()) return { ok: false, why: INDEX_OUT };
-  let ha, hb; try { [ha, hb] = await Promise.all([bsStrict(env, `module=token&action=getTokenHolders&contractaddress=${a}&page=1&offset=300`), bsStrict(env, `module=token&action=getTokenHolders&contractaddress=${b}&page=1&offset=300`)]); } catch (e) { return { ok: false, why: String(e.message || e).slice(0, 120) }; }
+  const list = async x => { const q = `module=token&action=getTokenHolders&contractaddress=${x}&page=1&offset=300`; try { return await bsStrict(env, q); } catch (e) { if (e.message === INDEX_OUT) throw e; await new Promise(r => setTimeout(r, 1200)); return bsStrict(env, q); } };
+  let ha, hb; try { ha = await list(a); hb = await list(b); } catch (e) { return { ok: false, why: String(e.message || e).slice(0, 120) }; }
   const [da, db, sa, sb] = await Promise.all([contractCall(a, '313ce567'), contractCall(b, '313ce567'), contractCall(a, '18160ddd'), contractCall(b, '18160ddd')].map(p => p.catch(() => null)));
   const share = (v, d, s) => s ? Number(BigInt(v || '0') * 1000000n / BigInt(s)) / 10000 : null;
   const ma = new Map(ha.map(h => [String(h.address).toLowerCase(), share(h.value, da, sa)]));
   const both = hb.map(h => [String(h.address).toLowerCase(), share(h.value, db, sb)]).filter(([w]) => ma.has(w) && w !== DEAD && !/^0x0{40}$/.test(w));
-  const codes = await Promise.all(both.slice(0, 40).map(([w]) => rpc('eth_getCode', [w, 'latest']).catch(() => '0x')));
-  const wallets = both.slice(0, 40).filter((_, i) => !codes[i] || codes[i] === '0x' || isDelegated(codes[i])).map(([w, sB]) => ({ wallet: w, shareA: ma.get(w), shareB: sB })).sort((p, q) => Math.min(q.shareA, q.shareB) - Math.min(p.shareA, p.shareB));
-  const v = { ok: true, a, b, readA: ha.length, readB: hb.length, shared: wallets.length, wallets: wallets.slice(0, 30), heldA: wallets.reduce((s, w) => s + (w.shareA || 0), 0), heldB: wallets.reduce((s, w) => s + (w.shareB || 0), 0),
+  const codes = await Promise.all(both.slice(0, 40).map(([w]) => rpc('eth_getCode', [w, 'latest']).catch(() => null)));   // a code that was not read is left out and counted
+  const unread = codes.filter(c => typeof c !== 'string').length;
+  const wallets = both.slice(0, 40).filter((_, i) => typeof codes[i] === 'string' && (codes[i] === '0x' || isDelegated(codes[i]))).map(([w, sB]) => ({ wallet: w, shareA: ma.get(w), shareB: sB })).sort((p, q) => Math.min(q.shareA, q.shareB) - Math.min(p.shareA, p.shareB));
+  const v = { ok: true, a, b, readA: ha.length, readB: hb.length, shared: wallets.length, unread, past40: Math.max(0, both.length - 40), wallets: wallets.slice(0, 30), heldA: wallets.reduce((s, w) => s + (w.shareA || 0), 0), heldB: wallets.reduce((s, w) => s + (w.shareB || 0), 0),
     note: 'The largest 300 holders of each token from the chain index; wallets that hold both, pools, curves and other contracts left out (smart wallets count as wallets). Holding both is a link, not proof of a group. Not advice.' };
   bagsCache.set(key, { t: Date.now(), v }); if (bagsCache.size > 200) bagsCache.delete(bagsCache.keys().next().value);
   return v;
@@ -2549,6 +2567,7 @@ const api = {
     try { await tgFlush(st, env); } catch (e) {}   // messages first, while the run still has requests to spend
     try { await gradScan(st, env); } catch (e) { st.grads = { ...(st.grads || { rows: [] }), err: String(e.message || e).slice(0, 120) }; }   // the graduation feed is extra: a failed read never stops the desk
     try { await looksTick(env); } catch (e) {}
+    try { await twinsTick(env); } catch (e) {}
     try { await bondTick(env); } catch (e) {}
     try { await lindexTick(env); } catch (e) {}
     try { await radarTick(st, env); } catch (e) {}
@@ -2560,7 +2579,6 @@ const api = {
     try { await earlyFeed(st, env); } catch (e) {}
     try { await earlyTick(st, env); } catch (e) {}
     try { await followTick(st, env); } catch (e) {}
-    try { await twinsTick(env); } catch (e) {}
     try { await holderWeekly(st, env); } catch (e) {}
     try { await tgFlush(st, env); } catch (e) {}
     try { await handAlert(st, env); } catch (e) { st.handLast = { t: Date.now(), why: String(e.message || e).slice(0, 120) }; }
