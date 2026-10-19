@@ -2233,10 +2233,15 @@ export async function curveSim(token) {
 // rarely in their functions. Every Pons token is the factory's own code, so for them the launcher says more than the code.
 // many calls in one request to the plain node: one result per call, null for a call that was not answered
 async function rpcBatch(calls) {
-  if (!calls.length) return [];
-  const r = await fetch(RPCS[0], { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(calls.map(([method, params], id) => ({ jsonrpc: '2.0', id, method, params }))), signal: AbortSignal.timeout(20000) });
-  if (!r.ok) throw new Error('node said ' + r.status);
-  const j = await r.json(), out = calls.map(() => null); if (Array.isArray(j)) for (const x of j) if (x && typeof x.result === 'string' && x.id in out) out[x.id] = x.result;
+  const out = calls.map(() => null); if (!calls.length) return out;
+  for (const url of RPCS) {   // what one node leaves unanswered goes to the next
+    const left = out.map((v, i) => v === null ? i : -1).filter(i => i >= 0); if (!left.length) break;
+    try {
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(left.map(i => ({ jsonrpc: '2.0', id: i, method: calls[i][0], params: calls[i][1] }))), signal: AbortSignal.timeout(20000) });
+      if (!r.ok) continue; const j = await r.json().catch(() => null);
+      if (Array.isArray(j)) for (const x of j) if (x && typeof x.result === 'string' && x.id in out) out[x.id] = x.result;
+    } catch (e) {}
+  }
   return out;
 }
 const IMPL_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc', CLONE = /^0x363d3d373d3d3d363d73([0-9a-f]{40})5af43d82803e903d91602b57fd5bf3$/i;
@@ -2288,7 +2293,7 @@ async function sharedBags(env, a, b) {
   const unread = codes.filter(c => typeof c !== 'string').length;
   const wallets = both.slice(0, 40).filter((_, i) => typeof codes[i] === 'string' && (codes[i] === '0x' || isDelegated(codes[i]))).map(([w, sB]) => ({ wallet: w, shareA: ma.get(w), shareB: sB })).sort((p, q) => Math.min(q.shareA, q.shareB) - Math.min(p.shareA, p.shareB));
   const v = { ok: true, a, b, readA: ha.length, readB: hb.length, shared: wallets.length, unread, past40: Math.max(0, both.length - 40), wallets: wallets.slice(0, 30), heldA: wallets.reduce((s, w) => s + (w.shareA || 0), 0), heldB: wallets.reduce((s, w) => s + (w.shareB || 0), 0),
-    note: 'The largest 300 holders of each token from the chain index; wallets that hold both, pools, curves and other contracts left out (smart wallets count as wallets). Holding both is a link, not proof of a group. Not advice.' };
+    note: 'Up to the largest 300 holders of each token from the chain index; wallets that hold both, pools, curves and other contracts left out (smart wallets count as wallets). Holding both is a link, not proof of a group. Not advice.' };
   bagsCache.set(key, { t: Date.now(), v }); if (bagsCache.size > 200) bagsCache.delete(bagsCache.keys().next().value);
   return v;
 }
