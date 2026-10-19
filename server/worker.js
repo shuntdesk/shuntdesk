@@ -45,7 +45,21 @@ const RPCS = ['https://rpc.mainnet.chain.robinhood.com'];
 export const bsCredits = { left: null, t: 0 };
 const BS_RESERVE = 30000;
 const bsLow = () => bsCredits.left !== null && bsCredits.left < BS_RESERVE && new Date(bsCredits.t).getUTCDate() === new Date().getUTCDate();
-{ const f0 = globalThis.fetch; globalThis.fetch = async (u, o) => { const r = await f0(u, o); if (String(u?.url || u).includes('api.blockscout.com')) { const h = r.headers.get('x-credits-remaining'); if (h != null && h !== '') { bsCredits.left = Number(h); bsCredits.t = Date.now(); } else if (r.status === 402) { bsCredits.left = 0; bsCredits.t = Date.now(); } } return r; }; }
+// a background job falls back to the index only while more than twice the reserve is left: the free node is retried next run instead
+const bsSpare = () => bsCredits.left === null || bsCredits.left > 2 * BS_RESERVE || new Date(bsCredits.t).getUTCDate() !== new Date().getUTCDate();
+// and what spends them: calls and credits by the function that asked and the index action, since the day began (UTC)
+export const bsUse = { day: '', by: {} };
+const bsWho = () => { const s = (new Error().stack || '').split('\n').slice(2).map(l => (/at (?:async )?([\w$.]+) /.exec(l) || [])[1]).filter(f => f && !/^(globalThis\.fetch|fetch|bs|bsStrict|Object\.\w+|Promise\.\w+)$/.test(f)); return s[0] || '?'; };
+{ const f0 = globalThis.fetch; globalThis.fetch = async (u, o) => {
+  const url = String(u?.url || u); if (!url.includes('api.blockscout.com')) return f0(u, o);
+  const who = bsWho(), q = /[?&]module=(\w+).*?[?&]action=(\w+)/.exec(url), key = who + ' ' + (q ? q[1] + '.' + q[2] : url.split('/api')[1]?.split('?')[0] || '?');
+  const r = await f0(u, o), h = r.headers.get('x-credits-remaining'), day = new Date().toISOString().slice(0, 10);
+  if (bsUse.day !== day) { bsUse.day = day; bsUse.by = {}; }
+  const e = bsUse.by[key] = bsUse.by[key] || { calls: 0, credits: 0 }; e.calls++;
+  if (h != null && h !== '') { const left = Number(h); if (bsCredits.left !== null && bsCredits.left > left && new Date(bsCredits.t).toISOString().slice(0, 10) === day) e.credits += bsCredits.left - left; bsCredits.left = left; bsCredits.t = Date.now(); }
+  else if (r.status === 402) { bsCredits.left = 0; bsCredits.t = Date.now(); }
+  return r;
+}; }
 const WETH = '0x0bd7d308f8e1639fab988df18a8011f41eacad73', USDG = '0x5fc5360d0400a0fd4f2af552add042d716f1d168', ETH0 = '0x0000000000000000000000000000000000000000';
 const ETH_REF = { pool: '0x52e65b17fb6e5ba00ed806f37afcd2daa50271ca', q: 'usd', base0: true, d0: 18, d1: 6 };   // WETH / USDG, Uniswap v3
 async function rpc(method, params = []) {
@@ -939,7 +953,7 @@ async function gradScan(st, env) {
     if (!logs) await new Promise(r => setTimeout(r, 1500));
   }
   // the public node refuses shared Cloudflare addresses at times: the keyed Blockscout index has the same log
-  if (!logs && env?.BLOCKSCOUT_API_KEY) try {
+  if (!logs && env?.BLOCKSCOUT_API_KEY && bsSpare()) try {
     const r = await fetch(`https://api.blockscout.com/4663/api?module=logs&action=getLogs&address=${PONS}&topic0=${T_GRAD}&fromBlock=${from}&toBlock=${to}&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA });
     const j = await r.json(); if (Array.isArray(j.result)) logs = j.result; else if (j.message === 'No records found') logs = []; else why += ' · blockscout: ' + String(j.message || r.status).slice(0, 60);
   } catch (e) { why += ' · blockscout: ' + String(e.message || e).slice(0, 60); }
@@ -1498,7 +1512,7 @@ async function wideLogs(env, topic0, from, to) {
     await new Promise(r => setTimeout(r, 1200));
   }
   if (!env?.BLOCKSCOUT_API_KEY) throw new Error(why);
-  if (bsLow()) throw new Error(why + ' · the index is kept for what people open today');
+  if (!bsSpare()) throw new Error(why + ' · the index is kept for what people open today');
   const out = [];
   for (let page = 1; page <= 10; page++) {
     const r = await fetch(`https://api.blockscout.com/4663/api?module=logs&action=getLogs&address=${PONS}&topic0=${topic0}&fromBlock=${from}&toBlock=${to}&page=${page}&offset=1000&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA });
@@ -1679,9 +1693,12 @@ export async function tripTick(st, env) {
   for (const [token, w] of Object.entries(T)) {
     const from = w.block + 1; if (from > head) continue;
     const say = [];
-    // power functions called since the last look
-    if (env.BLOCKSCOUT_API_KEY && Object.keys(w.sels).length) try {
-      const j = await (await fetch(`https://api.blockscout.com/4663/api?module=account&action=txlist&address=${token}&startblock=${from}&endblock=${head}&sort=asc&page=1&offset=50&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA })).json();
+    // power functions called since the last look: one index read per token every fifteen minutes, while the index has room
+    const powerDue = Date.now() - (w.pt || 0) >= 15 * 60000 && bsSpare(), pfrom = w.pblock ? w.pblock + 1 : from;
+    if (env.BLOCKSCOUT_API_KEY && Object.keys(w.sels).length && powerDue) try {
+      const j = await (await fetch(`https://api.blockscout.com/4663/api?module=account&action=txlist&address=${token}&startblock=${pfrom}&endblock=${head}&sort=asc&page=1&offset=1000&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA })).json();
+      if (Array.isArray(j.result) && j.result.length >= 1000) { w.pblock = Number(j.result[j.result.length - 1].blockNumber) - 1; w.pt = 0; }   // a full page: the next run goes on from there
+      else if (Array.isArray(j.result) || /no transactions found/i.test(j.message || '')) { w.pt = Date.now(); w.pblock = head; }
       for (const tx of Array.isArray(j.result) ? j.result : []) {
         const sel = String(tx.input || '').slice(2, 10).toLowerCase();
         if (String(tx.to).toLowerCase() === token && w.sels[sel] && tx.isError !== '1') say.push(`<code>${tgEsc(w.sels[sel])}</code> was just called by <code>${short(String(tx.from).toLowerCase())}</code>`);
@@ -2487,7 +2504,7 @@ const api = {
         const st0 = await load(env).catch(() => null);
         const T = '0x39dbed3a2bd333467115de45665cc57f813c4571', probe = async (u, h) => { try { const r = await fetch(u, { headers: { Accept: 'application/json', ...UA, ...h } }); return r.status; } catch (e) { return 'unreachable'; } };
         const sizes = {}; for (const k of [STATE, BONDS, LINDEX, LOOKS]) { const v = await env.KV.get(k).catch(() => null); sizes[k] = v ? v.length : 0; }   // a stored value may not pass 2 MB
-        return json({ storage: sizes, blockscoutCredits: { ...bsCredits, low: bsLow() }, dexscreener: await probe(DS + '/tokens/v1/robinhood/' + T), dexscreenerNoAgent: await (async () => { try { return (await fetch(DS + '/tokens/v1/robinhood/' + T)).status; } catch (e) { return 'unreachable'; } })(), goplus: await probe('https://api.gopluslabs.io/api/v1/token_security/4663?contract_addresses=' + T), geckoterminal: await probe('https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/' + T), yahoo: await probe('https://query1.finance.yahoo.com/v8/finance/chart/TSLA?interval=1m&range=1d'), looks: await looksLoad(env).then(L => ({ logged: L.rows.length, judged: L.rows.filter(r => r.p1 !== undefined).length, err: L.err || null })).catch(e => String(e.message || e)), handLast: st0?.handLast || null, codexToday: st0?.codex || null, rpc: await (async () => { try { return (await fetch('https://rpc.mainnet.chain.robinhood.com', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' })).status; } catch (e) { return 'unreachable'; } })(), chain: await (async () => { const o = { nodes: RPCS.length }; for (const [k, fn] of [['ethUsd', () => poolRatio(ETH_REF)], ['decimals', () => rpc('eth_call', [{ to: T, data: '0x313ce567' }, 'latest'])]]) { try { o[k] = String(await fn()).slice(0, 12); } catch (e) { o[k] = 'ERR ' + String(e.message || e).slice(0, 60); } } return o; })(), keys: { openrouter: !!env.OPENROUTER_API_KEY, goplus: !!env.GOPLUS_APP_KEY, codex: !!env.CODEX_API_KEY, coingecko: !!env.COINGECKO_API_KEY } });
+        return json({ storage: sizes, blockscoutCredits: { ...bsCredits, low: bsLow(), spare: bsSpare() }, tripTokens: Object.keys(st0?.trip || {}).length, blockscoutUse: { day: bsUse.day, by: Object.fromEntries(Object.entries(bsUse.by).sort((a, b) => b[1].credits - a[1].credits || b[1].calls - a[1].calls)) }, dexscreener: await probe(DS + '/tokens/v1/robinhood/' + T), dexscreenerNoAgent: await (async () => { try { return (await fetch(DS + '/tokens/v1/robinhood/' + T)).status; } catch (e) { return 'unreachable'; } })(), goplus: await probe('https://api.gopluslabs.io/api/v1/token_security/4663?contract_addresses=' + T), geckoterminal: await probe('https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/' + T), yahoo: await probe('https://query1.finance.yahoo.com/v8/finance/chart/TSLA?interval=1m&range=1d'), looks: await looksLoad(env).then(L => ({ logged: L.rows.length, judged: L.rows.filter(r => r.p1 !== undefined).length, err: L.err || null })).catch(e => String(e.message || e)), handLast: st0?.handLast || null, codexToday: st0?.codex || null, rpc: await (async () => { try { return (await fetch('https://rpc.mainnet.chain.robinhood.com', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' })).status; } catch (e) { return 'unreachable'; } })(), chain: await (async () => { const o = { nodes: RPCS.length }; for (const [k, fn] of [['ethUsd', () => poolRatio(ETH_REF)], ['decimals', () => rpc('eth_call', [{ to: T, data: '0x313ce567' }, 'latest'])]]) { try { o[k] = String(await fn()).slice(0, 12); } catch (e) { o[k] = 'ERR ' + String(e.message || e).slice(0, 60); } } return o; })(), keys: { openrouter: !!env.OPENROUTER_API_KEY, goplus: !!env.GOPLUS_APP_KEY, codex: !!env.CODEX_API_KEY, coingecko: !!env.COINGECKO_API_KEY } });
       }
       if (url.pathname === '/api/candles') { const a = (url.searchParams.get('a') || '').toLowerCase(); return isAddr(a) ? json(await candles(env, a)) : json({ rows: [], res: 1 }, 400); }
       if (url.pathname === '/api/pools') return json(await pools(env, url.searchParams.get('kind') === 'new' ? 'new' : 'trending'));
