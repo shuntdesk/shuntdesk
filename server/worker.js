@@ -1070,7 +1070,7 @@ async function radarTick(st, env) {
 }
 async function radarView(env) {
   const L = await looksLoad(env), now = Date.now(), mv = (r, k) => r[k] !== undefined && r.p0 ? (r[k] ? r[k] / r.p0 - 1 : -1) : null;
-  const flags = r => [...(r.x?.h || []).map(k => ({ mint: 'can mint', upgrade: 'code can be swapped', pause: 'can freeze transfers', block: 'can block wallets', tax: 'can change the tax' }[k] || k)), r.x?.p ? 'proxy' : null, r.g?.hp ? 'sell fails' : null, r.g?.st >= 10 ? `sell tax ${r.g.st}%` : null, r.sh?.n ? `launcher trail: ${r.sh.n} earlier launch${r.sh.n > 1 ? 'es' : ''}` : null, r.f[4] >= 10 ? `bundles ${r.f[4]}%` : null, r.f[3] >= 10 ? `snipers ${r.f[3]}%` : null, r.f[2] >= 50 ? `top 10 hold ${Math.round(r.f[2])}%` : null, ...(r.sc?.f || [])].filter(Boolean);
+  const flags = r => [...(r.x?.h || []).map(k => ({ mint: 'can mint', upgrade: 'code can be swapped', pause: 'can freeze transfers', block: 'can block wallets', tax: 'can change the tax' }[k] || k)), r.x?.p ? 'proxy' : null, r.g?.hp ? 'sell fails' : null, r.g?.st >= 10 ? `sell tax ${r.g.st}%` : null, r.sh?.n ? `launcher trail: ${r.sh.n} earlier launch${r.sh.n > 1 ? 'es' : ''}` : null, r.f[4] >= 10 ? `bundles ${r.f[4]}%` : null, r.f[3] >= 10 ? `snipers ${r.f[3]}%` : null, r.f[2] >= 50 ? `top 10 hold ${Math.round(r.f[2])}%` : null, r.f[6] > 10 ? `dev holds ${r.f[6]}%` : null, ...(r.sc?.f || [])].filter(Boolean);
   const rows = L.rows.filter(r => r.x !== undefined).sort((a, b) => b.t - a.t).slice(0, 80).map(r => ({ token: r.a, symbol: r.s, read: new Date(r.t).toISOString(), launchpad: r.pad || null, liquidity: r.l0, holders: r.f[1], flags: flags(r), move1h: mv(r, 'p1'), move24h: mv(r, 'p24') }));
   const scanned = L.rows.filter(r => r.x !== undefined), withFlag = scanned.filter(r => flags(r).length), judged = s => s.filter(r => r.p1 !== undefined);
   const fell = s => judged(s).filter(r => mv(r, 'p1') <= -0.5).length;
@@ -1821,7 +1821,7 @@ const ago = ms => { const m = ms / 60000; return m < 60 ? Math.max(1, Math.round
 function radarFlags(r) {
   const P = { mint: 'can mint', upgrade: 'code can be swapped', pause: 'can freeze transfers', block: 'can block wallets', tax: 'can change the tax' };
   return [...(r.x?.h || []).map(k => P[k] || k), r.x?.p ? 'behind a proxy' : null, r.g?.hp ? 'the sell test fails' : null, r.g?.st >= 10 ? `sell tax ${r.g.st}%` : null,
-    r.f?.[4] > 5 ? `bundles hold ${r.f[4].toFixed(1)}%` : null, r.f?.[3] > 5 ? `snipers hold ${r.f[3].toFixed(1)}%` : null, r.f?.[5] > 5 ? `insiders hold ${r.f[5].toFixed(1)}%` : null].filter(Boolean);
+    r.f?.[4] > 5 ? `bundles hold ${r.f[4].toFixed(1)}%` : null, r.f?.[3] > 5 ? `snipers hold ${r.f[3].toFixed(1)}%` : null, r.f?.[5] > 5 ? `insiders hold ${r.f[5].toFixed(1)}%` : null, r.f?.[6] > 10 ? `dev holds ${r.f[6].toFixed(1)}%` : null].filter(Boolean);
 }
 const lookMove = (r, k) => r[k] !== undefined && r.p0 ? (r[k] ? r[k] / r.p0 - 1 : -1) : null;
 
@@ -2284,7 +2284,7 @@ async function sharedBags(env, a, b) {
   const share = (v, d, s) => s ? Number(BigInt(v || '0') * 1000000n / BigInt(s)) / 10000 : null;
   const ma = new Map(ha.map(h => [String(h.address).toLowerCase(), share(h.value, da, sa)]));
   const both = hb.map(h => [String(h.address).toLowerCase(), share(h.value, db, sb)]).filter(([w]) => ma.has(w) && w !== DEAD && !/^0x0{40}$/.test(w));
-  const codes = await Promise.all(both.slice(0, 40).map(([w]) => rpc('eth_getCode', [w, 'latest']).catch(() => null)));   // a code that was not read is left out and counted
+  const codes = await rpcBatch(both.slice(0, 40).map(([w]) => ['eth_getCode', [w, 'latest']])).catch(() => both.slice(0, 40).map(() => null));   // a code that was not read is left out and counted
   const unread = codes.filter(c => typeof c !== 'string').length;
   const wallets = both.slice(0, 40).filter((_, i) => typeof codes[i] === 'string' && (codes[i] === '0x' || isDelegated(codes[i]))).map(([w, sB]) => ({ wallet: w, shareA: ma.get(w), shareB: sB })).sort((p, q) => Math.min(q.shareA, q.shareB) - Math.min(p.shareA, p.shareB));
   const v = { ok: true, a, b, readA: ha.length, readB: hb.length, shared: wallets.length, unread, past40: Math.max(0, both.length - 40), wallets: wallets.slice(0, 30), heldA: wallets.reduce((s, w) => s + (w.shareA || 0), 0), heldB: wallets.reduce((s, w) => s + (w.shareB || 0), 0),
