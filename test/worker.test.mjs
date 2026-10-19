@@ -150,3 +150,9 @@ test('the ledger route answers a bad address with 400 and a good one without a s
   const r1 = await worker.fetch(new Request('http://x/api/ledger?a=nope'), env); assert.equal(r1.status, 400);
   const r2 = await worker.fetch(new Request('http://x/api/ledger?a=0x0000000000000000000000000000000000000001'), env); assert.notEqual(r2.status, 500);
 });
+
+test('Rug Run: a run needs a known record, the server scores it once, and the sim answers a non-Pons address plainly', async () => {
+  const [c0, v0] = await call('rugrun'); assert.equal(c0, 200); assert.equal(v0.ok, false);   // an empty log has no results to play
+  const [c1, v1] = await call('rugrun', { id: 'nope', handle: 'tester', calls: [] }); assert.equal(c1, 400); assert.match(v1.why, /ended/);
+  const r = await worker.fetch(new Request('http://x/api/sim?a=nope'), env); assert.equal(r.status, 400);
+});

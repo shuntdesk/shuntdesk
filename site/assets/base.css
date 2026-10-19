@@ -949,3 +949,13 @@ html.simple.light ::selection { background: #2ed3a0; color: #060708; }
   .dvlist .r { grid-template-columns: 1fr 1fr !important; } .dvlist .r > :nth-child(2), .dvlist .r > :nth-child(3) { display: none; }
   .bg-row { grid-template-columns: 1fr; gap: 8px; }
 }
+/* ---------- Simulator, Shared Bags, Rug Run ---------- */
+.simlist .r { grid-template-columns: 1fr 1fr 1fr 1fr !important; }
+.rr-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin-top: 10px; }
+.rr-card { border: 1px solid var(--hair); background: rgba(10,11,13,.7); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.rr-card.right { border-color: rgba(46,211,160,.7); } .rr-card.wrong { border-color: rgba(255,77,94,.7); }
+.rr-n { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; color: var(--mut); } .rr-n b { color: var(--ink); }
+.rr-f { display: flex; flex-wrap: wrap; gap: 6px 12px; font-family: var(--mono); font-size: 12px; color: #cfcdc8; }
+.rr-flags { display: flex; flex-wrap: wrap; gap: 6px; } .rr-flags i { font-style: normal; font-family: var(--mono); font-size: 11px; padding: 4px 8px; border: 1px solid rgba(255,122,61,.6); color: #ff7a3d; } .rr-flags i.ok { border-color: var(--hair); color: var(--mut); }
+.rr-res { font-family: var(--mono); font-weight: 700; font-size: 13px; letter-spacing: .1em; }
+@media (max-width: 760px) { .simlist .r { grid-template-columns: 1fr 1fr !important; } .simlist .r > :nth-child(4) { display: none; } }

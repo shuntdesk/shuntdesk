@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Find the contracts that answer to exactly the same functions as this one, and how those tokens did.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shuntdesk">
+<meta property="og:title" content="Twin Finder — Shuntdesk">
+<meta property="og:description" content="Find the contracts that answer to exactly the same functions as this one, and how those tokens did.">
+<meta property="og:url" content="https://shuntdesk.com/twins/">
+<meta property="og:image" content="https://shuntdesk.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shuntdesk. One score. Three tracks.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://shuntdesk.com/og.png">
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#060708">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/simple.css">
+<title>Twin Finder — Shuntdesk</title>
+<script src="/assets/ui-mode.js"></script>
+</head>
+<body class="sub">
+<canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
+<main class="page">
+
+  <div class="ph"><div><div class="eyebrow">Twin Finder</div><h1 class="disp">Copied code.<br><span class="acc">Copied endings?</span></h1></div>
+    <div class="side"><p class="note" style="max-width:460px;margin:0">PASTE A TOKEN. EVERY CONTRACT IN THE RADAR&#39;S LOG THAT ANSWERS TO EXACTLY THE SAME FUNCTIONS, AND WHAT HAPPENED TO THEM.</p></div></div>
+  <form class="pf-form" id="tw-form"><input id="tw-a" placeholder="0x… any token on Robinhood Chain" autocomplete="off" spellcheck="false"><button class="btn" type="submit">Find its twins →</button></form>
+  <p class="note" id="tw-msg"></p>
+  <div id="tw-out" hidden>
+    <div class="stats"><div class="stub stat"><div class="in"><div class="cap"><b>Functions</b></div><div class="v" id="tw-f">···</div><small id="tw-f-s">in this contract</small></div></div><div class="stub stat"><div class="in"><div class="cap"><b>Twins</b></div><div class="v" id="tw-n">···</div><small id="tw-n-s">same functions, in the log</small></div></div><div class="stub stat"><div class="in"><div class="cap"><b>Lost half</b></div><div class="v sm" id="tw-l">···</div><small id="tw-l-s">of the twins with a result</small></div></div><div class="stub stat"><div class="in"><div class="cap"><b>Log marked</b></div><div class="v" id="tw-m">···</div><small id="tw-m-s">tokens compared so far</small></div></div></div>
+    <div class="stub n"><div class="in"><div class="cap"><b>The twins</b><span>newest first</span></div><div class="dep calist" id="tw-list"><div class="r h"><span>TOKEN</span><span>READ</span><span>&nbsp;</span><span>LOWEST AFTER</span><span></span></div></div></div></div>
+    <p class="note" style="margin-top:14px" id="tw-note"></p>
+  </div>
+</main>
+<footer class="foot"></footer>
+<script type="module" src="/assets/twins.js"></script>
+</body>
+</html>

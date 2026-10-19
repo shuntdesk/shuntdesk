@@ -630,7 +630,7 @@ async function telegram(st, env, request, body) {
   if (!allow(st, 'tg:' + chat, 'tg', 40)) return reply('Slow down a little: 40 questions an hour per chat.');
   const site = 'https://shuntdesk.com', footer = '\n\n<i>A rule-based reading of public data. It can be wrong. Not advice.</i>';
   if (cmd === 'start' || cmd === 'help') return reply(`<b>Shuntdesk</b> · every token rides the line\n\nAsk anything about Shuntdesk, a token, the crew desk or what just launched. Or use:\n\n/check <code>0x…</code> what Shuntdesk knows about a Robinhood Chain token\n/scan <code>0x…</code> Agent Scan: what the contract lets its owner do\n/ledger <code>0x…</code> Dev Ledger: what the launcher did with it\n/devscore <code>0x…</code> Dev Score: every launch by that dev\n/report <code>0x…</code> report a token; the bot reads it\n/spotters who reported what lost half\n/bondgame today's Will it bond?\n/proof everything about $SHUNT you can check\n/alarms on launch alarms in your group (admins)\n
-<b>For $SHUNT holders</b>\n/link connect your wallet\n/alarm your own alarms\n/follow <code>0x…</code> hear when a wallet buys a Pons token\n/boost burn $SHUNT to boost a full scan\n/watch <code>0x…</code> Tripwire: a private alarm when the owner or the big wallets move\n/daily today's daily shift in the Yard\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
+<b>For $SHUNT holders</b>\n/link connect your wallet\n/alarm your own alarms\n/follow <code>0x…</code> hear when a wallet buys a Pons token\n/handle your name on the holder league\n/boost burn $SHUNT to boost a full scan\n/watch <code>0x…</code> Tripwire: a private alarm when the owner or the big wallets move\n/daily today's daily shift in the Yard\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
   // anything that is not a command, or a token address with a question around it, goes to the conductor
   const question = clean.replace(/^\/\w+\s*/, '').replace(/0x[0-9a-fA-F]{40}/, '').trim();
   if (!cmd && (!found || question.length > 3)) return reply(await tgAsk(st, env, chat, clean, found ? found[0].toLowerCase() : null));
@@ -683,6 +683,15 @@ async function telegram(st, env, request, body) {
     if (!(w in fw) && Object.keys(fw).length >= cap) return reply(`${cap} wallets is the most for your tier; /unfollow one first.`);
     fw[w] = clean.replace(/^\/\w+(@\w+)?\s*/, '').replace(/0x[0-9a-fA-F]{40}/, '').trim().slice(0, 24);
     return reply(`<b>Following</b> ${tgEsc(fw[w] || '')} <code>${w}</code>\n\nYou will hear from me when it buys a Pons token, with a short read of the token. Checked every three minutes. /following to see your list.`);
+  }
+  if (cmd === 'handle') {
+    if (group) return reply('Set your handle in a private chat with @shuntdesk_bot.');
+    if (!isHolder(st, chat)) return reply(`The holder league is for $SHUNT holders (${HOLD_MIN.toLocaleString('en-US')} or more). Send /link first.`);
+    const hd = clean.replace(/^\/\w+(@\w+)?\s*/, '').trim().toLowerCase();
+    if (!/^[a-z0-9_]{2,16}$/.test(hd)) return reply('Send /handle followed by the handle you play Will it bond? and Rug Run under: 2 to 16 letters, digits or _.');
+    for (const h of Object.values(st.holders)) if (h.handle === hd) delete h.handle;   // one handle, one holder
+    st.holders[String(chat)].handle = hd;
+    return reply(`Your handle is <b>${tgEsc(hd)}</b>. Play Will it bond? and Rug Run under it and you are on the holder league.\n\nshuntdesk.com/bond-game · shuntdesk.com/rug-run`);
   }
   if (cmd === 'boost') {
     const tk = (clean.match(/0x[0-9a-fA-F]{40}(?![0-9a-fA-F])/) || [])[0], tx = (clean.match(/0x[0-9a-fA-F]{64}/) || [])[0];
@@ -1965,7 +1974,7 @@ async function bondGame(st, env) {
   }
   return G;
 }
-function bondGameView(st, me, B) {
+function bondGameView(st, me, B, vs) {
   const G = st.bg || {}, day = G.day; if (!day) return { ok: false, why: 'not set yet' };
   const closes = Date.parse(day.d + 'T12:00:00Z'), live = t => B?.rows.find(r => r.t0 === t.t);
   const week = {}; for (const h of (G.hist || []).slice(0, 7)) for (const [k, p] of Object.entries(h.board)) week[k] = (week[k] || 0) + p;
@@ -1973,7 +1982,11 @@ function bondGameView(st, me, B) {
     tokens: day.tokens.map(t => { const r = live(t); return { token: t.t, symbol: t.s, startProgress: t.p0, progress: r ? Math.round((r.p || 0) * 10) / 10 : null, bonded: !!r?.g }; }),
     players: Object.keys(day.picks).length, mine: me && day.picks[me] ? day.picks[me].p : null,
     yesterday: G.hist?.[0] ? { day: G.hist[0].d, tokens: G.hist[0].tokens.map((t, i) => ({ symbol: t.s, token: t.t, bonded: G.hist[0].res[i] })), mine: me ? G.hist[0].board[me] ?? null : null, players: Object.keys(G.hist[0].board).length } : null,
-    board: Object.entries(week).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([h, pts]) => ({ handle: h, pts })),
+    board: Object.entries(week).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([h, pts]) => ({ handle: h, pts, ...bondRecord(G, h), holder: leagueHandles(st).has(h) })),
+    league: Object.entries(week).filter(([h]) => leagueHandles(st).has(h)).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([h, pts]) => ({ handle: h, pts, ...bondRecord(G, h) })),
+    me: me ? { ...bondRecord(G, me), holder: leagueHandles(st).has(me) } : null,
+    // a duel: the other handle's calls show once today's calls have closed; yesterday's result side by side
+    duel: vs && /^[a-z0-9_]{2,16}$/.test(vs) ? { vs, theirsToday: Date.now() >= closes ? day.picks[vs]?.p || null : (day.picks[vs] ? 'in' : null), yesterday: G.hist?.[0] ? { me: me ? G.hist[0].board[me] ?? null : null, them: G.hist[0].board[vs] ?? null, of: G.hist[0].res.length } : null, record: bondRecord(G, vs) } : null,
     note: 'Five open Pons curves a day, between 20% and 80%. Call each one, bond or no bond, before 12:00 UTC; at midnight UTC the curve contracts answer. One point a right call, the board counts the last seven days. No money and no prize. Not advice.' };
 }
 function bondGamePlay(st, body) {
@@ -2206,6 +2219,91 @@ async function holderWeekly(st, env) {
   }
 }
 
+// ================= new tools: Curve Simulator, Twin Finder, Shared Bags =================
+// Curve Simulator: a Pons curve's own reserves and fee, for the page to work any buy and sell through
+export async function curveSim(token) {
+  const c = await ponsCurve(token); if (!c) return { ok: false, why: 'not a Pons token, or its curve did not answer' };
+  if (c.graduated) return { ok: false, why: 'this token has bonded: it trades in a pool now, not on its curve' };
+  if (!c.pool) return { ok: false, why: 'this curve is quoted in another token, not ETH' };
+  const eth = await ethUsd().catch(() => 0); if (!(eth > 0)) return { ok: false, why: 'the ETH price did not answer' };
+  return { ok: true, token, curve: c.curve, progress: c.progress, raised: c.raised, need: c.need, quoteEth: c.pool.quoteUsd / eth, tokens: c.pool.tokens, realEth: c.pool.realUsd / eth, fee: c.pool.fee, ethUsd: eth,
+    note: 'Read from the curve contract now: a constant product over its reserves, the fee and the creator tax taken off the ETH going in and out, never more out than the curve has raised. Checked against the curve\'s own buy and sell answers. Other trades move it before yours lands. Not advice.' };
+}
+// Twin Finder: the set of functions a contract answers to, as one short mark. Copied contracts differ in their constants,
+// rarely in their functions. Every Pons token is the factory's own code, so for them the launcher says more than the code.
+async function codeMark(a) {
+  const code = await rpc('eth_getCode', [a, 'latest']).catch(() => null); if (!code || code === '0x' || isDelegated(code)) return null;
+  let sels = dispatcher(code).sort();
+  if (sels.length < 4) {   // a proxy: its functions live in the implementation the EIP-1967 slot names
+    const slot = await rpc('eth_getStorageAt', [a, '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc', 'latest']).catch(() => null), impl = slot && !/^0x0*$/.test(slot) ? '0x' + slot.slice(-40) : null;
+    const ic = impl ? await rpc('eth_getCode', [impl, 'latest']).catch(() => null) : null; if (ic && ic !== '0x') sels = dispatcher(ic).sort();
+  }
+  if (sels.length < 4) return null;
+  return { m: keccak256(sels.join('')).slice(0, 16), n: sels.length };
+}
+async function twinsTick(env) {   // the radar's log gets each token's mark, five a run, from the plain node (no index credits)
+  const L = await looksLoad(env), todo = L.rows.filter(r => r.x && r.cm === undefined).slice(-5); if (!todo.length) return;
+  for (const r of todo) { const k = await codeMark(r.a).catch(() => null); r.cm = k ? k.m : null; }
+  await env.KV.put(LOOKS, JSON.stringify(L));
+}
+export async function twins(env, a) {
+  const [k, cv] = await Promise.all([codeMark(a), contractCall(a, SEL.curve).catch(() => null)]);
+  if (cv && cv.length >= 66 && !/^0x0{64}$/.test(cv)) return { ok: true, token: a, pons: true, note: 'A Pons token: every Pons token runs the same factory code, so its twins are every Pons token. What sets one apart is who launched it: open Dev Score.' };
+  if (!k) return { ok: false, why: 'no contract code to compare' };
+  const L = await looksLoad(env), same = L.rows.filter(r => r.cm === k.m && r.a !== a);
+  const judged = same.filter(r => lookMove(r, 'p24') !== null || lookMove(r, 'p1') !== null), worst = r => Math.min(...['p1', 'p24'].map(x => lookMove(r, x)).filter(v => v !== null));
+  const lost = judged.filter(r => worst(r) <= -0.5);
+  return { ok: true, token: a, functions: k.n, twins: same.length, judged: judged.length, lostHalf: lost.length, marked: L.rows.filter(r => r.cm !== undefined).length,
+    rows: same.sort((p, q) => q.t - p.t).slice(0, 30).map(r => ({ token: r.a, symbol: r.s, read: new Date(r.t).toISOString(), worst: judged.includes(r) ? worst(r) : null })),
+    note: 'Twins are contracts in Shuntdesk\'s radar log that answer to exactly the same set of functions. The log covers new tokens with 25 or more holders since it began; older tokens are marked as the log fills. Same functions is not the same people. Not advice.' };
+}
+// Shared Bags: the wallets that hold both of two tokens, from the index's holder lists; pools, curves and contracts left out
+const bagsCache = new Map();
+async function sharedBags(env, a, b) {
+  const key = [a, b].sort().join(':'), hit = bagsCache.get(key); if (hit && Date.now() - hit.t < 30 * 60000) return hit.v;
+  if (bsLow()) return { ok: false, why: INDEX_OUT };
+  let ha, hb; try { [ha, hb] = await Promise.all([bsStrict(env, `module=token&action=getTokenHolders&contractaddress=${a}&page=1&offset=300`), bsStrict(env, `module=token&action=getTokenHolders&contractaddress=${b}&page=1&offset=300`)]); } catch (e) { return { ok: false, why: String(e.message || e).slice(0, 120) }; }
+  const [da, db, sa, sb] = await Promise.all([contractCall(a, '313ce567'), contractCall(b, '313ce567'), contractCall(a, '18160ddd'), contractCall(b, '18160ddd')].map(p => p.catch(() => null)));
+  const share = (v, d, s) => s ? Number(BigInt(v || '0') * 1000000n / BigInt(s)) / 10000 : null;
+  const ma = new Map(ha.map(h => [String(h.address).toLowerCase(), share(h.value, da, sa)]));
+  const both = hb.map(h => [String(h.address).toLowerCase(), share(h.value, db, sb)]).filter(([w]) => ma.has(w) && w !== DEAD && !/^0x0{40}$/.test(w));
+  const codes = await Promise.all(both.slice(0, 40).map(([w]) => rpc('eth_getCode', [w, 'latest']).catch(() => '0x')));
+  const wallets = both.slice(0, 40).filter((_, i) => !codes[i] || codes[i] === '0x' || isDelegated(codes[i])).map(([w, sB]) => ({ wallet: w, shareA: ma.get(w), shareB: sB })).sort((p, q) => Math.min(q.shareA, q.shareB) - Math.min(p.shareA, p.shareB));
+  const v = { ok: true, a, b, readA: ha.length, readB: hb.length, shared: wallets.length, wallets: wallets.slice(0, 30), heldA: wallets.reduce((s, w) => s + (w.shareA || 0), 0), heldB: wallets.reduce((s, w) => s + (w.shareB || 0), 0),
+    note: 'The largest 300 holders of each token from the chain index; wallets that hold both, pools, curves and other contracts left out (smart wallets count as wallets). Holding both is a link, not proof of a group. Not advice.' };
+  bagsCache.set(key, { t: Date.now(), v }); if (bagsCache.size > 200) bagsCache.delete(bagsCache.keys().next().value);
+  return v;
+}
+
+// ================= games: streaks, duels, the holder league, Rug Run =================
+// a player's record in Will it bond? over the days kept: days played in a row, perfect days, points this week
+function bondRecord(G, h) {
+  const hist = G.hist || []; let streak = 0;
+  for (const d of hist) { if (d.board[h] === undefined) break; streak++; }
+  return { streak, perfect: hist.filter(d => d.board[h] === d.res.length && d.res.length).length, week: hist.slice(0, 7).reduce((s, d) => s + (d.board[h] || 0), 0), played: hist.filter(d => d.board[h] !== undefined).length };
+}
+const leagueHandles = st => new Set(Object.values(st.holders || {}).filter(h => h.bal >= HOLD_MIN && h.handle).map(h => h.handle));
+// Rug Run: ten tokens from the radar's log as they looked when scanned; call each one rug or ride, the server knows the day after
+const rrPick = (L, n, seed) => { const pool = (L.rows || []).filter(r => r.x && lookMove(r, 'p24') !== null && r.f); let s = seed; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647; const out = []; const used = new Set(); while (out.length < n && used.size < pool.length) { const i = Math.floor(rnd() * pool.length); if (used.has(i)) continue; used.add(i); out.push(pool[i]); } return out; };
+async function rugRunNew(st, env) {
+  const L = await looksLoad(env), id = crypto.randomUUID().replace(/-/g, '').slice(0, 12), seed = parseInt(id.slice(0, 8), 16) % 2147483646 + 1;
+  const rows = rrPick(L, 10, seed); if (rows.length < 10) return { ok: false, why: 'not enough tokens with a known result yet' };
+  const R = st.rr = st.rr || {}; R[id] = { a: rows.map(r => r.a), t: Date.now() }; for (const [k, v] of Object.entries(R)) if (Date.now() - v.t > 2 * HOUR) delete R[k];
+  return { ok: true, id, tokens: rows.map((r, i) => ({ n: i + 1, launchpad: r.pad || null, liquidity: r.f[0], holders: r.f[1], top10: r.f[2], snipers: r.f[3], bundles: r.f[4], insiders: r.f[5], dev: r.f[6], age: r.c ? Math.round((r.t - r.c) / 60000) : null, flags: radarFlags(r), site: r.sc ? (r.sc.w ? (r.sc.f.length ? 'flagged' : 'checked') : 'none') : null })),
+    note: 'Ten new tokens as Shuntdesk read them 30 to 90 minutes after launch, names hidden. Call each one: rug (it lost half or more within a day) or ride. The answers come from the radar\'s own record.' };
+}
+function rugRunPlay(st, env, L, b) {
+  const h = String(b?.handle || '').trim().toLowerCase(); if (!/^[a-z0-9_]{2,16}$/.test(h)) return [400, { ok: false, why: 'handle must be 2 to 16 letters, digits or _' }];
+  const R = st.rr?.[String(b?.id || '')]; if (!R) return [400, { ok: false, why: 'that run has ended: start a new one' }];
+  const calls = Array.isArray(b.calls) ? b.calls.map(v => v === true) : []; if (calls.length !== R.a.length) return [400, { ok: false, why: 'call all ten' }];
+  delete st.rr[b.id];
+  const res = R.a.map(a => { const r = (L.rows || []).find(x => x.a === a); const m = r ? lookMove(r, 'p24') : null; return { token: a, symbol: r?.s || null, move24h: m, rug: m !== null && m <= -0.5, flags: r ? radarFlags(r) : [] }; });
+  const right = res.filter((r, i) => r.move24h !== null && calls[i] === r.rug).length;
+  const W = st.rrBoard = st.rrBoard || {}, wk = new Date(Date.now() - new Date().getUTCDay() * 86400000).toISOString().slice(0, 10);
+  W[wk] = W[wk] || {}; if ((W[wk][h] ?? -1) < right) W[wk][h] = right; for (const k of Object.keys(W)) if (k < new Date(Date.now() - 21 * 86400000).toISOString().slice(0, 10)) delete W[k];
+  return [200, { ok: true, right, of: res.length, results: res, board: Object.entries(W[wk]).sort((p, q) => q[1] - p[1]).slice(0, 20).map(([handle, best]) => ({ handle, best, holder: leagueHandles(st).has(handle) })) }];
+}
+
 // ---------- the daily line, posted to the community group at 13:00 UTC ----------
 // The site's own numbers for the last day, so the group hears from the line every day: the crew desk, the calls,
 // what the radar found, and the Pons curves closest to bonding. Once a day, nothing invented.
@@ -2400,12 +2498,16 @@ const api = {
       if (url.pathname === '/api/holder' && body) { if (!allow(st, ip, 'holder', 20)) return json({ ok: false, why: 'slow down' }, 429); const [code, out] = await holderVerify(st, env, body); await save(env, st); return json(out, code); }
       if (url.pathname === '/api/holder') return json({ ok: true, message: holderMessage(String(url.searchParams.get('c') || '')), min: HOLD_MIN, pro: HOLD_PRO, boost: BOOST_MIN, trip: HOLD_TRIP });
       if (url.pathname === '/api/caught') return json(await caughtView(env));
+      if (url.pathname === '/api/sim') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); return json(await curveSim(a)); }
+      if (url.pathname === '/api/twins') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); return json(await twins(env, a)); }
+      if (url.pathname === '/api/shared') { const a = (url.searchParams.get('a') || '').toLowerCase(), b = (url.searchParams.get('b') || '').toLowerCase(); if (!isAddr(a) || !isAddr(b) || a === b) return json({ ok: false, why: 'two different token addresses, please' }, 400); if (!bagsCache.has([a, b].sort().join(':')) && !allow(st, ip, 'shared', 20)) return json({ ok: false, why: 'slow down: 20 an hour' }, 429); return json(await sharedBags(env, a, b)); }
+      if (url.pathname === '/api/rugrun') { if (body) { if (!allow(st, ip, 'rugrun', 30)) return json({ ok: false, why: 'slow down' }, 429); const [code, out] = rugRunPlay(st, env, await looksLoad(env), body); await save(env, st); return json(out, code); } if (!allow(st, ip, 'rugrunnew', 60)) return json({ ok: false, why: 'slow down' }, 429); const v = await rugRunNew(st, env); await save(env, st); return json(v); }
       if (url.pathname === '/api/weekly') return json(await weeklyData(st, env));
       if (url.pathname === '/api/devscore') { const w = (url.searchParams.get('w') || '').toLowerCase(); if (!isAddr(w)) return json({ ok: false, why: 'bad address' }, 400); if (!scores.has(w) && !allow(st, ip, 'devscore', 30)) return json({ ok: false, why: 'slow down: 30 an hour' }, 429); return json(await devScore(st, env, w)); }
       if (url.pathname === '/api/bondgame') {
         await bondGame(st, env);
         if (body) { if (!allow(st, ip, 'bondgame', 10)) return json({ ok: false, why: 'slow down' }, 429); const [code, out] = bondGamePlay(st, body); await save(env, st); return json({ ...out, ...bondGameView(st, String(body.handle || '').toLowerCase(), await bondsLoad(env)) }, code); }
-        await save(env, st); return json(bondGameView(st, String(url.searchParams.get('me') || '').toLowerCase(), await bondsLoad(env)));
+        await save(env, st); return json(bondGameView(st, String(url.searchParams.get('me') || '').toLowerCase(), await bondsLoad(env), String(url.searchParams.get('vs') || '').toLowerCase()));
       }
       if (url.pathname.startsWith('/badge/')) { const a = url.pathname.slice(7).replace(/\.svg$/, '').toLowerCase(); if (!isAddr(a)) return new Response('not found', { status: 404 }); if (!ledgers.has(a) && !allow(st, ip, 'badge', 120)) return new Response('slow down', { status: 429 });
         return new Response(await badgeSvg(st, env, a), { headers: { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'public, max-age=600', 'Access-Control-Allow-Origin': '*' } }); }      if (url.pathname === '/api/daily') {
@@ -2458,6 +2560,7 @@ const api = {
     try { await earlyFeed(st, env); } catch (e) {}
     try { await earlyTick(st, env); } catch (e) {}
     try { await followTick(st, env); } catch (e) {}
+    try { await twinsTick(env); } catch (e) {}
     try { await holderWeekly(st, env); } catch (e) {}
     try { await tgFlush(st, env); } catch (e) {}
     try { await handAlert(st, env); } catch (e) { st.handLast = { t: Date.now(), why: String(e.message || e).slice(0, 120) }; }
