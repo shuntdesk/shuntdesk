@@ -1,4 +1,4 @@
-// /twins/: Twin Finder. Contracts in the radar's log that answer to exactly the same functions as this one
+// /twins/: Twin Finder. Contracts in the radar's log that run exactly the same code as this one
 import { createYard } from './yard.js';
 import { mountChrome, $, esc, feedYard } from './ui.js';
 import { isAddr } from './data.js';

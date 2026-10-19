@@ -2245,25 +2245,27 @@ async function rpcBatch(calls) {
   return out;
 }
 const IMPL_SLOT = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc', CLONE = /^0x363d3d373d3d3d363d73([0-9a-f]{40})5af43d82803e903d91602b57fd5bf3$/i;
-// each contract's mark: the hash of the functions it answers to (through an EIP-1167 clone or an EIP-1967 proxy to its implementation);
-// null when there is no code to compare, undefined when the node did not answer
+// each contract's mark: the hash of its runtime code with the compiler's metadata tail cut off (through an EIP-1167 clone or an
+// EIP-1967 proxy, the implementation's code), so the same mark is the same code, not only the same function names (every plain
+// ERC-20 shares those nine); null when there is no code to compare, undefined when the node did not answer
+const codeCore = c => { const h = c.slice(2), n = h.length >= 4 ? parseInt(h.slice(-4), 16) * 2 + 4 : 0; return n > 4 && n < h.length && /^a[1-4]6[45]/.test(h.slice(-n, -n + 6)) ? h.slice(0, -n) : h; };
 async function codeMarks(addrs) {
   const codes = await rpcBatch(addrs.map(a => ['eth_getCode', [a, 'latest']])), out = addrs.map(() => undefined), impl = addrs.map(() => null);
   const proxied = [];
   codes.forEach((c, i) => { if (c === null) return; if (c === '0x' || isDelegated(c)) { out[i] = null; return; }
     const cl = CLONE.exec(c); if (cl) { impl[i] = '0x' + cl[1].toLowerCase(); return; }
-    const s = dispatcher(c); if (s.length >= 4) out[i] = s; else proxied.push(i); });
+    if (dispatcher(c).length >= 4) out[i] = c; else proxied.push(i); });
   const slots = await rpcBatch(proxied.map(i => ['eth_getStorageAt', [addrs[i], IMPL_SLOT, 'latest']]));
-  proxied.forEach((i, k) => { const s = slots[k]; if (s === null) return; if (/^0x0*$/.test(s)) out[i] = dispatcher(codes[i]); else impl[i] = '0x' + s.slice(-40); });
+  proxied.forEach((i, k) => { const s = slots[k]; if (s === null) return; if (/^0x0*$/.test(s)) out[i] = codes[i]; else impl[i] = '0x' + s.slice(-40); });
   const need = [...new Set(impl.filter((x, i) => x && out[i] === undefined))], ic = await rpcBatch(need.map(a => ['eth_getCode', [a, 'latest']])), IC = new Map(need.map((a, k) => [a, ic[k]]));
-  impl.forEach((x, i) => { if (!x || out[i] !== undefined) return; const c = IC.get(x); if (c !== null && c !== undefined) out[i] = c === '0x' ? [] : dispatcher(c); });
-  return out.map(s => s === undefined ? undefined : s === null || s.length < 4 ? null : { m: keccak256([...s].sort().join('')).slice(0, 16), n: s.length });
+  impl.forEach((x, i) => { if (!x || out[i] !== undefined) return; const c = IC.get(x); if (c !== null && c !== undefined) out[i] = c; });
+  return out.map(c => { if (c === undefined) return undefined; const s = c ? dispatcher(c) : []; return s.length < 4 ? null : { m: keccak256(codeCore(c)).slice(0, 16), n: s.length }; });
 }
 async function codeMark(a) { const [k] = await codeMarks([a]); if (k === undefined) throw new Error('code not read'); return k; }
-async function twinsTick(env) {   // the radar's log gets each token's mark, sixty a run in three requests, from the plain node (no index credits)
-  const L = await looksLoad(env), todo = L.rows.filter(r => r.x && r.ck === undefined).slice(-60); let n = 0;
-  if (todo.length) { const ks = await codeMarks(todo.map(r => r.a)); todo.forEach((r, i) => { if (ks[i] !== undefined) { r.ck = ks[i] ? ks[i].m : false; n++; } }); }
-  for (const r of L.rows) if ('cm' in r) { delete r.cm; n++; }
+async function twinsTick(env) {   // the radar's log gets each token's mark, 120 a run in three requests, from the plain node (no index credits)
+  const L = await looksLoad(env), todo = L.rows.filter(r => r.x && r.cx === undefined).slice(-120); let n = 0;
+  if (todo.length) { const ks = await codeMarks(todo.map(r => r.a)); todo.forEach((r, i) => { if (ks[i] !== undefined) { r.cx = ks[i] ? ks[i].m : false; n++; } }); }
+  for (const r of L.rows) for (const k of ['cm', 'ck']) if (k in r) { delete r[k]; n++; }
   if (n) await env.KV.put(LOOKS, JSON.stringify(L));
 }
 export async function twins(env, a) {
@@ -2271,12 +2273,12 @@ export async function twins(env, a) {
   if (cv && cv.length >= 66 && !/^0x0{64}$/.test(cv)) return { ok: true, token: a, pons: true, note: 'A Pons token: every Pons token runs the same factory code, so its twins are every Pons token. What sets one apart is who launched it: open Dev Score.' };
   if (k === undefined) return { ok: false, why: 'the contract could not be read right now: try again in a minute' };
   if (!k) return { ok: false, why: 'no contract code to compare' };
-  const L = await looksLoad(env), same = L.rows.filter(r => r.ck === k.m && r.a !== a);
+  const L = await looksLoad(env), same = L.rows.filter(r => r.cx === k.m && r.a !== a);
   const judged = same.filter(r => lookMove(r, 'p24') !== null || lookMove(r, 'p1') !== null), worst = r => Math.min(...['p1', 'p24'].map(x => lookMove(r, x)).filter(v => v !== null));
   const lost = judged.filter(r => worst(r) <= -0.5);
-  return { ok: true, token: a, functions: k.n, twins: same.length, judged: judged.length, lostHalf: lost.length, marked: L.rows.filter(r => typeof r.ck === 'string').length, logged: L.rows.filter(r => r.x).length,
+  return { ok: true, token: a, functions: k.n, twins: same.length, judged: judged.length, lostHalf: lost.length, marked: L.rows.filter(r => r.cx !== undefined).length, logged: L.rows.filter(r => r.x).length,
     rows: same.sort((p, q) => q.t - p.t).slice(0, 30).map(r => ({ token: r.a, symbol: r.s, read: new Date(r.t).toISOString(), worst: judged.includes(r) ? worst(r) : null })),
-    note: 'Twins are contracts in Shuntdesk\'s radar log that answer to exactly the same set of functions. The log covers new tokens with 25 or more holders since it began; older tokens are marked as the log fills. Same functions is not the same people. Not advice.' };
+    note: 'Twins are contracts in Shuntdesk\'s radar log that run exactly the same code (behind a proxy or a clone, the same implementation code), compiler notes aside. The log covers new tokens with 25 or more holders since it began; older tokens are marked as the log fills. Same code is not the same people. Not advice.' };
 }
 // Shared Bags: the wallets that hold both of two tokens, from the index's holder lists; pools, curves and contracts left out
 const bagsCache = new Map();
