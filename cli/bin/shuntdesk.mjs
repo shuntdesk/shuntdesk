@@ -4,7 +4,7 @@
 import { simulate, breakEven, curveExit, poolExit } from '../lib/curve.mjs';
 import { createInterface } from 'node:readline';
 
-const VERSION = '1.0.0';
+const VERSION = '1.0.1';
 const BASE = (process.env.SHUNTDESK_API || 'https://shuntdesk.com').replace(/\/$/, '');
 const RPC = process.env.SHUNTDESK_RPC || 'https://rpc.mainnet.chain.robinhood.com';
 const argv = process.argv.slice(2), flags = new Set(argv.filter(a => a.startsWith('--'))), args = argv.filter(a => !a.startsWith('--'));
@@ -30,7 +30,7 @@ const bar = (p, w = 30, c = green) => { const f = Math.max(0, Math.min(w, Math.r
 const line = (k, v) => console.log('  ' + dim(pad(k, 20)) + v);
 const head = (s, sub = '') => console.log('\n ' + inv(bold(` ${s} `)) + (sub ? ' ' + dim(sub) : ''));
 const foot = (note, link) => { if (note) console.log('\n' + dim(wrap(note).replace(/^/gm, '  '))); if (link) console.log('  ' + cyan(link)); console.log(); };
-const box = (title, rows) => { const w = Math.max(plain(title).length + 4, ...rows.map(r => plain(r).length + 4)); console.log('  ┌─ ' + bold(title) + ' ' + '─'.repeat(Math.max(0, w - plain(title).length - 3)) + '┐'); for (const r of rows) console.log('  │ ' + pad(r, w - 1) + '│'); console.log('  └' + '─'.repeat(w + 1) + '┘'); };
+const box = (title, rows) => { const w = Math.max(plain(title).length + 4, ...rows.map(r => plain(r).length + 4)); console.log('  ┌─ ' + bold(title) + ' ' + '─'.repeat(Math.max(0, w - plain(title).length - 3)) + '┐'); for (const r of rows) console.log('  │ ' + pad(r, w - 1) + '│'); console.log('  └' + '─'.repeat(w) + '┘'); };
 const MARK = ['   ▄▄', '  ███▀', ' ▄██▀', '▀▀'];
 const banner = () => { if (!TTY) return; console.log(''); console.log(MARK.map((m, i) => '  ' + bold(m.padEnd(8)) + (i === 1 ? bold('SHUNTDESK') + dim('  ' + VERSION) : i === 2 ? dim('reads of Robinhood Chain tokens') : '')).join('\n')); };
 
@@ -277,7 +277,7 @@ const COMMANDS = {
       const day = v.days?.[v.days.length - 1];
       head('Bond Watch', `${v.onCurve ?? v.rows.length} on the curve${day ? ` · today ${day.l} launched, ${day.g} bonded` : ''}`); console.log();
       for (const r of v.rows.slice(0, N)) console.log('  ' + pad(bold((r.symbol || '?').slice(0, 11)), 13) + bar(r.progress, 26, r.progress >= 80 ? green : r.progress >= 50 ? yellow : dim) + ' ' + pad(bold(pct(r.progress)), 7) + pad(dim(`${r.raised.toFixed(2)}/${r.need}`), 11) + (r.perHour > 0 ? green(`+${r.perHour.toFixed(2)}/h`) + (r.etaHours != null ? dim(` ~${r.etaHours.toFixed(1)}h`) : '') : dim('quiet')) + '  ' + dim(short(r.token)));
-      if (v.bonded?.length) { console.log('\n  ' + dim('bonded lately: ') + v.bonded.slice(0, 6).map(b => `${b.symbol} ${dim(toBond(b.hoursToBond))}`).join(dim(' · '))); }
+      if (v.bonded?.length) { console.log('\n  ' + dim('bonded lately: ') + v.bonded.slice(0, 3).map(b => `${b.symbol} ${dim(toBond(b.hoursToBond))}`).join(dim(' · '))); }
       foot('Progress read from each curve contract. Pace is the last hour. Not advice.', `${BASE}/bonds/`);
     });
   },
