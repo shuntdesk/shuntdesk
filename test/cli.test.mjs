@@ -24,3 +24,9 @@ test('the CLI prints help and refuses a bad address without calling out', () => 
   assert.match(execFileSync(process.execPath, [bin, 'help'], { encoding: 'utf8' }), /shuntdesk sim <token>/);
   assert.throws(() => execFileSync(process.execPath, [bin, 'scan', '0x12'], { encoding: 'utf8', stdio: 'pipe' }), /0x followed by 40 hex/);
 });
+test('Exit Door: with nobody selling first it is the straight round trip, and sellers first leave less', async () => {
+  const { curveExit, poolExit } = await import('../cli/lib/curve.mjs');
+  assert.ok(Math.abs(curveExit(c, 0.05).back - simulate(c, 0.05).back) < 1e-12);
+  assert.ok(curveExit(c, 0.05, 5e7).back < curveExit(c, 0.05, 1e7).back);
+  const p = { price: 0.00001, liquidity: 10000 }; assert.ok(poolExit(p, 100).back < 100 && poolExit(p, 100, 1e8).back < poolExit(p, 100).back);
+});

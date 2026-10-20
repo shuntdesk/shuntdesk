@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // shuntdesk: the Shuntdesk reads of Robinhood Chain tokens, from a terminal. Read-only, no key, the same answers as
 // shuntdesk.com, through its agent interface (https://shuntdesk.com/llms.txt). Nothing here is advice.
-import { simulate, breakEven } from '../lib/curve.mjs';
+import { simulate, breakEven, curveExit, poolExit } from '../lib/curve.mjs';
 import { createInterface } from 'node:readline';
 
 const VERSION = '1.0.0';
@@ -60,6 +60,8 @@ const getApi = (path, label = 'reading', body) => spin(label, fetchAt('/api/' + 
 const flagVal = k => { const f = argv.find(a => a.startsWith('--' + k + '=')); return f ? f.slice(k.length + 3) : null; };
 const soft = (path, tries = 2) => fetchV1(path).then(v => ({ v }), async e => tries > 1 && !/rate limited|run out|not a pons|bad address|0x followed/i.test(e.message) ? (await new Promise(r => setTimeout(r, 1500)), soft(path, tries - 1)) : { why: e.message });   // a read that may fail without ending the report
 async function codeOf(a) { const r = await fetch(RPC, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getCode', params: [a, 'latest'] }), signal: AbortSignal.timeout(20000) }); return (await r.json()).result; }
+const ethCall = async (to, data) => { const r = await fetch(RPC, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to, data }, 'latest'] }), signal: AbortSignal.timeout(20000) }); const j = await r.json(); if (!j.result || j.result === '0x') throw new Error('not read'); return BigInt(j.result); };
+async function supplyOf(a) { const [s, d] = await Promise.all([ethCall(a, '0x18160ddd'), ethCall(a, '0x313ce567')]); return Number(s / 10n ** (d > 4n ? d - 4n : 0n)) / (d > 4n ? 1e4 : 10 ** Number(d)); }
 function die(msg) { if (JSON_OUT) console.log(JSON.stringify({ ok: false, why: msg })); else console.error('  ' + red('✖ ') + msg); if (!INTERACTIVE) process.exit(1); throw new ReadError(msg); }
 const need = (a, what = 'token') => { if (!isAddr(a)) die(`pass a ${what} address: 0x followed by 40 hex characters`); return a.toLowerCase(); };
 const out = (j, render) => { if (JSON_OUT) console.log(JSON.stringify(j, null, 2)); else render(j); };
@@ -402,12 +404,90 @@ const COMMANDS = {
     if (r.board?.length) { console.log('\n  ' + dim('this week\'s board')); r.board.slice(0, 10).forEach((b, i) => console.log('  ' + pad(`${i + 1}.`, 4) + pad(bold(b.handle) + (b.holder ? green(' holder') : ''), 24) + `${b.best} of 10`)); }
     foot('', `${BASE}/rug-run/`);
   },
+  async exit([a, e]) {
+    a = need(a); const tok = await get('token?a=' + a, 'reading the token'), l = tok.launch;
+    if (!l?.ok) die('no launch facts for this token: try it on the site');
+    const supply = await spin('reading the supply', supplyOf(a)).catch(() => null); if (!supply) die('the supply could not be read');
+    const onCurve = /pons/i.test(l.launchpad || '') && !l.graduated;
+    const first = [['nobody sells before you', 0], ['the dev sells first', l.devPct], ['launch snipers and bundles sell first', (l.sniperPct || 0) + (l.bundlerPct || 0)], ['insiders sell first', l.insiderPct]].filter(([, s], i) => i === 0 || s >= 0.1).concat([['if a wallet with 1% sells first', 1], ['if wallets with 5% sell first', 5]]);
+    let rows, size, unit;
+    if (onCurve) {
+      const c = await get('sim?a=' + a, 'reading the curve'); size = e === undefined ? 0.05 : Number(e); unit = 'ETH'; if (!(size > 0 && size < 100)) die('the size is an amount of ETH, more than 0');
+      rows = first.map(([label, share]) => ({ label, share, ...curveExit(c, size, share / 100 * supply) }));
+    } else {
+      if (!(l.price > 0 && l.liquidity > 0)) die('no price or liquidity read for its pool');
+      size = e === undefined ? 100 : Number(e); unit = 'USD'; if (!(size > 0)) die('the size is an amount of dollars, more than 0');
+      rows = first.map(([label, share]) => ({ label, share, ...poolExit({ price: l.price, liquidity: l.liquidity }, size, share / 100 * supply) }));
+    }
+    out({ token: a, onCurve, size, unit, rows }, () => {
+      head('Exit Door', `${tok.symbol ? '$' + tok.symbol + ' · ' : ''}${size} ${unit} in · ${onCurve ? 'on its Pons curve' : 'through its pool'}`); console.log();
+      const fmt = v => unit === 'ETH' ? eth(v) : usd(v);
+      for (const r of rows) { const k = r.back / size; console.log('  ' + pad(r.label, 40) + pad(r.share ? dim(pct(r.share) + ' of supply') : '', 18) + bar(Math.max(0, k * 100), 20, k >= 0.9 ? green : k >= 0.5 ? yellow : red) + ' ' + pad(bold(fmt(r.back)), 14) + (k - 1 < 0 ? red : green)(pc(k - 1, 0))); }
+      foot(onCurve ? 'Worked on the curve\'s own reserves, the fee off the ETH out, never more out than the curve holds. Shares are read 30 to 90 minutes after launch and may have moved. Taxes are not read here.'
+        : 'One constant-product pool holding its quoted liquidity, half each side, a 0.3% fee: an estimate of size, not a quote. A concentrated pool can be thinner away from the price. Taxes are not read here: the site reads them.', `${BASE}/exit/?a=${a}`);
+    });
+  },
+  async bondgame() {
+    const me = (flagVal('handle') || process.env.SHUNTDESK_HANDLE || '').toLowerCase(), vs = (flagVal('vs') || '').toLowerCase();
+    const v = await getApi(`bondgame?me=${encodeURIComponent(me)}${vs ? '&vs=' + encodeURIComponent(vs) : ''}`, 'reading today\'s curves');
+    const draw = v => {
+      head('Will it bond?', `${v.day} · ${v.mine ? 'your calls are in' : v.open ? `calls close ${v.closes.slice(11, 16)} UTC · ${v.players} in` : `closed · the chain answers ${v.resolves.slice(11, 16)} UTC`}`); console.log();
+      v.tokens.forEach((t, i) => { const p = t.progress ?? t.startProgress, m = v.mine?.[i]; console.log('  ' + pad(`${i + 1}.`, 4) + pad(bold(t.symbol), 12) + bar(p, 30, p >= 80 ? green : p >= 50 ? yellow : dim) + ' ' + pad(pct(p), 7) + dim(`from ${pct(t.startProgress)}`) + (m == null ? '' : '  ' + dim('you: ') + (m ? green('bonds') : red('no bond')))); });
+      const y = v.yesterday; if (y) console.log('\n  ' + dim('yesterday: ') + y.tokens.map(t => `${t.symbol} ${t.bonded ? green('bonded') : red('did not')}`).join(dim(' · ')) + dim(` · ${y.players} played`) + (y.mine != null ? dim(' · you got ') + bold(y.mine) : ''));
+      if (v.me) console.log('  ' + dim('you: ') + `streak ${bold(v.me.streak)} · ${v.me.perfect} perfect · ${v.me.week} points this week`);
+      if (v.board?.length) { console.log('\n  ' + dim('the board, last seven days')); v.board.slice(0, 8).forEach((b, i) => console.log('  ' + pad(`${i + 1}.`, 4) + pad(bold(b.handle) + (b.holder ? green(' holder') : ''), 24) + `${b.pts} pts` + (b.streak >= 3 ? dim(` · ${b.streak} days running`) : ''))); }
+      if (v.duel) console.log('\n  ' + dim('duel with ') + bold(v.duel.vs) + dim(': today they are ') + (v.duel.theirsToday ? (Array.isArray(v.duel.theirsToday) ? v.duel.theirsToday.map(x => x ? 'bonds' : 'no').join(' · ') : 'in, calls hidden until 12:00 UTC') : 'not in yet'));
+    };
+    if (JSON_OUT) return out(v, () => {});
+    draw(v);
+    if (v.open && !v.mine && v.tokens.length && process.stdin.isTTY && !INTERACTIVE) {
+      console.log('\n  ' + dim('call each curve: b for bonds, n for no bond'));
+      const rl = createInterface({ input: process.stdin }), lines = rl[Symbol.asyncIterator](), ask = async q => { process.stdout.write(q); const n = await lines.next(); if (n.done) { rl.close(); die('stopped before the calls were in'); } return n.value.trim(); };
+      const picks = []; for (const t of v.tokens) { let x = ''; while (!/^[bn]/i.test(x)) x = await ask('  ' + cyan(`${t.symbol}: `) + dim('[b/n] ')); picks.push(/^b/i.test(x)); }
+      let h = me; while (!/^[a-z0-9_]{2,16}$/.test(h)) h = (await ask('  ' + cyan('your handle ') + dim('(2 to 16 letters, digits or _) '))).toLowerCase();
+      rl.close();
+      const r = await getApi('bondgame', 'locking your calls', { handle: h, picks }); console.log('\n  ' + green('● locked in. the chain answers at midnight UTC.')); draw(r);
+      console.log('\n  ' + dim('challenge a friend: ') + cyan(`${BASE}/bond-game/?vs=${h}`) + dim('  or  ') + `shuntdesk bondgame --vs=${h}`);
+    } else if (v.open && !v.mine) console.log('\n  ' + dim('play it: ') + 'shuntdesk bondgame' + dim(' at a terminal, or ') + cyan(`${BASE}/bond-game/`));
+    foot(v.note, '');
+  },
+  async replay([a]) {
+    a = need(a); const v = await getApi('replay?a=' + a, 'replaying its chart');
+    out(v, v => {
+      head('Replay', `${v.symbol ? '$' + v.symbol + ' · ' : ''}${v.token}`);
+      const bars = v.bars || []; if (!bars.length) { console.log('  ' + dim('no chart to replay yet')); return; }
+      const W = Math.min(72, bars.length), step = bars.length / W, closes = Array.from({ length: W }, (_, i) => bars[Math.min(bars.length - 1, Math.floor(i * step + step - 1))][4]);
+      const lg = closes.map(c => Math.log(Math.max(c, 1e-18))), lo = Math.min(...lg), hi = Math.max(...lg), H = 10, rowsOut = [];
+      for (let r = H - 1; r >= 0; r--) rowsOut.push('  ' + lg.map((c, i) => { const y = hi > lo ? (c - lo) / (hi - lo) * (H - 1) : 0; const up = i === 0 || c >= lg[i - 1]; return Math.round(y) === r ? (up ? green('●') : red('●')) : Math.round(y) > r ? dim('│') : ' '; }).join(''));
+      console.log('\n  ' + dim('price, log scale: high $' + Math.max(...closes).toPrecision(3) + ' · low $' + Math.min(...closes).toPrecision(3))); console.log(rowsOut.join('\n')); console.log('  ' + dim(`${new Date(bars[0][0]).toISOString().slice(5, 16).replace('T', ' ')}`.padEnd(W - 11) + new Date(bars[bars.length - 1][0]).toISOString().slice(5, 16).replace('T', ' ')));
+      console.log();
+      const t = x => new Date(x).toISOString().slice(5, 16).replace('T', ' ') + ' UTC';
+      if (v.launch) line('launched', `${t(v.launch.t)} ${dim('by ' + short(v.launch.by))}`);
+      if (v.peak) line('peak', `$${v.peak.price.toPrecision(3)} ${dim(t(v.peak.t))}`);
+      if (v.drop) line('sharpest drop', `${red(pc(v.drop.d, 0))} ${dim(t(v.drop.t))}`);
+      if (v.graduated) line('bonded', t(v.graduated.t || v.graduated));
+      if (v.now) line('now', `$${v.now.price.toPrecision(3)} ${(v.now.fromPeak < 0 ? red : green)(pc(v.now.fromPeak, 0) + ' from the peak')}`);
+      for (const x of (v.verdicts || []).slice(0, 3)) line('a verdict', `${x.verdict} ${x.score}/100 ${dim(t(x.at || x.t))}`);
+      foot('Price bars from the chain\'s trades. What happened, not what will. Not advice.', `${BASE}/replay/?a=${v.token}`);
+    });
+  },
+  async lab() {
+    const v = await get('lab', 'reading the Verdict Lab');
+    out(v, v => {
+      head('Verdict Lab', `every rule against what happened · ${n0(v.scanned)} tokens read since ${v.since.slice(0, 10)}`);
+      line('all tokens', `${pct(v.base.h24.rate * 100, 1)} lost half within a day ${dim(`(${v.base.h24.lostHalf} of ${v.base.h24.n})`)}`); console.log();
+      const R = [...v.rules].filter(r => r.caughtThen.h24.n >= 5).sort((p, q) => (q.lift24h ?? -1) - (p.lift24h ?? -1) || q.caughtThen.h24.rate - p.caughtThen.h24.rate);
+      console.log('  ' + dim(pad('rule', 50) + pad('caught', 9) + pad('lost half in a day', 28) + 'lift'));
+      for (const r of R.slice(0, 14)) { const c = r.caughtThen.h24; console.log('  ' + pad(r.rule.replace(/ \(a split, not a warning\)/, '').slice(0, 48), 50) + pad(String(r.caught), 9) + bar(c.rate * 100, 14, c.rate >= 0.3 ? red : yellow) + ' ' + pad(pct(c.rate * 100, 0), 13) + (r.lift24h != null ? bold(r.lift24h.toFixed(1) + 'x') : dim('—'))); }
+      foot(v.note, `${BASE}/lab/`);
+    });
+  },
   async grads() {
     const v = await get('bonds', 'reading the bonds');
     out(v.bonded || [], B => { head('Fresh bonds', 'Pons curves that reached the bond mark'); console.log(); for (const b of B.slice(0, 20)) console.log('  ' + pad(bold(b.symbol || '?'), 14) + pad(dim(ago(b.bonded)), 10) + pad(toBond(b.hoursToBond), 18) + dim(b.token)); foot('', `${BASE}/bonds/`); });
   },
 };
-const ALIAS = { xray: 'scan', verdict: 'token', simulate: 'sim', devledger: 'ledger', devscore: 'dev', score: 'dev', twin: 'twins', bags: 'shared', live: 'watch', curves: 'bonds', new: 'radar', graduated: 'grads', bonded: 'grads', report: 'check', website: 'site', lookalikes: 'alike', looks: 'alike', verdicts: 'calls', record: 'calls', crew: 'desk', stock: 'stocks', shunt: 'proof', weekly: 'week', game: 'rugrun', 'rug-run': 'rugrun' };
+const ALIAS = { xray: 'scan', verdict: 'token', simulate: 'sim', devledger: 'ledger', devscore: 'dev', score: 'dev', twin: 'twins', bags: 'shared', live: 'watch', curves: 'bonds', new: 'radar', graduated: 'grads', bonded: 'grads', report: 'check', website: 'site', lookalikes: 'alike', looks: 'alike', verdicts: 'calls', record: 'calls', crew: 'desk', stock: 'stocks', shunt: 'proof', weekly: 'week', game: 'rugrun', 'rug-run': 'rugrun', door: 'exit', 'exit-door': 'exit', bond: 'bondgame', 'will-it-bond': 'bondgame', chart: 'replay', rules: 'lab' };
 
 // a bare address: a contract gets the full check, a wallet (or a smart wallet) its X-ray
 async function auto(a) {
@@ -420,11 +500,11 @@ function help() {
   banner();
   const c = (cmd, what) => console.log('  ' + pad(bold(cmd), 34) + dim(what));
   console.log('\n  ' + dim('paste any address:') + '\n'); c('shuntdesk <0x…>', 'a token gets the full check, a wallet its X-ray');
-  console.log('\n  ' + dim('tokens:') + '\n'); c('shuntdesk check <token>', 'everything at once, and what the chain shows'); c('shuntdesk scan <token>', 'the contract: powers, owner, proxy, source'); c('shuntdesk token <token>', 'the verdict, flags, holders, launch facts'); c('shuntdesk ledger <token>', 'where the launcher sent its tokens'); c('shuntdesk twins <token>', 'contracts running exactly the same code'); c('shuntdesk shared <token> <token>', 'top wallets holding both'); c('shuntdesk site <token>', 'its website: domain age, urlscan, links'); c('shuntdesk alike <token>', 'tokens that looked like it, and how they ended');
+  console.log('\n  ' + dim('tokens:') + '\n'); c('shuntdesk check <token>', 'everything at once, and what the chain shows'); c('shuntdesk scan <token>', 'the contract: powers, owner, proxy, source'); c('shuntdesk token <token>', 'the verdict, flags, holders, launch facts'); c('shuntdesk ledger <token>', 'where the launcher sent its tokens'); c('shuntdesk twins <token>', 'contracts running exactly the same code'); c('shuntdesk shared <token> <token>', 'top wallets holding both'); c('shuntdesk site <token>', 'its website: domain age, urlscan, links'); c('shuntdesk alike <token>', 'tokens that looked like it, and how they ended'); c('shuntdesk exit <token> [size]', 'what a buy gets back if the dev or snipers sell first'); c('shuntdesk replay <token>', 'its chart in your terminal: launch, peak, drop, now');
   console.log('\n  ' + dim('pons curves:') + '\n'); c('shuntdesk sim <token> [eth]', 'run a buy before you make it, and its break even'); c('shuntdesk watch <token> [seconds]', 'the curve live in your terminal'); c('shuntdesk bonds [n]', 'the curves closest to bonding'); c('shuntdesk grads', 'curves that just bonded');
   console.log('\n  ' + dim('wallets and the radar:') + '\n'); c('shuntdesk wallet <wallet>', 'every token in it, flags and copies'); c('shuntdesk dev <wallet>', 'a launcher\'s record on Pons'); c('shuntdesk radar [n]', 'the newest tokens the radar read');
-  console.log('\n  ' + dim('the record:') + '\n'); c('shuntdesk calls [n]', 'the latest verdicts and how they held'); c('shuntdesk caught', 'what the radar flagged, and what it missed'); c('shuntdesk week', 'the week on Robinhood Chain'); c('shuntdesk desk', 'the crew\'s paper desk'); c('shuntdesk stocks', 'the stocks behind the stock tokens'); c('shuntdesk proof', '$SHUNT, read from the chain');
-  console.log('\n  ' + dim('play:') + '\n'); c('shuntdesk rugrun', 'ten real new tokens, names hidden: rug or ride?');
+  console.log('\n  ' + dim('the record:') + '\n'); c('shuntdesk calls [n]', 'the latest verdicts and how they held'); c('shuntdesk caught', 'what the radar flagged, and what it missed'); c('shuntdesk week', 'the week on Robinhood Chain'); c('shuntdesk desk', 'the crew\'s paper desk'); c('shuntdesk stocks', 'the stocks behind the stock tokens'); c('shuntdesk proof', '$SHUNT, read from the chain'); c('shuntdesk lab', 'every flag rule against what happened');
+  console.log('\n  ' + dim('play:') + '\n'); c('shuntdesk rugrun', 'ten real new tokens, names hidden: rug or ride?'); c('shuntdesk bondgame', 'five Pons curves a day: will they bond?');
   console.log(`\n  ${dim('--json for the raw answer · run')} shuntdesk ${dim('alone for a prompt')}\n  ${dim('read-only, no key, 120 reads an hour. nothing here is advice.')} ${cyan('shuntdesk.com')}\n`);
 }
 

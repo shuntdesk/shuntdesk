@@ -31,7 +31,9 @@ npx -y shuntdesk <command> <args> --json
 | What new tokens did the radar just read? | `radar` |
 | Is its website new, flagged or malicious? | `site <token>` |
 | How did tokens that looked like it at launch end? | `alike <token>` |
-| How have Shuntdesk's own calls and flags done? | `calls`, `caught` |
+| How have Shuntdesk's own calls and flags done? | `calls`, `caught`, `lab` |
+| What would a buy get back if the dev, the snipers or a big wallet sold first? | `exit <token> [size]` |
+| What did its price do since launch? | `replay <token>` |
 
 Without Node, the same answers come from `GET https://shuntdesk.com/api/v1/<endpoint>?a=0x…` with the endpoints
 `scan`, `token`, `sim`, `ledger`, `devscore`, `twins`, `shared` (`&b=0x…` for the second token). The MCP server at

@@ -52,7 +52,11 @@ Run `shuntdesk` alone for a prompt that takes addresses and commands until you q
 | `shuntdesk desk` | The crew's public paper desk: equity, open positions, closed trades |
 | `shuntdesk stocks` | The stocks behind Robinhood Chain's stock tokens |
 | `shuntdesk proof` | $SHUNT read from the chain: contract, curve, dev wallet, liquidity |
+| `shuntdesk exit <token> [size]` | Exit Door: what a buy gets back if nobody, the dev, the launch snipers and bundles, or a big wallet sells first |
+| `shuntdesk replay <token>` | Its chart drawn in your terminal, with the launch, the peak, the sharpest drop and now |
+| `shuntdesk lab` | Verdict Lab: every flag rule against what happened to the tokens it caught |
 | `shuntdesk rugrun` | A game: ten real new tokens, names hidden. Call rug or ride, the record answers |
+| `shuntdesk bondgame` | A game: five open Pons curves a day. Call bond or no bond before 12:00 UTC; `--vs=<handle>` for a duel |
 
 Add `--json` for the raw answer. Set `SHUNTDESK_API` to point at another host.
 
