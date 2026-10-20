@@ -29,6 +29,9 @@ npx -y shuntdesk <command> <args> --json
 | What tokens does this wallet hold, and are any of them copies of real tokens? | `wallet <wallet>` |
 | Which Pons curves are closest to bonding, or just bonded? | `bonds`, `grads` |
 | What new tokens did the radar just read? | `radar` |
+| Is its website new, flagged or malicious? | `site <token>` |
+| How did tokens that looked like it at launch end? | `alike <token>` |
+| How have Shuntdesk's own calls and flags done? | `calls`, `caught` |
 
 Without Node, the same answers come from `GET https://shuntdesk.com/api/v1/<endpoint>?a=0x…` with the endpoints
 `scan`, `token`, `sim`, `ledger`, `devscore`, `twins`, `shared` (`&b=0x…` for the second token). The MCP server at

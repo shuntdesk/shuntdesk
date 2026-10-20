@@ -23,7 +23,7 @@ const n0 = v => v == null ? '—' : v >= 1e9 ? (v / 1e9).toFixed(2) + 'B' : v >=
 const eth = v => v == null ? '—' : v.toFixed(v < 0.01 ? 5 : 4) + ' ETH';
 const pc = (v, d = 1) => v == null ? '—' : (v > 0 ? '+' : '') + (v * 100).toFixed(d) + '%';
 const pct = (v, d = 1) => v == null ? '—' : Number(v).toFixed(d) + '%';
-const usd = v => v == null ? '—' : '$' + (v >= 100 ? Math.round(v).toLocaleString('en-US') : v.toFixed(2));
+const usd = v => v == null ? '—' : (v < 0 ? '-' : '') + '$' + (Math.abs(v) >= 100 ? Math.round(Math.abs(v)).toLocaleString('en-US') : Math.abs(v).toFixed(2));
 const ago = iso => { const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 60 ? m + 'm ago' : m < 2880 ? Math.round(m / 60) + 'h ago' : Math.round(m / 1440) + 'd ago'; };
 const wrap = (s, w = 92) => String(s).split(' ').reduce((o, word) => { const l = o[o.length - 1]; if ((l + ' ' + word).trim().length > w) o.push(word); else o[o.length - 1] = (l + ' ' + word).trim(); return o; }, ['']).join('\n');
 const bar = (p, w = 30, c = green) => { const f = Math.max(0, Math.min(w, Math.round((p || 0) / 100 * w))); return c('█'.repeat(f)) + dim('░'.repeat(w - f)); };
@@ -43,8 +43,10 @@ async function spin(label, p) {
 
 // ---------- reads ----------
 class ReadError extends Error {}
-async function fetchV1(path) {
-  let r; try { r = await fetch(BASE + '/api/v1/' + path, { headers: { 'User-Agent': 'shuntdesk-cli/' + VERSION, Accept: 'application/json' }, signal: AbortSignal.timeout(60000) }); }
+const fetchV1 = path => fetchAt('/api/v1/' + path);
+async function fetchAt(path, body) {
+  const H = { 'User-Agent': 'shuntdesk-cli/' + VERSION, Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) };
+  let r; try { r = await fetch(BASE + path, { method: body ? 'POST' : 'GET', headers: H, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(60000) }); }
   catch (e) { throw new ReadError('could not reach ' + BASE + ': ' + (e.cause?.code || e.message)); }
   const j = await r.json().catch(() => null);
   if (r.status === 429) throw new ReadError((j?.error || 'rate limited') + '. Try again later.');
@@ -54,7 +56,9 @@ async function fetchV1(path) {
   return j;
 }
 const get = (path, label = 'reading') => spin(label, fetchV1(path)).catch(e => die(e.message));
-const soft = (path) => fetchV1(path).then(v => ({ v }), e => ({ why: e.message }));   // a read that may fail without ending the report
+const getApi = (path, label = 'reading', body) => spin(label, fetchAt('/api/' + path, body)).catch(e => die(e.message));
+const flagVal = k => { const f = argv.find(a => a.startsWith('--' + k + '=')); return f ? f.slice(k.length + 3) : null; };
+const soft = (path, tries = 2) => fetchV1(path).then(v => ({ v }), async e => tries > 1 && !/rate limited|run out|not a pons|bad address|0x followed/i.test(e.message) ? (await new Promise(r => setTimeout(r, 1500)), soft(path, tries - 1)) : { why: e.message });   // a read that may fail without ending the report
 async function codeOf(a) { const r = await fetch(RPC, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getCode', params: [a, 'latest'] }), signal: AbortSignal.timeout(20000) }); return (await r.json()).result; }
 function die(msg) { if (JSON_OUT) console.log(JSON.stringify({ ok: false, why: msg })); else console.error('  ' + red('✖ ') + msg); if (!INTERACTIVE) process.exit(1); throw new ReadError(msg); }
 const need = (a, what = 'token') => { if (!isAddr(a)) die(`pass a ${what} address: 0x followed by 40 hex characters`); return a.toLowerCase(); };
@@ -63,7 +67,7 @@ const toBond = h => h == null ? '' : h < 0.1 ? 'bonded at launch' : h < 1 ? Math
 const dead = o => /^0x0{40}$/i.test(o || '') || /dead$/i.test(o || '');
 
 // ---------- what a report says: findings, never a verdict of safe ----------
-function findings({ tok, scan, led, sim }) {
+function findings({ tok, scan, led, sim, site, alike }) {
   const F = [], add = (lvl, text) => { if (!F.some(f => f.text === text)) F.push({ lvl, text }); };
   if (scan) {
     const renounced = scan.owner && dead(scan.owner);
@@ -88,6 +92,9 @@ function findings({ tok, scan, led, sim }) {
     }
     if (led.partial) add('yellow', 'part of the launcher\'s history could not be read');
   }
+  for (const f of site?.flags || []) add(f.level === 'high' ? 'red' : f.level === 'medium' ? 'yellow' : 'green', f.text.replace(/^The /, 'the '));
+  if (site?.website?.urlscan?.malicious) add('red', 'urlscan.io marks its website as malicious');
+  const d24 = alike?.after24h; if (d24?.n >= 5) add(d24.fell50 / d24.n >= 0.5 ? 'yellow' : 'green', `of ${d24.n} tokens that looked like it at launch, ${d24.fell50} lost half within a day`);
   if (sim) { const r = simulate(sim, 0.05); add(r.back / 0.05 - 1 < -0.04 ? 'yellow' : 'green', `a 0.05 ETH round trip on the curve comes back ${pc(r.back / 0.05 - 1)} after fees`); }
   return F.sort((a, b) => ['red', 'yellow', 'green'].indexOf(a.lvl) - ['red', 'yellow', 'green'].indexOf(b.lvl));
 }
@@ -97,10 +104,10 @@ const dot = { red: red('●'), yellow: yellow('●'), green: green('●') };
 const COMMANDS = {
   async check([a]) {
     a = need(a);
-    const [t, x, d] = await spin('reading the token, its contract and its launcher', Promise.all([soft('token?a=' + a), soft('scan?a=' + a), soft('ledger?a=' + a)]));
+    const [t, x, d, w, k] = await spin('reading the token, its contract, its launcher and its website', Promise.all([soft('token?a=' + a), soft('scan?a=' + a), soft('ledger?a=' + a), soft('site?a=' + a), soft('lookalikes?a=' + a)]));
     const tok = t.v, onCurve = tok?.launch?.ok && /pons/i.test(tok.launch.launchpad || '') && !tok.launch.graduated;
     const s = onCurve ? await spin('reading the curve', soft('sim?a=' + a)) : null;
-    const parts = { tok, scan: x.v, led: d.v, sim: s?.v }, F = findings(parts), unread = [['token', t], ['contract', x], ['ledger', d], ...(s ? [['curve', s]] : [])].filter(([, r]) => r.why);
+    const parts = { tok, scan: x.v, led: d.v, sim: s?.v, site: w.v, alike: k.v }, F = findings(parts), unread = [['token', t], ['contract', x], ['ledger', d], ['website', w], ...(s ? [['curve', s]] : [])].filter(([, r]) => r.why);
     out({ token: a, ...parts, findings: F, unread: unread.map(([k, r]) => ({ part: k, why: r.why })) }, () => {
       const name = tok?.symbol ? '$' + tok.symbol : short(a);
       head(name, (tok?.name ? tok.name + ' · ' : '') + a);
@@ -113,6 +120,8 @@ const COMMANDS = {
       if (x.v) line('contract', `${x.v.functions} functions · owner ${x.v.owner == null ? 'not read' : dead(x.v.owner) ? green('renounced') : yellow(short(x.v.owner))} · ${x.v.proxy ? red('proxy') : 'no proxy'} · source ${x.v.source?.verified ? green('verified') : 'not verified'}`);
       if (d.v) { const L = d.v.ledger || {}, got = (L.bought || 0) + (L.received || 0), sh = k => got ? pct((L[k] || 0) / got * 100, 0) : '—';
         line('launcher', `${short(d.v.dev)} · got ${n0(got)} · sold ${L.sold ? red(sh('sold')) : green('0')} · to wallets ${L.toWallets ? yellow(sh('toWallets')) : '0'} · burned ${sh('burned')} · holds ${n0(d.v.holdsNow)}`); }
+      const ws = w.v?.website; if (ws) line('website', `${ws.domain}${ws.ageDays != null ? dim(` · domain ${ws.ageDays} day${ws.ageDays === 1 ? '' : 's'} old`) : ''}${ws.urlscan ? (ws.urlscan.malicious ? red(' · urlscan: malicious') : dim(' · urlscan: clean')) : ''}`); else if (w.v) line('website', dim('none found'));
+      const d24 = k.v?.after24h; if (d24?.n) line('lookalikes', `${d24.n} like it a day later: median ${pc(d24.median, 0)} · ${d24.fell50} lost half · ${d24.rose} rose`);
       console.log(); box('What the chain shows', F.length ? F.map(f => `${dot[f.lvl]} ${f.text}`) : [dim('nothing read to report')]);
       for (const [k, r] of unread) console.log('  ' + yellow('○ ') + dim(`${k} not read: ${r.why}`));
       foot('Findings read from public chain data, not a verdict on anyone and not advice. A part not read is said as not read.', `${BASE}/ticket/?a=${a}`);
@@ -280,12 +289,125 @@ const COMMANDS = {
       foot('New tokens with 25 or more holders, read 30 to 90 minutes after launch. A flag is a finding, not a verdict. Not advice.', `${BASE}/radar/`);
     });
   },
+  async site([a]) {
+    a = need(a); const v = await get('site?a=' + a, 'checking the website and links');
+    out(v, v => {
+      head('Site Check', v.token);
+      const ws = v.website;
+      if (ws) { line('website', ws.url); if (ws.registered) line('domain', `registered ${ws.registered.slice(0, 10)}${ws.ageDays != null ? dim(` · ${ws.ageDays} days ago`) : ''}`);
+        if (ws.urlscan) line('urlscan.io', ws.urlscan.status !== 'done' ? dim('still scanning') : ws.urlscan.malicious ? red('malicious') : green('not malicious') + dim(` · score ${ws.urlscan.score}`)); }
+      else line('website', dim('none found in the contract or the token\'s links'));
+      for (const l of (v.links || []).slice(0, 8)) line(l.kind, l.url + dim(' · from the ' + l.from));
+      console.log(); box('What the check found', (v.flags || []).length ? v.flags.map(f => `${f.level === 'high' ? red('●') : f.level === 'medium' ? yellow('●') : green('●')} ${f.text}`) : [green('● no flag found')]);
+      if (v.pending) console.log('  ' + yellow('○ part of the check is still running: run it again in a minute'));
+      foot('Google Safe Browsing, RDAP for the domain\'s age, urlscan.io for what the page loads. Not advice.', `${BASE}/ticket/?a=${v.token}`);
+    });
+  },
+  async alike([a]) {
+    a = need(a); const v = await get('lookalikes?a=' + a, 'finding the tokens it looked like');
+    out(v, v => {
+      head('Lookalikes', `${v.symbol ? '$' + v.symbol + ' · ' : ''}${v.token}`);
+      const L = v.looks || {}; line('as it stood', `${n0(L.holders)} holders · top ten ${pct(L.top10Pct)} · liquidity ${usd(L.liquidity)} · bundles ${pct(L.bundlerPct)} · dev ${pct(L.devPct)}`);
+      const row = (k, s) => s?.n ? line(k, `${bar(s.fell50 / s.n * 100, 20, red)} ${s.fell50} of ${s.n} lost half · median ${(s.median >= 0 ? green : red)(pc(s.median, 0))} · ${s.rose} rose`) : line(k, dim('not enough with a result yet'));
+      row('an hour later', v.after1h); row('a day later', v.after24h);
+      if (v.closest?.length) { console.log(); console.log('  ' + dim(pad('closest', 14) + pad('holders', 10) + pad('top ten', 10) + pad('1h', 9) + 'a day')); for (const c of v.closest.slice(0, 8)) console.log('  ' + pad(bold((c.symbol || '?').slice(0, 12)), 14) + pad(n0(c.holders), 10) + pad(pct(c.top10Pct), 10) + pad(c.move1h == null ? dim('—') : (c.move1h < 0 ? red : green)(pc(c.move1h, 0)), 9) + (c.move24h == null ? dim('—') : (c.move24h < 0 ? red : green)(pc(c.move24h, 0)))); }
+      foot(v.note, `${BASE}/ticket/?a=${v.token}`);
+    });
+  },
+  async calls([k]) {
+    const v = await get('verdicts', 'reading the latest calls'), N = Math.min(50, Number(k) || 15);
+    out(v, v => {
+      const R = v.record || {};
+      head('Calls', 'the latest verdicts Shuntdesk filed, and how they held');
+      for (const [name, c] of [['CLEAN', green], ['DANGER', red]]) { const r = R[name]; if (r) line(name.toLowerCase() + ' calls', r.n ? `${bar(r.right / r.n * 100, 20, c)} ${r.right} of ${r.n} priced ${name === 'CLEAN' ? 'higher' : 'lower'} an hour later` : dim('none with a result yet')); }
+      console.log();
+      for (const x of (v.verdicts || []).slice(0, N)) { const c = x.verdict === 'CLEAN' ? green : x.verdict === 'DANGER' ? red : yellow, m = x.priceAtVerdict && x.after1h ? x.after1h / x.priceAtVerdict - 1 : null;
+        console.log('  ' + pad(bold((x.symbol || '?').slice(0, 12)), 14) + pad(c(x.verdict), 8) + pad(dim(x.score + '/100'), 9) + pad(dim(ago(x.at)), 10) + (m == null ? dim('no price an hour later yet') : (m < 0 ? red : green)(pc(m) + ' an hour later')) + '  ' + dim(short(x.token))); }
+      foot('Every call is filed with its price, and checked an hour and a day later. The record counts the misses too. Not advice.', `${BASE}/report/`);
+    });
+  },
+  async caught([k]) {
+    const v = await get('caught', 'reading the radar\'s record'), N = Math.min(30, Number(k) || 8);
+    out(v, v => {
+      head('Caught', 'what the radar flagged, and what it missed');
+      line('scanned', `${n0(v.scanned)} new tokens · ${n0(v.judged)} with a result`);
+      line('caught', `${green(bold(v.caught))} flagged when scanned, then lost half`); line('missed', `${red(bold(v.missed))} with no flag that lost half anyway`);
+      line('this week', `${v.week?.flagged} flagged · ${v.week?.caught} caught · ${v.week?.missed} missed`);
+      const rows = (title, R, c) => { if (!R?.length) return; console.log('\n  ' + dim(title)); for (const r of R.slice(0, N)) console.log('  ' + pad(bold((r.symbol || '?').slice(0, 12)), 14) + pad(red(pc(r.worst, 0)), 7) + pad(dim(ago(r.read)), 10) + (r.flags.length ? c(r.flags[0]) : dim('no flag'))); };
+      rows('caught:', v.caughtRows, yellow); rows('missed:', v.missedRows, dim);
+      foot(v.note, `${BASE}/caught/`);
+    });
+  },
+  async desk() {
+    const v = await get('desk', 'reading the crew desk');
+    out(v, v => {
+      head('Crew desk', 'a public paper desk that bets on Shuntdesk verdicts · all money is simulated');
+      const ch = v.equity / v.start - 1; line('equity', `${bold(usd(v.equity))} ${(ch >= 0 ? green : red)(pc(ch))} ${dim(`from ${usd(v.start)} · cash ${usd(v.cash)}`)}`);
+      if (v.open?.length) { console.log('\n  ' + dim('open')); for (const o of v.open) console.log('  ' + pad(bold((o.symbol || '?').slice(0, 12)), 14) + pad(o.side + (o.leverage > 1 ? ' ' + o.leverage + 'x' : ''), 9) + pad(pc(o.mark / o.entry - 1), 9) + (o.net >= 0 ? green : red)(usd(o.net))); }
+      if (v.closed?.length) { console.log('\n  ' + dim('closed')); for (const c of v.closed.slice(0, 8)) console.log('  ' + pad(bold((c.symbol || '?').slice(0, 12)), 14) + pad(c.side, 9) + pad((c.pnl >= 0 ? green : red)(usd(c.pnl)), 12) + dim(c.why || '')); }
+      foot('Paper money only. Every trade follows a verdict and gets a post-mortem.', `${BASE}/desk/`);
+    });
+  },
+  async stocks() {
+    const v = await get('stocks', 'reading the stocks behind the stock tokens');
+    out(v, v => {
+      head('Stocks', 'the stocks behind Robinhood Chain\'s stock tokens · ' + v.source); console.log();
+      for (const [sym, r] of Object.entries(v.rows || {})) { const m = r.close ? r.last / r.close - 1 : null; console.log('  ' + pad(bold(sym), 8) + pad('$' + Number(r.last).toFixed(2), 12) + pad(m == null ? '' : (m >= 0 ? green : red)(pc(m, 2)), 10) + dim(r.session)); }
+      foot('Compare a stock token\'s price with these before you trade it.', `${BASE}/stocks/`);
+    });
+  },
+  async proof() {
+    const v = await getApi('proof', 'reading $SHUNT from the chain');
+    out(v, v => {
+      head('$SHUNT proof', v.token);
+      const c = v.contract; if (c) line('contract', `${c.functions} functions · ${c.powers?.length ? red(c.powers.length + ' powers') : green('no power to mint, pause, block or tax')} · ${c.proxy ? red('proxy') : 'no proxy'}`);
+      const k = v.curve; if (k) line('curve', `${bar(k.progress, 24)} ${k.progress.toFixed(1)}% ${dim(`${k.raised.toFixed(3)} of ${k.need} ETH · ${k.holders} holders`)}`);
+      const L = v.ledger?.ledger; if (L) line('dev wallet', `bought ${n0(L.bought)} · sold ${L.sold ? red(n0(L.sold)) : green('0')} · burned ${green(n0(L.burned))} · to the pool ${n0(L.toContracts)}`); else line('dev wallet', dim('not read right now: shuntdesk ledger ' + short(v.token)));
+      for (const p of v.pools || []) line('liquidity', `${p.dex} ${p.pair} · ${p.fee} · ${p.range} · ${p.eth} ETH + ${n0(p.shunt)} SHUNT`);
+      const r = v.record; if (r) line('the record', `${r.calls} calls filed · clean calls priced higher a day later: ${r.clean.right} of ${r.clean.n}`);
+      for (const [k2, u] of Object.entries(v.links || {})) line(k2, cyan(u));
+      foot('Everything here is read from the chain or published openly. Check it yourself.', `${BASE}/proof/`);
+    });
+  },
+  async week() {
+    const v = await get('weekly', 'reading the week');
+    out(v, v => {
+      head('The week on Robinhood Chain', 'from Shuntdesk\'s own record');
+      if (v.pons) line('pons', `${n0(v.pons.launched)} launched · ${n0(v.pons.bonded)} bonded ${dim(`(${pct(v.pons.rate * 100, 2)})`)}`);
+      if (v.radar) line('radar', `${v.radar.flagged} flagged · ${green(v.radar.caught)} caught · ${red(v.radar.missed)} missed`);
+      if (v.lab) line('best rule', `${v.lab.rule}: ${pct(v.lab.rate * 100, 0)} lost half, against ${pct(v.lab.others * 100, 0)} of the rest ${dim(`(${v.lab.lift.toFixed(1)}x)`)}`);
+      if (v.shunt) line('$SHUNT', `${n0(v.shunt.burnedWeek)} burned this week in ${v.shunt.burnsWeek} burns · ${n0(v.shunt.burnedAll)} in all · dev sold ${v.shunt.sold}`);
+      foot('', `${BASE}/weekly/`);
+    });
+  },
+  async rugrun() {
+    if (JSON_OUT || !process.stdin.isTTY) die('Rug Run is played at a terminal: run shuntdesk rugrun');
+    if (INTERACTIVE) die('quit the prompt and run shuntdesk rugrun on its own');
+    const run = await getApi('rugrun', 'picking ten real new tokens');
+    head('Rug Run', 'ten real new tokens as the radar read them, names hidden'); console.log('\n' + dim(wrap(run.note).replace(/^/gm, '  ')) + '\n');
+    const rl = createInterface({ input: process.stdin }), lines = rl[Symbol.asyncIterator](), calls = [];
+    const ask = async q => { process.stdout.write(q); const n = await lines.next(); if (n.done) { rl.close(); die('stopped before the run was finished'); } if (!TTY || !process.stdin.isTTY) console.log(n.value); return n.value.trim(); };
+    for (const t of run.tokens) {
+      console.log('  ' + inv(bold(` #${t.n} `)) + '  ' + [t.liquidity > 0 ? `pool ${usd(t.liquidity)}` : dim('pool not read'), `${n0(t.holders)} holders`, `top ten ${pct(t.top10)}`, `dev ${pct(t.dev)}`, `snipers ${pct(t.snipers)}`, `bundles ${pct(t.bundles)}`, t.age != null ? `${t.age} min old` : '', t.launchpad || dim('launchpad not named')].filter(Boolean).join(dim(' · ')));
+      console.log('       ' + (t.flags.length ? t.flags.map(f => red('● ' + f)).join('  ') : green('● no flag found')));
+      let a = ''; while (!/^[rd]/i.test(a)) a = await ask('       ' + cyan('rug or ride? ') + dim('[r/d] '));
+      calls.push(/^r/i.test(a)); console.log();
+    }
+    let h = (flagVal('handle') || process.env.SHUNTDESK_HANDLE || '').toLowerCase();
+    while (!/^[a-z0-9_]{2,16}$/.test(h)) h = (await ask('  ' + cyan('your handle for the board ') + dim('(2 to 16 letters, digits or _) '))).toLowerCase();
+    rl.close();
+    const r = await getApi('rugrun', 'asking the record', { id: run.id, handle: h, calls });
+    console.log(); head(`${r.right} of ${r.of} right`, r.right >= 8 ? 'you read launches well' : r.right >= 5 ? 'not bad' : 'the chain won this one'); console.log();
+    r.results.forEach((x, i) => console.log('  ' + pad(`#${i + 1}`, 5) + pad(bold(x.symbol || '?'), 14) + pad(x.move24h == null ? dim('no result') : x.rug ? red(`RUG ${pc(x.move24h, 0)}`) : green(`RIDE ${pc(x.move24h, 0)}`), 14) + dim('you said ') + (calls[i] ? 'rug ' : 'ride') + '  ' + (x.move24h == null ? '' : calls[i] === x.rug ? green('✔') : red('✖'))));
+    if (r.board?.length) { console.log('\n  ' + dim('this week\'s board')); r.board.slice(0, 10).forEach((b, i) => console.log('  ' + pad(`${i + 1}.`, 4) + pad(bold(b.handle) + (b.holder ? green(' holder') : ''), 24) + `${b.best} of 10`)); }
+    foot('', `${BASE}/rug-run/`);
+  },
   async grads() {
     const v = await get('bonds', 'reading the bonds');
     out(v.bonded || [], B => { head('Fresh bonds', 'Pons curves that reached the bond mark'); console.log(); for (const b of B.slice(0, 20)) console.log('  ' + pad(bold(b.symbol || '?'), 14) + pad(dim(ago(b.bonded)), 10) + pad(toBond(b.hoursToBond), 18) + dim(b.token)); foot('', `${BASE}/bonds/`); });
   },
 };
-const ALIAS = { xray: 'scan', verdict: 'token', simulate: 'sim', devledger: 'ledger', devscore: 'dev', score: 'dev', twin: 'twins', bags: 'shared', live: 'watch', curves: 'bonds', new: 'radar', graduated: 'grads', bonded: 'grads', report: 'check' };
+const ALIAS = { xray: 'scan', verdict: 'token', simulate: 'sim', devledger: 'ledger', devscore: 'dev', score: 'dev', twin: 'twins', bags: 'shared', live: 'watch', curves: 'bonds', new: 'radar', graduated: 'grads', bonded: 'grads', report: 'check', website: 'site', lookalikes: 'alike', looks: 'alike', verdicts: 'calls', record: 'calls', crew: 'desk', stock: 'stocks', shunt: 'proof', weekly: 'week', game: 'rugrun', 'rug-run': 'rugrun' };
 
 // a bare address: a contract gets the full check, a wallet (or a smart wallet) its X-ray
 async function auto(a) {
@@ -298,9 +420,11 @@ function help() {
   banner();
   const c = (cmd, what) => console.log('  ' + pad(bold(cmd), 34) + dim(what));
   console.log('\n  ' + dim('paste any address:') + '\n'); c('shuntdesk <0x…>', 'a token gets the full check, a wallet its X-ray');
-  console.log('\n  ' + dim('tokens:') + '\n'); c('shuntdesk check <token>', 'everything at once, and what the chain shows'); c('shuntdesk scan <token>', 'the contract: powers, owner, proxy, source'); c('shuntdesk token <token>', 'the verdict, flags, holders, launch facts'); c('shuntdesk ledger <token>', 'where the launcher sent its tokens'); c('shuntdesk twins <token>', 'contracts running exactly the same code'); c('shuntdesk shared <token> <token>', 'top wallets holding both');
+  console.log('\n  ' + dim('tokens:') + '\n'); c('shuntdesk check <token>', 'everything at once, and what the chain shows'); c('shuntdesk scan <token>', 'the contract: powers, owner, proxy, source'); c('shuntdesk token <token>', 'the verdict, flags, holders, launch facts'); c('shuntdesk ledger <token>', 'where the launcher sent its tokens'); c('shuntdesk twins <token>', 'contracts running exactly the same code'); c('shuntdesk shared <token> <token>', 'top wallets holding both'); c('shuntdesk site <token>', 'its website: domain age, urlscan, links'); c('shuntdesk alike <token>', 'tokens that looked like it, and how they ended');
   console.log('\n  ' + dim('pons curves:') + '\n'); c('shuntdesk sim <token> [eth]', 'run a buy before you make it, and its break even'); c('shuntdesk watch <token> [seconds]', 'the curve live in your terminal'); c('shuntdesk bonds [n]', 'the curves closest to bonding'); c('shuntdesk grads', 'curves that just bonded');
   console.log('\n  ' + dim('wallets and the radar:') + '\n'); c('shuntdesk wallet <wallet>', 'every token in it, flags and copies'); c('shuntdesk dev <wallet>', 'a launcher\'s record on Pons'); c('shuntdesk radar [n]', 'the newest tokens the radar read');
+  console.log('\n  ' + dim('the record:') + '\n'); c('shuntdesk calls [n]', 'the latest verdicts and how they held'); c('shuntdesk caught', 'what the radar flagged, and what it missed'); c('shuntdesk week', 'the week on Robinhood Chain'); c('shuntdesk desk', 'the crew\'s paper desk'); c('shuntdesk stocks', 'the stocks behind the stock tokens'); c('shuntdesk proof', '$SHUNT, read from the chain');
+  console.log('\n  ' + dim('play:') + '\n'); c('shuntdesk rugrun', 'ten real new tokens, names hidden: rug or ride?');
   console.log(`\n  ${dim('--json for the raw answer · run')} shuntdesk ${dim('alone for a prompt')}\n  ${dim('read-only, no key, 120 reads an hour. nothing here is advice.')} ${cyan('shuntdesk.com')}\n`);
 }
 

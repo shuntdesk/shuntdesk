@@ -44,6 +44,15 @@ Run `shuntdesk` alone for a prompt that takes addresses and commands until you q
 | `shuntdesk radar [n]` | The newest tokens the radar read, with their flags, and the radar's own record |
 | `shuntdesk wallet <wallet>` | Every token in a wallet, with verdicts, curves and copies of real tokens |
 | `shuntdesk dev <wallet>` | A launcher's record on Pons: launches, bonded, dumped, burned |
+| `shuntdesk site <token>` | Its website and links: domain age, urlscan.io, Google Safe Browsing |
+| `shuntdesk alike <token>` | Tokens that looked like it at launch, and how they did an hour and a day later |
+| `shuntdesk calls [n]` | The latest verdicts and whether the price went the way they called it |
+| `shuntdesk caught` | What the radar flagged and then lost half, and what it missed |
+| `shuntdesk week` | The week on Robinhood Chain: launches, bonds, the radar, the best rule, $SHUNT burns |
+| `shuntdesk desk` | The crew's public paper desk: equity, open positions, closed trades |
+| `shuntdesk stocks` | The stocks behind Robinhood Chain's stock tokens |
+| `shuntdesk proof` | $SHUNT read from the chain: contract, curve, dev wallet, liquidity |
+| `shuntdesk rugrun` | A game: ten real new tokens, names hidden. Call rug or ride, the record answers |
 
 Add `--json` for the raw answer. Set `SHUNTDESK_API` to point at another host.
 

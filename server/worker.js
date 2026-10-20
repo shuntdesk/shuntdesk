@@ -815,6 +815,8 @@ async function agentData(st, env, p, a, b = '') {
   if (p === 'devledger' || p === 'ledger') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a token address on Robinhood Chain' }]; return [200, await devLedger(env, a)]; }
   if (p === 'xray' || p === 'scan') { if (!isAddr(a)) return [400, { error: need }]; return [200, await xray(st, env, a)]; }
   if (p === 'sim') { if (!isAddr(a)) return [400, { error: need }]; return [200, await curveSim(a)]; }
+  if (p === 'caught') return [200, await caughtView(env)];
+  if (p === 'weekly') return [200, await weeklyData(st, env)];
   if (p === 'twins') { if (!isAddr(a)) return [400, { error: need }]; return [200, await twins(env, a)]; }
   if (p === 'devscore') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… the launcher wallet' }]; return [200, await devScore(st, env, a)]; }
   if (p === 'shared') { if (!isAddr(a) || !isAddr(b) || a === b) return [400, { error: 'pass ?a=0x…&b=0x… two different token addresses' }]; return [200, await sharedBags(env, a, b)]; }
