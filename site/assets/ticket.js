@@ -67,7 +67,7 @@ async function ask(q = '') {
 $('#cond-form').addEventListener('submit', e => { e.preventDefault(); const q = $('#cond-q').value.trim(); if (q && shown) ask(q); });
 $('#t-acts').addEventListener('click', async e => {
   const b = e.target.closest('[data-do]'); if (!b || !shown) return;
-  const link = location.origin + '/ticket/?a=' + shown.addr;
+  const link = location.origin + '/card/' + shown.addr;   // the card page: a preview image on X and Telegram, then straight to this ticket
   if (b.dataset.do === 'ask') ask();
   if (b.dataset.do === 'card') { b.textContent = 'Drawing…'; const how = await saveCard(shown).catch(() => 'failed'); b.textContent = how === 'saved' ? 'Saved' : how === 'shared' ? 'Shared' : 'Save the card'; }
   if (b.dataset.do === 'x') window.open(postUrl(shown, link), '_blank', 'noopener');

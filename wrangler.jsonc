@@ -9,6 +9,8 @@
   //   npx.cmd wrangler secret put COINGECKO_API_KEY
   "name": "shuntdesk",
   "main": "server/worker.js",
+  // the share card's fonts, bundled as bytes
+  "rules": [{ "type": "Data", "globs": ["**/*.ttf"], "fallthrough": true }],
   "compatibility_date": "2026-09-01",
   "routes": [{ "pattern": "shuntdesk.com/*", "zone_name": "shuntdesk.com" }, { "pattern": "www.shuntdesk.com/*", "zone_name": "shuntdesk.com" }],
   "workers_dev": false,

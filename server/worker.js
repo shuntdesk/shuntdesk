@@ -2033,6 +2033,67 @@ function bondGamePlay(st, body) {
 }
 
 // ---------- the badge: a small image any site can show, the token's latest Shuntdesk read ----------
+// ---------- the share card: a token's read as a link preview, at /card/0x… (the page) and /card/0x….png (the image) ----------
+// The same findings the ticket, the CLI and the extension give, sorted, never a verdict of safe. Kept half an hour.
+const cards = new Map();
+async function cardData(st, env, a) {
+  const hit = cards.get(a); if (hit && Date.now() - hit.t < 30 * 60000) return hit.v;
+  const [tok, x, led] = await Promise.all([agentToken(st, env, a).catch(() => null), xray(st, env, a).catch(() => null), devLedger(env, a).catch(() => null)]);
+  const l = tok?.launch, onCurve = l?.ok && /pons/i.test(l.launchpad || '') && !l.graduated, sim = onCurve ? await curveSim(a).catch(() => null) : null;
+  const F = [], add = (lvl, text) => { if (!F.some(f => f.text === text)) F.push({ lvl, text }); }, pc = v => Number(v).toFixed(v < 10 ? 1 : 0) + '%';
+  const dead = o => /^0x0{40}$/i.test(o || '') || /dead$/i.test(o || '');
+  if (x?.ok !== false && x) { const ren = x.owner && dead(x.owner);
+    for (const q of (x.powers || []).filter(q => q.level === 'high').slice(0, 3)) add(ren ? 'y' : 'r', `the contract can ${q.what}${ren ? ', owner renounced' : ''}`);
+    if (x.proxy) add('r', 'it sits behind a proxy: the code can be swapped');
+    if (!(x.powers || []).some(q => q.level === 'high') && !x.proxy) add('g', 'no function that mints, pauses, blocks wallets or changes the tax'); }
+  for (const f of tok?.serverCheck?.redFlags || []) add('r', f);
+  if (l?.ok) { if (l.bundlerPct > 5) add('y', `bundles hold ${pc(l.bundlerPct)}`); if (l.sniperPct > 5) add('y', `snipers hold ${pc(l.sniperPct)}`); if (l.insiderPct > 5) add('y', `insiders hold ${pc(l.insiderPct)}`); }
+  if (led?.ok) { const L = led.ledger || {}, got = (L.bought || 0) + (L.received || 0);
+    if (got) { const sh = k => (L[k] || 0) / got;
+      if (sh('sold') >= 0.5) add('r', `the launcher sold ${pc(sh('sold') * 100)} of what it got`); else if (sh('sold') > 0) add('y', `the launcher sold ${pc(sh('sold') * 100)} of what it got`);
+      if (sh('toWallets') >= 0.25) add('y', `the launcher sent ${pc(sh('toWallets') * 100)} to other wallets`);
+      if (sh('burned') >= 0.5) add('g', `the launcher burned ${pc(sh('burned') * 100)} of what it got`);
+      if (!L.sold && !L.toWallets) add('g', 'the launcher has not sold or sent its tokens away'); } }
+  F.sort((p, q) => 'ryg'.indexOf(p.lvl) - 'ryg'.indexOf(q.lvl));
+  const v = { token: a, symbol: tok?.symbol || null, name: tok?.name || null, verdict: tok?.verdict || null, launch: l?.ok ? { launchpad: l.launchpad, graduated: l.graduated, holders: tok.serverCheck?.holders ?? l.holders, liquidity: l.liquidity } : null,
+    curve: sim?.ok ? { progress: sim.progress, raised: sim.raised, need: sim.need } : null, findings: F, unread: [!tok && 'token', !x && 'contract', !led?.ok && 'launcher'].filter(Boolean), read: new Date().toISOString() };
+  cards.set(a, { t: Date.now(), v }); if (cards.size > 150) cards.delete(cards.keys().next().value);
+  return v;
+}
+function cardSvg(c) {
+  const X = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const cut = (s, n) => (s = String(s || '')).length > n ? s.slice(0, n - 1) + '…' : s;
+  const col = { r: '#ff6b6b', y: '#f0c75e', g: '#2ed3a0' }, vd = c.verdict, vcol = vd ? { CLEAN: '#2ed3a0', RISKY: '#f0c75e', DANGER: '#ff6b6b' }[vd.verdict] || '#edebe6' : '#8d8b86';
+  const vtext = vd ? `${vd.verdict} ${vd.score}/100` : 'NO VERDICT YET', vw = vtext.length * 15.6 + 40;
+  const sym = c.symbol ? '$' + cut(c.symbol, 12) : c.token.slice(0, 10) + '…', short = c.token.slice(0, 6) + '…' + c.token.slice(-4);
+  const meta = [c.name && cut(c.name, 28), short, c.launch?.holders != null && `${Math.round(c.launch.holders).toLocaleString('en-US')} holders`, c.launch?.liquidity && `$${Math.round(c.launch.liquidity).toLocaleString('en-US')} liquidity`].filter(Boolean).join('  ·  ');
+  let y = 318, mid = '';
+  if (c.curve) { const w = Math.max(6, Math.min(100, c.curve.progress) / 100 * 640);
+    mid = `<text x="64" y="${y}" font-family="JetBrains Mono" font-weight="700" font-size="17" letter-spacing="3" fill="#8d8b86">PONS CURVE</text>
+      <text x="704" y="${y}" text-anchor="end" font-family="JetBrains Mono" font-weight="700" font-size="19" fill="#edebe6">${c.curve.progress.toFixed(1)}%  ·  ${c.curve.raised.toFixed(3)} of ${c.curve.need} ETH</text>
+      <rect x="64" y="${y + 14}" width="640" height="14" rx="7" fill="#232427"/><rect x="64" y="${y + 14}" width="${w.toFixed(1)}" height="14" rx="7" fill="#2ed3a0"/>`; y += 82; }
+  else if (c.launch?.graduated) { mid = `<text x="64" y="${y}" font-family="JetBrains Mono" font-weight="700" font-size="19" letter-spacing="3" fill="#2ed3a0">BONDED ON PONS</text>`; y += 46; }
+  else y += 6;
+  const shown = c.findings.slice(0, c.curve ? 4 : 5), more = c.findings.length - shown.length;
+  const rows = shown.map((f, i) => `<circle cx="72" cy="${y + i * 46 - 9}" r="8" fill="${col[f.lvl]}"/><text x="94" y="${y + i * 46}" font-family="Barlow" font-weight="500" font-size="29" fill="#edebe6">${X(cut(f.text, 74))}</text>`).join('')
+    + (more > 0 ? `<text x="94" y="${y + shown.length * 46}" font-family="Barlow" font-weight="500" font-size="22" fill="#8d8b86">and ${more} more on the ticket</text>` : '')
+    + (c.unread.length ? `<text x="94" y="${y + (shown.length + (more > 0)) * 46}" font-family="Barlow" font-weight="500" font-size="22" fill="#8d8b86">not read right now: ${X(c.unread.join(', '))}</text>` : '');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs><radialGradient id="gl" cx="85%" cy="20%" r="70%"><stop offset="0" stop-color="#1b1d21"/><stop offset="1" stop-color="#060708"/></radialGradient>
+  <pattern id="gr" width="48" height="48" patternUnits="userSpaceOnUse"><path d="M48 0H0V48" fill="none" stroke="#ffffff" stroke-opacity=".035"/></pattern></defs>
+  <rect width="1200" height="630" fill="url(#gl)"/><rect width="1200" height="630" fill="url(#gr)"/>
+  <g transform="translate(870 70) scale(1.25)" opacity=".06"><path fill="#edebe6" d="M0 400V241.7L156 117.7V34L190 0H240V158.3L84 282.3V366L50 400Z"/></g>
+  <g transform="translate(64 52) scale(.11)"><path fill="#edebe6" d="M0 400V241.7L156 117.7V34L190 0H240V158.3L84 282.3V366L50 400Z"/></g>
+  <text x="102" y="88" font-family="JetBrains Mono" font-weight="700" font-size="21" letter-spacing="7" fill="#edebe6">SHUNTDESK</text>
+  <rect x="${1136 - vw}" y="58" width="${vw}" height="46" rx="6" fill="none" stroke="${vcol}" stroke-width="2"/><text x="${1136 - vw / 2}" y="89" text-anchor="middle" font-family="JetBrains Mono" font-weight="700" font-size="24" fill="${vcol}">${vtext}</text>
+  <text x="60" y="232" font-family="Big Shoulders Display" font-weight="900" font-size="128" fill="#edebe6">${X(sym)}</text>
+  <text x="64" y="272" font-family="Barlow" font-weight="500" font-size="24" fill="#8d8b86">${X(meta)}</text>
+  ${mid}${rows}
+  <line x1="64" y1="566" x2="1136" y2="566" stroke="#ffffff" stroke-opacity=".1"/>
+  <text x="64" y="600" font-family="JetBrains Mono" font-weight="700" font-size="16" letter-spacing="2" fill="#6f6d68">READ FROM THE CHAIN ${X(c.read.slice(0, 16).replace('T', ' '))} UTC  ·  FINDINGS, NOT ADVICE</text>
+  <text x="1136" y="600" text-anchor="end" font-family="JetBrains Mono" font-weight="700" font-size="18" fill="#2ed3a0">shuntdesk.com</text>
+</svg>`;
+}
 async function badgeSvg(st, env, a) {
   const v = st.verdicts.find(x => x.addr === a), dl = await devLedger(env, a).catch(() => null), c = await ponsCurve(a).catch(() => null);
   const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
@@ -2488,7 +2549,7 @@ export default {
     if (!env.DESK) return api.fetch(request, env);   // local server: no Durable Object, a file stands in
     // one address: www and plain http both go to https://shuntdesk.com (a desk kept in the browser belongs to one origin)
     if (u.hostname === 'www.shuntdesk.com' || (u.hostname === 'shuntdesk.com' && u.protocol === 'http:')) return Response.redirect('https://shuntdesk.com' + u.pathname + u.search, 301);
-    return path.startsWith('/api/') || path.startsWith('/badge/') || path === '/mcp' ? env.DESK.get(env.DESK.idFromName('main')).fetch(request) : env.ASSETS.fetch(request);
+    return path.startsWith('/api/') || path.startsWith('/badge/') || path.startsWith('/card/') || path === '/mcp' ? env.DESK.get(env.DESK.idFromName('main')).fetch(request) : env.ASSETS.fetch(request);
   },
   scheduled(event, env) { return env.DESK ? undefined : api.scheduled(event, env); }
 };
@@ -2566,6 +2627,24 @@ const api = {
         await bondGame(st, env);
         if (body) { if (!allow(st, ip, 'bondgame', 10)) return json({ ok: false, why: 'slow down' }, 429); const [code, out] = bondGamePlay(st, body); await save(env, st); return json({ ...out, ...bondGameView(st, String(body.handle || '').toLowerCase(), await bondsLoad(env)) }, code); }
         await save(env, st); return json(bondGameView(st, String(url.searchParams.get('me') || '').toLowerCase(), await bondsLoad(env), String(url.searchParams.get('vs') || '').toLowerCase()));
+      }
+      if (url.pathname.startsWith('/card/')) {
+        const png = url.pathname.endsWith('.png'), a = url.pathname.slice(6).replace(/\.png$/, '').toLowerCase();
+        if (!isAddr(a)) return new Response('not found', { status: 404 });
+        if (!cards.has(a) && !allow(st, ip, 'card', 60)) return new Response('slow down', { status: 429 });
+        const c = await cardData(st, env, a); await save(env, st);
+        if (png) { const { svgToPng } = await import('./card.js'); return new Response(await svgToPng(cardSvg(c)), { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=1800' } }); }
+        if (url.searchParams.has('svg')) return new Response(cardSvg(c), { headers: { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'no-store' } });
+        const E = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), name = c.symbol ? '$' + c.symbol : a.slice(0, 10);
+        const desc = (c.verdict ? `${c.verdict.verdict} ${c.verdict.score}/100. ` : '') + (c.findings.slice(0, 3).map(f => f.text).join('. ') || 'Read from the chain') + '. Findings, not advice.';
+        const img = `${url.origin}/card/${a}.png?h=${Math.floor(Date.now() / 1800000)}`, go = `/ticket/?a=${a}`;
+        return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${E(name)} on Shuntdesk</title><meta name="description" content="${E(desc)}">
+<meta property="og:type" content="website"><meta property="og:site_name" content="Shuntdesk"><meta property="og:title" content="${E(name)} on Shuntdesk"><meta property="og:description" content="${E(desc)}">
+<meta property="og:url" content="${url.origin}/card/${a}"><meta property="og:image" content="${img}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${img}"><meta name="twitter:title" content="${E(name)} on Shuntdesk"><meta name="twitter:description" content="${E(desc)}">
+<meta http-equiv="refresh" content="0;url=${go}"><link rel="icon" href="/favicon.svg?v=2"></head>
+<body style="margin:0;background:#060708;color:#edebe6;font-family:system-ui"><a href="${go}"><img src="${img}" alt="${E(name)}: ${E(desc)}" style="display:block;max-width:100%;margin:0 auto"></a></body></html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=600' } });
       }
       if (url.pathname.startsWith('/badge/')) { const a = url.pathname.slice(7).replace(/\.svg$/, '').toLowerCase(); if (!isAddr(a)) return new Response('not found', { status: 404 }); if (!ledgers.has(a) && !allow(st, ip, 'badge', 120)) return new Response('slow down', { status: 429 });
         return new Response(await badgeSvg(st, env, a), { headers: { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'public, max-age=600', 'Access-Control-Allow-Origin': '*' } }); }      if (url.pathname === '/api/daily') {

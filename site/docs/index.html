@@ -49,7 +49,7 @@
       <h5>Community</h5>
       <a href="#telegram">Telegram</a>
       <h5>Build on it</h5>
-      <a href="#api">Agent API</a><a href="#mcp">MCP</a><a href="#cli">CLI</a><a href="#skill">Agent skill</a><a href="#data">Open record</a><a href="#sources">Data sources</a><a href="#architecture">Architecture</a><a href="#run">Run it yourself</a>
+      <a href="#api">Agent API</a><a href="#mcp">MCP</a><a href="#cli">CLI</a><a href="#skill">Agent skill</a><a href="#extension">Browser extension</a><a href="#cards">Share cards</a><a href="#data">Open record</a><a href="#sources">Data sources</a><a href="#architecture">Architecture</a><a href="#run">Run it yourself</a>
       <h5>More</h5>
       <a href="#token">$SHUNT</a><a href="#faq">FAQ</a><a href="#legal">Privacy and terms</a>
       </details>
@@ -414,6 +414,7 @@
 <tr><td><code>shared &lt;token&gt; &lt;token&gt;</code></td><td>top wallets holding both</td></tr>
 <tr><td><code>replay &lt;token&gt;</code></td><td>its chart drawn in the terminal</td></tr>
 <tr><td><code>exit &lt;token&gt; [size]</code></td><td>Exit Door: what a buy gets back if the dev, the snipers or a big wallet sells first</td></tr>
+<tr><td><code>live [--clean]</code></td><td>every Pons launch and bond as it lands, each new token read on arrival</td></tr>
 <tr><td><code>sim &lt;token&gt; [eth]</code></td><td>a buy on a Pons curve, the round trip, and the inflow it needs to break even</td></tr>
 <tr><td><code>watch &lt;token&gt;</code></td><td>a curve live: progress, price, net flow, pace and time to bond</td></tr>
 <tr><td><code>bonds</code> · <code>grads</code></td><td>the curves closest to bonding, and the ones that just bonded</td></tr>
@@ -423,6 +424,16 @@
 <tr><td><code>rugrun</code> · <code>bondgame</code></td><td>Rug Run and Will it bond?, played at the terminal</td></tr>
 </tbody></table></div>
 <p>Add <code>--json</code> to any read for the raw answer. A part that could not be read is said as not read, never as zero. The source is in <a href="https://github.com/shuntdesk/shuntdesk/tree/main/cli">cli/</a>.</p>
+</section>
+
+<section id="extension"><h2>Browser extension</h2>
+<p>Shuntdesk's read on the token page itself. On <a href="https://ponsfamily.com">Pons</a> token pages and DexScreener's Robinhood Chain pages, a small panel shows the verdict on file, what the contract can do, what the launcher did with its tokens and the curve, folded to one line until you open it. It reads only, never asks for a wallet, and talks only to shuntdesk.com and DexScreener's public API.</p>
+<p>Install it from <a href="/extension/">/extension/</a>: download, unzip, open <code>chrome://extensions</code>, turn on Developer mode and load the folder. It works in Chrome, Edge, Brave and other Chromium browsers. The source is in <a href="https://github.com/shuntdesk/shuntdesk/tree/main/extension">extension/</a>.</p>
+</section>
+
+<section id="cards"><h2>Share cards</h2>
+<p>Every token has a card at <code>/card/0x…</code>: its symbol, the verdict on file, the curve and what the chain shows, drawn as an image. Post the link on X or Telegram and the card shows as the preview; whoever opens it lands on the ticket. The ticket's Post on X and Copy link buttons use it. The image alone is at <code>/card/0x….png</code>, redrawn at most every half hour.</p>
+<pre><code>https://shuntdesk.com/card/0x7e517e779b85895894becad80c9bb69b4cb1c4d6</code></pre>
 </section>
 
 <section id="skill"><h2>Agent skill</h2>

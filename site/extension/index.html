@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Shuntdesk on the token page itself: the contract, the launcher and the curve of any Robinhood Chain token, in a small panel on Pons and DexScreener. Free, read-only.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shuntdesk">
+<meta property="og:title" content="Browser extension — Shuntdesk">
+<meta property="og:description" content="Shuntdesk on the token page itself: the contract, the launcher and the curve of any Robinhood Chain token, in a small panel on Pons and DexScreener. Free, read-only.">
+<meta property="og:url" content="https://shuntdesk.com/extension/">
+<meta property="og:image" content="https://shuntdesk.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shuntdesk. One score. Three tracks.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://shuntdesk.com/og.png">
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#060708">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/simple.css">
+<title>Browser extension — Shuntdesk</title>
+<script src="/assets/ui-mode.js"></script>
+</head>
+<body class="sub">
+<canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
+<main class="page">
+
+  <div class="ph"><div><div class="eyebrow">Browser extension</div><h1 class="disp">The read,<br><span class="acc">on the token page.</span></h1></div>
+    <div class="side"><p class="note" style="max-width:460px;margin:0">OPEN A TOKEN ON PONS OR DEXSCREENER AND SHUNTDESK'S READ SITS IN THE CORNER: THE CONTRACT, THE LAUNCHER, THE CURVE. IT READS ONLY. IT NEVER ASKS FOR A WALLET OR A SIGNATURE.</p></div></div>
+  <div class="pf-grid">
+    <div class="stub n"><div class="in"><div class="cap"><b>Install</b><span>Chrome, Edge, Brave and other Chromium browsers</span></div>
+      <ol class="pf-body" style="margin:10px 0 0;padding-left:20px;line-height:1.9">
+        <li><a class="acc" href="/extension/shuntdesk-extension.zip" download>Download the extension</a> and unzip it.</li>
+        <li>Open <code>chrome://extensions</code> (in Edge, <code>edge://extensions</code>).</li>
+        <li>Turn on <b>Developer mode</b>.</li>
+        <li>Press <b>Load unpacked</b> and pick the unzipped <code>shuntdesk-extension</code> folder.</li>
+        <li>Open any token on <a class="acc" href="https://ponsfamily.com" target="_blank" rel="noopener">Pons</a> or DexScreener's Robinhood Chain pages.</li>
+      </ol></div></div>
+    <div class="stub n"><div class="in"><div class="cap"><b>What it shows</b><span>the same reads as the site</span></div>
+      <ul class="pf-body" style="margin:10px 0 0;padding-left:20px;line-height:1.9">
+        <li>The verdict on file, holders, liquidity and the curve</li>
+        <li>What the contract can do: mint, pause, block wallets, change the tax, swap the code</li>
+        <li>What the launcher did with its tokens: sold, sent away, burned</li>
+        <li>What a 0.05 ETH round trip on the curve comes back as</li>
+        <li>A part that could not be read is said as not read</li>
+      </ul></div></div>
+  </div>
+  <div class="stub n" style="margin-top:14px"><div class="in"><div class="cap"><b>On a token page</b><span>folded to one line until you open it</span></div>
+    <img src="/extension/panel.png" alt="The Shuntdesk panel open on the $SHUNT page on Pons" style="margin-top:12px;max-width:100%;border-radius:8px"></div></div>
+  <p class="note" style="margin-top:14px">It runs only on ponsfamily.com and dexscreener.com/robinhood, and talks only to shuntdesk.com and DexScreener's public API. Nothing is stored. The source is in <a class="acc" href="https://github.com/shuntdesk/shuntdesk/tree/main/extension">extension/</a>. Not advice.</p>
+ex when this page opened. Not advice.</p>
+</main>
+<footer class="foot"></footer>
+<script type="module" src="/assets/extension.js"></script>
+</body>
+</html>

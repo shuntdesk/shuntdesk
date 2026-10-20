@@ -6,11 +6,16 @@
   "description": "A token scanner on Robinhood Chain with something to lose: seven checks, one verdict, a public paper desk that bets on it.",
   "license": "MIT",
   "homepage": "https://shuntdesk.com",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "node dev/serve.mjs",
     "check": "node scripts/check.mjs",
     "test": "node scripts/check.mjs && node --test test/*.test.mjs",
     "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@resvg/resvg-wasm": "2.6.2"
   }
 }

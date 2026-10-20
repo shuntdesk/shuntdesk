@@ -1,6 +1,6 @@
 {
   "name": "shuntdesk",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Read Robinhood Chain tokens from a terminal: one-paste token checks, contract powers, dev ledgers, Pons curve simulation and live watch, Exit Door, code twins, shared holders, wallet X-ray, the radar and its record, and two games. Read-only, no key.",
   "type": "module",
   "bin": {
