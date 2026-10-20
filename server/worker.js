@@ -49,7 +49,7 @@ const bsLow = () => bsCredits.left !== null && bsCredits.left < BS_RESERVE && ne
 const bsSpare = () => bsCredits.left === null || bsCredits.left > 2 * BS_RESERVE || new Date(bsCredits.t).getUTCDate() !== new Date().getUTCDate();
 // and what spends them: calls and credits by the function that asked and the index action, since the day began (UTC)
 export const bsUse = { day: '', by: {} };
-const bsWho = () => { const s = (new Error().stack || '').split('\n').slice(2).map(l => (/at (?:async )?([\w$.]+) /.exec(l) || [])[1]).filter(f => f && !/^(globalThis\.fetch|fetch|bs|bsStrict|Object\.\w+|Promise\.\w+)$/.test(f)); return s[0] || '?'; };
+const bsWho = () => { const s = (new Error().stack || '').split('\n').slice(2).map(l => (/at (?:async )?([\w$.]+) /.exec(l) || [])[1]).filter(f => f && !/^(globalThis\.fetch|fetch|bs|bsStrict|wideLogs|Object\.\w+|Promise\.\w+)$/.test(f)); return s[0] || '?'; };
 { const f0 = globalThis.fetch; globalThis.fetch = async (u, o) => {
   const url = String(u?.url || u); if (!url.includes('api.blockscout.com')) return f0(u, o);
   const who = bsWho(), q = /[?&]module=(\w+).*?[?&]action=(\w+)/.exec(url), key = who + ' ' + (q ? q[1] + '.' + q[2] : url.split('/api')[1]?.split('?')[0] || '?');
@@ -1502,7 +1502,7 @@ export async function devLedger(env, token) {
   return v;
 }
 // one Pons log over a wide range: the public node first (the backup node refuses wide ranges), then the keyed index, page by page
-async function wideLogs(env, topic0, from, to) {
+async function wideLogs(env, topic0, from, to, { index = true } = {}) {
   let why = '';
   for (let k = 0; k < 3; k++) {
     try {
@@ -1511,7 +1511,7 @@ async function wideLogs(env, topic0, from, to) {
     } catch (e) { why = String(e.message || e).slice(0, 80); }
     await new Promise(r => setTimeout(r, 1200));
   }
-  if (!env?.BLOCKSCOUT_API_KEY) throw new Error(why);
+  if (!env?.BLOCKSCOUT_API_KEY || !index) throw new Error(why);
   if (!bsSpare()) throw new Error(why + ' · the index is kept for what people open today');
   const out = [];
   for (let page = 1; page <= 10; page++) {
@@ -2165,7 +2165,7 @@ export async function earlyFeed(st, env) {
   if (!Object.values(st.holders || {}).some(h => h.bal >= HOLD_MIN)) return;   // nobody to tell
   const E = st.early = st.early || { block: 0, q: [], t: 0 }, now = Date.now(); if (now - E.t < 55000) return; E.t = now;
   const head = parseInt(await rpc('eth_blockNumber'), 16), from = E.block ? E.block + 1 : head - 1200; if (from > head) return;
-  const logs = await wideLogs(env, T_LAUNCH, from, Math.min(head, from + 20000)); E.block = Math.min(head, from + 20000);
+  const logs = await wideLogs(env, T_LAUNCH, from, Math.min(head, from + 20000), { index: false }); E.block = Math.min(head, from + 20000);
   for (const l of logs) E.q.push({ t: wordAddr(l.topics[1]), c: wordAddr(l.topics[2]), by: wordAddr(l.topics[3]), at: logTime(l, now, head) });
   E.q = E.q.filter(x => now - x.at < 30 * 60000).slice(-80);
 }

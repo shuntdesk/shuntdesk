@@ -18,6 +18,7 @@ npx -y shuntdesk <command> <args> --json
 
 | Question | Command |
 | --- | --- |
+| Everything at once about one token, with the findings sorted | `check <token>` |
 | What can this contract do? Mint, pause, block wallets, change the tax, swap the code? Who owns it? | `scan <token>` |
 | What does Shuntdesk's verdict say, red flags, holders, snipers, bundles, dev share, curve progress? | `token <token>` |
 | What would a buy of N ETH on its Pons curve get, and what comes back on a straight sell? | `sim <token> <eth>` |
@@ -25,12 +26,15 @@ npx -y shuntdesk <command> <args> --json
 | What is this launcher wallet's record across its Pons launches? | `dev <launcher wallet>` |
 | Which contracts run exactly the same code, and how did they end? | `twins <token>` |
 | Which top wallets hold both of two tokens? | `shared <token> <token>` |
+| What tokens does this wallet hold, and are any of them copies of real tokens? | `wallet <wallet>` |
+| Which Pons curves are closest to bonding, or just bonded? | `bonds`, `grads` |
+| What new tokens did the radar just read? | `radar` |
 
 Without Node, the same answers come from `GET https://shuntdesk.com/api/v1/<endpoint>?a=0x…` with the endpoints
 `scan`, `token`, `sim`, `ledger`, `devscore`, `twins`, `shared` (`&b=0x…` for the second token). The MCP server at
 `https://shuntdesk.com/mcp` has them as tools too.
 
-A good first read for an unknown token is `token`, then `scan`, then `ledger`. For a Pons token, add `sim` before any
+A good first read for an unknown token is `check`, which runs `token`, `scan` and `ledger` together. For a Pons token, add `sim` before any
 buy, and `dev` on the launcher wallet that `ledger` names.
 
 ## How to read the answers to the user

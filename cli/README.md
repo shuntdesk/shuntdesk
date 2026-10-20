@@ -1,7 +1,7 @@
 # shuntdesk
 
 Read Robinhood Chain tokens from a terminal: what a contract can do, what the launcher did with its tokens, what a
-buy on a Pons curve returns, which contracts run the same code and which wallets hold two tokens.
+buy on a Pons curve returns, a curve live, which contracts run the same code and which wallets hold two tokens.
 
 The same reads as [shuntdesk.com](https://shuntdesk.com). Read-only, no key, no wallet. Not advice.
 
@@ -10,26 +10,40 @@ npx shuntdesk sim 0x7e517e779b85895894becad80c9bb69b4cb1c4d6 0.05
 ```
 
 ```
-Curve Simulator · 0x7e51…c4d6 · 0.05 ETH
-  curve now           36.8% · 1.544 of 4.2 ETH · fee 2.5% each way
-  you get             7.76M tokens average $0.0000156, $121.07 in
-  price moves         +3.0% from your buy alone
-  curve after         37.9% · 2.607 ETH left to bond
+  Curve Simulator  0x7e51…c4d6 · 0.05 ETH in
+  curve now           ██████░░░░░░░░░░░░░░░░░░ 23.8% 0.999 of 4.2 ETH · fee 2.5% each way
+  after your buy      ██████░░░░░░░░░░░░░░░░░░ 24.9%
+  you get             11.21M tokens at $0.0000107 average, $120 in
+  price moves         +3.7% from your buy alone
   sold straight back  0.0475 ETH -4.9%
-  break even when     others put in 0.0867 ETH after you
+  break even when     0.0724 ETH comes in after you
 ```
 
 ## Commands
 
+Paste any address and it works out the rest: a token gets the full check, a wallet its X-ray.
+
+```
+npx shuntdesk 0x7e517e779b85895894becad80c9bb69b4cb1c4d6
+```
+
+Run `shuntdesk` alone for a prompt that takes addresses and commands until you quit.
+
 | Command | What it reads |
 | --- | --- |
+| `shuntdesk check <token>` | Everything at once: verdict, contract, launcher, curve, and a box of what the chain shows |
 | `shuntdesk scan <token>` | The contract: functions that mint, pause, block wallets, change the tax or swap the code; owner, proxy, source |
-| `shuntdesk token <token>` | Shuntdesk's verdict and how the price moved after it, red flags, holders, snipers, bundles, dev share, curve progress |
-| `shuntdesk sim <token> [eth]` | A buy on a Pons curve worked through the curve's own reserves, fees both ways, the round trip and the inflow needed to break even |
+| `shuntdesk token <token>` | Shuntdesk's verdict and how the price moved after it, red flags, holders, snipers, bundles, dev share |
 | `shuntdesk ledger <token>` | Where the launcher sent its tokens: sold, sent to wallets, sent to contracts, burned, still held |
-| `shuntdesk dev <wallet>` | A launcher's record on Pons: launches, bonded, dumped, burned |
 | `shuntdesk twins <token>` | Contracts in the radar's log running exactly the same code, and how many lost half |
 | `shuntdesk shared <token> <token>` | Top wallets holding both tokens, pools and contracts left out |
+| `shuntdesk sim <token> [eth]` | A buy on a Pons curve worked through the curve's own reserves, fees both ways, the round trip and the inflow needed to break even |
+| `shuntdesk watch <token> [seconds]` | The curve live in your terminal: progress, price, net flow, pace and time to bond at that pace |
+| `shuntdesk bonds [n]` | The open Pons curves closest to bonding, with their pace |
+| `shuntdesk grads` | Curves that just bonded, and how long each took |
+| `shuntdesk radar [n]` | The newest tokens the radar read, with their flags, and the radar's own record |
+| `shuntdesk wallet <wallet>` | Every token in a wallet, with verdicts, curves and copies of real tokens |
+| `shuntdesk dev <wallet>` | A launcher's record on Pons: launches, bonded, dumped, burned |
 
 Add `--json` for the raw answer. Set `SHUNTDESK_API` to point at another host.
 
