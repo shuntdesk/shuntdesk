@@ -49,7 +49,7 @@
       <h5>Community</h5>
       <a href="#telegram">Telegram</a>
       <h5>Build on it</h5>
-      <a href="#api">Agent API</a><a href="#mcp">MCP</a><a href="#data">Open record</a><a href="#sources">Data sources</a><a href="#architecture">Architecture</a><a href="#run">Run it yourself</a>
+      <a href="#api">Agent API</a><a href="#mcp">MCP</a><a href="#cli">CLI</a><a href="#skill">Agent skill</a><a href="#data">Open record</a><a href="#sources">Data sources</a><a href="#architecture">Architecture</a><a href="#run">Run it yourself</a>
       <h5>More</h5>
       <a href="#token">$SHUNT</a><a href="#faq">FAQ</a><a href="#legal">Privacy and terms</a>
       </details>
@@ -377,13 +377,61 @@
 <tr><td><code>GET /api/v1/bonds</code></td><td>Bond Watch: every token on the Pons curve, its progress and pace, and the daily bond counts</td></tr>
 <tr><td><code>GET /api/v1/wallet?a=0x…</code></td><td>Wallet X-ray: the tokens in a wallet, with copies of real tokens flagged</td></tr>
 <tr><td><code>GET /api/v1/stocks</code></td><td>the stocks behind the stock tokens: latest trade, last close, session</td></tr>
+<tr><td><code>GET /api/v1/scan?a=0x…</code></td><td>the same as <code>xray</code>: powers, owner, proxy, source</td></tr>
+<tr><td><code>GET /api/v1/ledger?a=0x…</code></td><td>Dev Ledger: what the launcher bought, received, sold, sent to wallets and contracts, burned and still holds</td></tr>
+<tr><td><code>GET /api/v1/sim?a=0x…</code></td><td>a Pons curve's live reserves, progress, bond mark and fee, to work a buy and a sell the way the curve does</td></tr>
+<tr><td><code>GET /api/v1/twins?a=0x…</code></td><td>Twin Finder: contracts in the radar's log running exactly the same code, and how many lost half</td></tr>
+<tr><td><code>GET /api/v1/devscore?a=0x…</code></td><td>Dev Score: a launcher wallet's record on Pons (pass the wallet). 30 an hour</td></tr>
+<tr><td><code>GET /api/v1/shared?a=0x…&amp;b=0x…</code></td><td>Shared Bags: the top wallets holding both of two tokens. 20 an hour</td></tr>
+<tr><td><code>GET /api/v1/site?a=0x…</code></td><td>Site Check: the token's website and links, domain age, urlscan.io, Safe Browsing</td></tr>
+<tr><td><code>GET /api/v1/radar</code></td><td>the newest tokens the radar read, with their flags, and the radar's record</td></tr>
+<tr><td><code>GET /api/v1/caught</code></td><td>what the radar flagged and then lost half, and what it missed</td></tr>
+<tr><td><code>GET /api/v1/lab</code></td><td>Verdict Lab: every candidate rule against what happened</td></tr>
+<tr><td><code>GET /api/v1/weekly</code></td><td>the week: Pons launches and bonds, the radar, the best rule, $SHUNT burns</td></tr>
 </tbody></table></div>
 <pre><code>curl -s "https://shuntdesk.com/api/v1/token?a=0x7e517e779b85895894becad80c9bb69b4cb1c4d6"</code></pre>
 <p><code>verdict</code> is <code>null</code> until someone runs the checks. The checks run in a browser, so the answer carries a <code>fullCheck</code> link that runs them. When you quote a verdict, say it is a rule-based reading that can be wrong, and link the ticket.</p>
 </section>
 
 <section id="mcp"><h2>MCP</h2>
-<p>The same reads as MCP tools (<code>token</code>, <code>verdicts</code>, <code>crew_desk</code>, <code>pons_graduations</code>, <code>daily_report</code>) over Streamable HTTP. Add <code>https://shuntdesk.com/mcp</code> as a remote server. Read-only, no key.</p>
+<p>The same reads as eleven MCP tools over Streamable HTTP: <code>token</code>, <code>scan</code>, <code>dev_ledger</code>, <code>curve_sim</code>, <code>twins</code>, <code>dev_score</code>, <code>shared_bags</code>, <code>verdicts</code>, <code>crew_desk</code>, <code>pons_graduations</code> and <code>daily_report</code>. Add <code>https://shuntdesk.com/mcp</code> as a remote server. Read-only, no key.</p>
+<pre><code>claude mcp add --transport http shuntdesk https://shuntdesk.com/mcp</code></pre>
+</section>
+
+<section id="cli"><h2>CLI</h2>
+<p>The same reads from a terminal, as the npm package <a href="https://www.npmjs.com/package/shuntdesk">shuntdesk</a>. Node 18 or later, nothing to install first, no key, no wallet. Paste any address: a token gets the full check, a wallet its X-ray. Run <code>shuntdesk</code> alone for a prompt that takes addresses until you quit.</p>
+<pre><code>npx shuntdesk 0x7e517e779b85895894becad80c9bb69b4cb1c4d6</code></pre>
+<div class="tbl"><table>
+<thead><tr><th>Command</th><th>What it reads</th></tr></thead>
+<tbody>
+<tr><td><code>check &lt;token&gt;</code></td><td>everything at once: verdict, contract, launcher, website, lookalikes, curve, and a box of what the chain shows</td></tr>
+<tr><td><code>scan &lt;token&gt;</code></td><td>the contract: powers, owner, proxy, source</td></tr>
+<tr><td><code>token &lt;token&gt;</code></td><td>the verdict, red flags, holders, snipers, bundles, the dev's share</td></tr>
+<tr><td><code>ledger &lt;token&gt;</code></td><td>where the launcher sent its tokens</td></tr>
+<tr><td><code>site &lt;token&gt;</code></td><td>its website and links</td></tr>
+<tr><td><code>alike &lt;token&gt;</code></td><td>tokens that looked like it at launch, and how they ended</td></tr>
+<tr><td><code>twins &lt;token&gt;</code></td><td>contracts running exactly the same code</td></tr>
+<tr><td><code>shared &lt;token&gt; &lt;token&gt;</code></td><td>top wallets holding both</td></tr>
+<tr><td><code>replay &lt;token&gt;</code></td><td>its chart drawn in the terminal</td></tr>
+<tr><td><code>exit &lt;token&gt; [size]</code></td><td>Exit Door: what a buy gets back if the dev, the snipers or a big wallet sells first</td></tr>
+<tr><td><code>sim &lt;token&gt; [eth]</code></td><td>a buy on a Pons curve, the round trip, and the inflow it needs to break even</td></tr>
+<tr><td><code>watch &lt;token&gt;</code></td><td>a curve live: progress, price, net flow, pace and time to bond</td></tr>
+<tr><td><code>bonds</code> · <code>grads</code></td><td>the curves closest to bonding, and the ones that just bonded</td></tr>
+<tr><td><code>wallet &lt;wallet&gt;</code> · <code>dev &lt;wallet&gt;</code></td><td>Wallet X-ray, and a launcher's record on Pons</td></tr>
+<tr><td><code>radar</code> · <code>calls</code> · <code>caught</code> · <code>lab</code> · <code>week</code></td><td>the radar, the verdicts and how they held, what was caught and missed, the rules, the week</td></tr>
+<tr><td><code>desk</code> · <code>stocks</code> · <code>proof</code></td><td>the crew desk, the stocks behind the stock tokens, $SHUNT read from the chain</td></tr>
+<tr><td><code>rugrun</code> · <code>bondgame</code></td><td>Rug Run and Will it bond?, played at the terminal</td></tr>
+</tbody></table></div>
+<p>Add <code>--json</code> to any read for the raw answer. A part that could not be read is said as not read, never as zero. The source is in <a href="https://github.com/shuntdesk/shuntdesk/tree/main/cli">cli/</a>.</p>
+</section>
+
+<section id="skill"><h2>Agent skill</h2>
+<p>An agent skill for Claude Code and other agents that read <code>SKILL.md</code>: when to read a Robinhood Chain token through Shuntdesk, which command answers which question, and how to report the answer honestly. Nothing is called safe, and a part not read is said as not read. It ships in the npm package and on its own at <a href="/agents/SKILL.md">/agents/SKILL.md</a>.</p>
+<pre><code>mkdir -p ~/.claude/skills/shuntdesk
+curl -o ~/.claude/skills/shuntdesk/SKILL.md https://shuntdesk.com/agents/SKILL.md</code></pre>
+<p>On Windows PowerShell:</p>
+<pre><code>New-Item -ItemType Directory -Force "$HOME\.claude\skills\shuntdesk" | Out-Null
+Invoke-WebRequest https://shuntdesk.com/agents/SKILL.md -OutFile "$HOME\.claude\skills\shuntdesk\SKILL.md"</code></pre>
 </section>
 
 <section id="data"><h2>Open record</h2>
