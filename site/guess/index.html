@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="A real Robinhood Chain chart, cut off at a random point. Guess the next hour, then see what really happened.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shuntdesk">
+<meta property="og:title" content="Guess the Chart — Shuntdesk">
+<meta property="og:description" content="A real Robinhood Chain chart, cut off at a random point. Guess the next hour, then see what really happened.">
+<meta property="og:url" content="https://shuntdesk.com/guess/">
+<meta property="og:image" content="https://shuntdesk.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shuntdesk. One score. Three tracks.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://shuntdesk.com/og.png">
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#060708">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/simple.css">
+<title>Guess the Chart — Shuntdesk</title>
+<script src="/assets/ui-mode.js"></script>
+</head>
+<body class="sub">
+<canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
+<main class="page">
+
+  <div class="ph"><div><div class="eyebrow">Guess the Chart</div><h1 class="disp">Up or down<br><span class="acc">in the next hour?</span></h1></div>
+    <div class="side"><p class="note" style="max-width:460px;margin:0">A REAL CHART FROM THE CHAIN'S OWN TRADES, CUT OFF AT A RANDOM POINT. GUESS THE NEXT HOUR, THEN WATCH WHAT REALLY HAPPENED. KEPT IN THIS BROWSER: A STREAK, NOT A BOARD.</p></div></div>
+  <div class="stub n"><div class="in"><div class="cap"><b id="gs-title">Reading a chart…</b><span id="gs-state"></span></div>
+    <canvas id="gs-chart" class="gs-chart" width="1200" height="460"></canvas>
+    <div class="bg-pick" id="gs-pick" style="margin-top:14px"><button type="button" data-g="up">Up</button><button type="button" data-g="down">Down</button><button type="button" id="gs-next" hidden>Next chart →</button></div>
+    <p class="note" id="gs-msg" style="margin:10px 0 0"></p></div></div>
+  <div class="stats" style="margin-top:14px"><div class="stub stat"><div class="in"><div class="cap"><b>Streak</b></div><div class="v" id="gs-streak">0</div><small>right in a row</small></div></div><div class="stub stat"><div class="in"><div class="cap"><b>Best</b></div><div class="v" id="gs-best">0</div><small>this browser</small></div></div><div class="stub stat"><div class="in"><div class="cap"><b>Played</b></div><div class="v" id="gs-played">0</div><small id="gs-rate"></small></div></div></div>
+  <p class="note" style="margin-top:14px">Charts from Shuntdesk's Replay: the chain's trades in fifteen-minute bars. What happened, not what will. Not advice.</p>
+</main>
+<footer class="foot"></footer>
+<script type="module" src="/assets/guess.js"></script>
+</body>
+</html>

@@ -164,3 +164,10 @@ test('one watchlist: a code is made on the first edit, tokens are added, read ba
   const [s3] = await call('watch?c=wl-zzzzzz'); assert.equal(s3, 404);
   const [s4, d] = await call('watch', { c: a.code, add: { a: 'nope' } }); assert.equal(s4, 400); assert.equal(d.ok, false);
 });
+test('games, part two: every board answers, and a bad pick is refused with a reason', async () => {
+  for (const g of ['race', 'bingo', 'fantasy', 'snipe', 'season']) { const [s, v] = await call(g + '?me=tester'); assert.equal(s, 200, g); assert.ok('ok' in v, g); }
+  const [s1, b] = await call('bingo', { handle: 'tester', picks: ['nope'] }); assert.ok(s1 === 400 && b.ok === false && b.why);
+  const [s2, c] = await call('snipe', { handle: 'x', token: '0x7e517e779b85895894becad80c9bb69b4cb1c4d6' }); assert.ok(s2 === 400 && /handle/.test(c.why));
+  const [s3, d] = await call('fantasy', { handle: 'tester', wallets: ['0x12'] }); assert.ok(s3 === 400 && /five/.test(d.why));
+  const [, sv] = await call('season'); assert.ok(sv.games.length === 6 && sv.tournament.name);
+});

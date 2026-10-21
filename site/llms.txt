@@ -32,6 +32,10 @@ The same reads as MCP tools (token, scan, dev_ledger, curve_sim, twins, dev_scor
 
 npx shuntdesk <scan|token|sim|ledger|dev|twins|shared> 0x… (add --json for the raw answer). The npm package "shuntdesk" also carries skill/shuntdesk/SKILL.md, an agent skill that says when to call these reads and how to report them: a part not read is said as not read, never as zero, and nothing is called safe. The skill alone: https://shuntdesk.com/agents/SKILL.md
 
+## Games
+
+Paper points only. Curve Racing (https://shuntdesk.com/race/), Launch Bingo (/bingo/), Fantasy Launcher (/fantasy/), Paper Sniper (/sniper/), Guess the Chart (/guess/), Rug Run (/rug-run/), Will it bond? (/bond-game/), The Yard (/play/), and the Season Pass with a weekly tournament (/season/). JSON: GET https://shuntdesk.com/api/race, /api/bingo, /api/fantasy, /api/snipe, /api/season (add ?me=handle).
+
 ## Telegram
 
 @shuntdesk_bot answers /check 0x…, /new, /desk, /report, /daily and /yard: https://t.me/shuntdesk_bot. In groups it answers only commands, mentions and replies. Community: https://t.me/shuntdesk

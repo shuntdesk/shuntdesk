@@ -49,7 +49,7 @@
       <h5>Community</h5>
       <a href="#telegram">Telegram</a>
       <h5>Build on it</h5>
-      <a href="#api">Agent API</a><a href="#mcp">MCP</a><a href="#cli">CLI</a><a href="#skill">Agent skill</a><a href="#watchlist">Watchlist</a><a href="#extension">Browser extension</a><a href="#cards">Share cards</a><a href="#data">Open record</a><a href="#sources">Data sources</a><a href="#architecture">Architecture</a><a href="#run">Run it yourself</a>
+      <a href="#api">Agent API</a><a href="#mcp">MCP</a><a href="#cli">CLI</a><a href="#skill">Agent skill</a><a href="#games">Games</a><a href="#watchlist">Watchlist</a><a href="#extension">Browser extension</a><a href="#cards">Share cards</a><a href="#data">Open record</a><a href="#sources">Data sources</a><a href="#architecture">Architecture</a><a href="#run">Run it yourself</a>
       <h5>More</h5>
       <a href="#token">$SHUNT</a><a href="#faq">FAQ</a><a href="#legal">Privacy and terms</a>
       </details>
@@ -425,6 +425,20 @@
 <tr><td><code>rugrun</code> · <code>bondgame</code></td><td>Rug Run and Will it bond?, played at the terminal</td></tr>
 </tbody></table></div>
 <p>Add <code>--json</code> to any read for the raw answer. A part that could not be read is said as not read, never as zero. The source is in <a href="https://github.com/shuntdesk/shuntdesk/tree/main/cli">cli/</a>.</p>
+</section>
+
+<section id="games"><h2>Games</h2>
+<p>Every game runs on paper points: no money, no wallet, no prize. Results come from the chain's own record, never from what a player says happened.</p>
+<div class="tbl"><table><thead><tr><th>Game</th><th>How it is scored</th></tr></thead><tbody>
+<tr><td><a href="/race/">Curve Racing</a></td><td>Every four hours, five open Pons curves between 30% and 80%, the fastest of the last hour, race for four hours. Back one in the first half hour. The first to bond wins, else the biggest gain: 100, 50 and 20 points. The lanes are read from the curve contracts once a minute.</td></tr>
+<tr><td><a href="/bingo/">Launch Bingo</a></td><td>A card of nine things the chain may do between 12:00 and 24:00 UTC, the same card for everyone. Pick four before noon: a point for each that happens, three more for all four. Filled from the radar's log and Bond Watch, scored the next day at 01:00 UTC.</td></tr>
+<tr><td><a href="/fantasy/">Fantasy Launcher</a></td><td>Back five launcher wallets for the week, Monday to Monday UTC. Every Pons token they launch after your pick: 10 if it bonds, 3 if its curve passes 50%, minus 1 if it dies under 3% within six hours.</td></tr>
+<tr><td><a href="/sniper/">Paper Sniper</a></td><td>A paper buy of a new Pons launch while its curve is under 5%, at the price its curve quotes then. An hour later the curve, or the pool if it bonded, prices it again; the points are the return in percent, from minus 100 to plus 500.</td></tr>
+<tr><td><a href="/guess/">Guess the Chart</a></td><td>A real chart from Replay cut at a random point; guess the next hour. Kept in your browser as a streak, not on a board.</td></tr>
+<tr><td><a href="/play/">The Yard</a></td><td>Shifts of calls on file, a daily shift, shifts of today's real launches judged against the radar's flags, and a challenge link from every scored shift so a friend plays the same trains.</td></tr>
+<tr><td><a href="/season/">Season Pass</a></td><td>XP from the week's play in every game, a rank from Rookie to Yardmaster, 1.2 times for $SHUNT holders in the league. One game a week is the tournament; its winner is named in the Telegram group on Monday and gets a card at <code>/card/champ/latest</code>.</td></tr>
+</tbody></table></div>
+<p>The games are also in Telegram: open @shuntdesk_bot and press its menu button, or go to <a href="/tg/">/tg/</a>.</p>
 </section>
 
 <section id="watchlist"><h2>Watchlist</h2>

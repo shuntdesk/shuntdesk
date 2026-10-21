@@ -2002,6 +2002,13 @@ async function watchTick(st, env) {
         if (share >= 0.5) add(a, 'launcher', `${sym[a]}: the launcher moved ${share.toFixed(2)}% of the supply out${withL[x.id][1].c === to ? ', into its curve: a sale' : ` to ${to.slice(0, 6)}…${to.slice(-4)}`}`); }
       S.block = head;
     }
+    // the launcher came back: a new Pons launch by the wallet behind a watched token
+    const ln = S.ln = S.ln || {};
+    for (const [a, v] of withL) { const k = v.l.slice(2), ls = X.by?.[k] || [], n = ls.length;
+      // the index also fills older launches in: only a launch from the last half hour or so counts as a return
+      const newest = ls.reduce((m, x) => x[2] > (m?.[2] || 0) ? x : m, null);
+      if (ln[v.l] !== undefined && n > ln[v.l] && newest && newest[2] >= head - 20000) { const nt = '0x' + newest[0]; if (nt !== a) add(a, 'relaunch', `${sym[a]}: its launcher just launched another Pons token, ${nt.slice(0, 6)}…${nt.slice(-4)}`); }
+      ln[v.l] = n; }
   } catch (e) {}
   for (const a of Object.keys(S.tok)) if (!tokens.includes(a)) { delete S.tok[a]; delete S.ev[a]; }
   // the chats that asked hear their lists' new events
@@ -2587,6 +2594,205 @@ function rugRunPlay(st, env, L, b) {
   return [200, { ok: true, right, of: res.length, results: res, board: Object.entries(W[wk]).sort((p, q) => q[1] - p[1]).slice(0, 20).map(([handle, best]) => ({ handle, best, holder: leagueHandles(st).has(handle) })) }];
 }
 
+// ================= games, part two: Curve Racing, Launch Bingo, Fantasy Launcher, Paper Sniper, the Season Pass, the weekly tournament =================
+// Paper points only, no money and no prize. Every result is worked here from the chain's own reads: Bond Watch's record
+// of every curve, the radar's log of every new token, and one batched call to the curves where a game needs it live.
+const okHandle = h => /^[a-z0-9_]{2,16}$/.test(h), handleOf = b => String(b?.handle || '').trim().toLowerCase();
+const weekBoard = (st, key) => { const W = st[key], id = seasonId(); if (!W || W.id !== id) { const top = W ? Object.entries(W.rows || {}).sort((a, b) => b[1] - a[1])[0] : null; st[key] = { id, rows: {}, past: W ? [{ id: W.id, handle: top ? top[0] : null, pts: top ? top[1] : 0 }, ...(W.past || [])].slice(0, 8) : [] }; } return st[key]; };
+const boardOf = (st, rows, n = 20) => { const H = leagueHandles(st); return Object.entries(rows || {}).sort((a, b) => b[1] - a[1]).slice(0, n).map(([handle, pts]) => ({ handle, pts: Math.round(pts), holder: H.has(handle) })); };
+const u256 = h => h && h.length >= 66 ? BigInt('0x' + h.slice(2, 66)) : null;
+// a batch of curves read in one call: ETH raised against the bond mark, bonded or not, and the price from the reserves
+async function curvesNow(list) {
+  const calls = list.flatMap(c => [['eth_call', [{ to: c, data: '0x' + SEL.real }, 'latest']], ['eth_call', [{ to: c, data: '0x' + SEL.thr }, 'latest']], ['eth_call', [{ to: c, data: '0x' + SEL.grad }, 'latest']], ['eth_call', [{ to: c, data: '0x' + SEL.qres }, 'latest']], ['eth_call', [{ to: c, data: '0x' + SEL.tres }, 'latest']]]);
+  const r = await rpcBatch(calls).catch(() => calls.map(() => null));
+  return list.map((c, i) => { const [re, th, gr, qr, tr] = r.slice(i * 5, i * 5 + 5).map(u256); if (re === null || !th) return null;
+    return { progress: Math.min(100, Number(re * 10000n / th) / 100), bonded: gr === 1n, price: qr && tr ? Number(qr * 10n ** 18n / tr) / 1e18 : null }; });
+}
+
+// ---------- Curve Racing: five open curves race to the bond mark, a race every four hours; back one in the first half hour ----------
+const RACE_H = 4;
+async function raceTick(st, env) {
+  const now = Date.now(), slot = Math.floor(now / (RACE_H * HOUR)) * RACE_H * HOUR; let R = st.race;
+  if (R && !R.done && now - (R.read || 0) >= 55000) {   // the lanes live, once a minute, in one call
+    R.read = now; const live = await curvesNow(R.lanes.map(l => l.c));
+    R.lanes.forEach((l, i) => { const v = live[i]; if (!v) return; l.p = v.bonded ? 100 : v.progress; if ((v.bonded || v.progress >= 100) && !l.bondedAt) l.bondedAt = now; });
+  }
+  if (R && !R.done && now >= R.end) {
+    const gain = l => (l.p ?? l.p0) - l.p0, order = R.lanes.map((_, i) => i).sort((a, b) => { const A = R.lanes[a], B = R.lanes[b]; if (A.bondedAt && B.bondedAt) return A.bondedAt - B.bondedAt; if (A.bondedAt) return -1; if (B.bondedAt) return 1; return gain(B) - gain(A); });
+    const W = weekBoard(st, 'raceW'); R.done = true; R.order = order; R.res = {};
+    for (const [h, i] of Object.entries(R.picks)) { const place = order.indexOf(i), pts = [100, 50, 20][place] || 0; R.res[h] = pts; if (pts) W.rows[h] = (W.rows[h] || 0) + pts; }
+    st.racePast = [{ id: R.id, start: R.start, end: R.end, lanes: R.lanes.map(l => ({ token: l.t, symbol: l.s, p0: l.p0, p: l.p, bonded: !!l.bondedAt })), order, players: Object.keys(R.picks).length, res: R.res }, ...(st.racePast || [])].slice(0, 6);
+  }
+  if (R && R.start === slot) return;
+  if (R && !R.done) return;
+  const B = await bondsLoad(env), pace = r => { const h = r.h || [], a = h.find(x => now - x[0] <= 65 * 60000) || h[0], z = h.at(-1); return a && z && z[0] !== a[0] ? z[1] - a[1] : 0; };
+  const pool = (B.rows || []).filter(r => !r.g && r.c && r.p >= 30 && r.p <= 80).sort((a, b) => pace(b) - pace(a)).slice(0, 5);
+  if (pool.length < 3) return;
+  st.race = { id: slot.toString(36), start: slot, end: slot + RACE_H * HOUR, closes: Math.max(slot + 30 * 60000, now + 15 * 60000), lanes: pool.map(r => ({ t: r.t0, c: r.c, s: r.s || r.t0.slice(0, 8), p0: Math.round(r.p * 10) / 10, p: r.p })), picks: {}, read: 0 };
+}
+function raceView(st, me) {
+  const R = st.race, W = weekBoard(st, 'raceW'), now = Date.now();
+  const lanes = R ? R.lanes.map((l, i) => ({ lane: i, token: l.t, symbol: l.s, startProgress: l.p0, progress: Math.round((l.p ?? l.p0) * 10) / 10, gain: Math.round(((l.p ?? l.p0) - l.p0) * 10) / 10, bonded: !!l.bondedAt, backers: Object.values(R.picks).filter(x => x === i).length })) : [];
+  return { ok: !!R, id: R?.id, start: R && new Date(R.start).toISOString(), end: R && new Date(R.end).toISOString(), closes: R && new Date(R.closes).toISOString(), open: !!R && !R.done && now < R.closes, done: !!R?.done, lanes,
+    mine: R && me ? R.picks[me] ?? null : null, result: R?.done ? { order: R.order, mine: me ? R.res[me] ?? null : null } : null, last: st.racePast?.[R?.done ? 1 : 0] || null, board: boardOf(st, W.rows), players: R ? Object.keys(R.picks).length : 0,
+    note: 'Five open Pons curves between 30% and 80%, the fastest of the last hour, race for four hours. The first to reach the bond mark wins; if none does, the biggest gain. Back one in the first half hour: 100 points for the winner, 50 for second, 20 for third. Paper points only. Not advice.' };
+}
+function racePick(st, b) {
+  const h = handleOf(b), R = st.race; if (!okHandle(h)) return [400, { ok: false, why: 'handle must be 2 to 16 letters, digits or _' }];
+  if (!R || R.done || Date.now() >= R.closes) return [400, { ok: false, why: 'backing is closed for this race' }];
+  const i = Number(b?.lane); if (!Number.isInteger(i) || !R.lanes[i]) return [400, { ok: false, why: 'pick one of the lanes' }];
+  if (R.picks[h] !== undefined) return [409, { ok: false, why: 'you already backed a lane in this race' }];
+  R.picks[h] = i; return [200, raceView(st, h)];
+}
+
+// ---------- Launch Bingo: nine things the chain may do between 12:00 and 24:00 UTC; pick four before noon ----------
+const BINGO = { fastbond: 'A Pons token bonds within 15 minutes of its launch', bond5: 'Eight Pons tokens bond', bundle30: 'A new token where bundles hold over 50%', sniper30: 'A new token where snipers hold over 50%',
+  crash90: 'A new token loses 95% within an hour', double: 'A new token with no flag triples within an hour', holders1k: 'A new token with 2,000 holders when the radar reads it', flag25: 'The radar flags 60 new tokens',
+  launch100: '160 Pons tokens launch', curve80: 'Eight curves above 80% at the same time', proxy: 'A new token behind a proxy', mint: 'A new token whose contract can mint', dev50: 'A new token where the dev holds over 80%',
+  liq50k: 'A new token with over $100,000 liquidity when read', serial: 'One wallet launches five Pons tokens' };
+function bingoDay(st, day) {
+  const G = st.bingo = st.bingo?.v === 2 ? st.bingo : { v: 2, days: {}, hist: [] };
+  if (!G.days[day]) { let s = [...day].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 11); const rnd = () => (s = (s * 1103515245 + 12345) >>> 0) / 4294967296;
+    G.days[day] = { card: Object.keys(BINGO).map(k => [rnd(), k]).sort((a, b) => a[0] - b[0]).slice(0, 9).map(x => x[1]), hits: {}, picks: {}, seen: { launch: [], by: {} } }; }
+  for (const k of Object.keys(G.days)) if (k < new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10)) delete G.days[k];
+  return G.days[day];
+}
+async function bingoTick(st, env) {
+  const now = Date.now(), day = new Date(now).toISOString().slice(0, 10), D = bingoDay(st, day), G = st.bingo;
+  if (now - (G.t || 0) < 9 * 60000) return; G.t = now;
+  const a = Date.parse(day + 'T12:00:00Z'), z = a + 12 * HOUR;
+  // the day before is scored once its last hour has had an hour to show
+  const prev = new Date(now - 86400000).toISOString().slice(0, 10), P = G.days[prev];
+  if (P && !P.scored && now >= Date.parse(day + 'T01:00:00Z')) { P.scored = true; const W = weekBoard(st, 'bingoW'); const res = {};
+    for (const [h, ks] of Object.entries(P.picks)) { const hit = ks.filter(k => P.hits[k]).length, pts = hit + (hit === ks.length && ks.length === 4 ? 3 : 0); res[h] = { hit, pts }; if (pts) W.rows[h] = (W.rows[h] || 0) + pts; }
+    G.hist = [{ day: prev, hits: Object.keys(P.hits), card: P.card, res }, ...(G.hist || [])].slice(0, 7); }
+  const scan = (D2, from, to) => {
+    const hit = k => { if (!D2.hits[k] && D2.card.includes(k)) D2.hits[k] = now; };
+    return { hit, from, to };
+  };
+  for (const [dd, from] of [[prev, Date.parse(prev + 'T12:00:00Z')], [day, a]]) {
+    const DX = G.days[dd]; if (!DX || DX.scored) continue; const to = from + 12 * HOUR, { hit } = scan(DX, from, to);
+    const L = await looksLoad(env), rows = (L.rows || []).filter(r => r.t >= from && r.t < to);
+    for (const r of rows) { const f = r.f || [], fl = radarFlags(r);
+      if (f[4] > 50) hit('bundle30'); if (f[3] > 50) hit('sniper30'); if (f[1] >= 2000) hit('holders1k'); if (f[6] > 80) hit('dev50'); if ((r.l0 || 0) >= 100000) hit('liq50k');
+      if (r.x?.p) hit('proxy'); if ((r.x?.h || []).includes('mint')) hit('mint');
+      const m = lookMove(r, 'p1'); if (m !== null && m <= -0.95) hit('crash90'); if (m !== null && m >= 2 && !fl.length) hit('double'); }
+    if (rows.filter(r => radarFlags(r).length).length >= 60) hit('flag25');
+    if (dd === day && now >= from && now < to) {
+      const B = await bondsLoad(env), bonds = (B.rows || []).filter(r => r.g && r.g >= from && r.g < to);
+      if (bonds.length >= 8) hit('bond5'); if (bonds.some(r => r.g - r.at < 15 * 60000)) hit('fastbond');
+      if ((B.rows || []).filter(r => !r.g && r.p >= 80).length >= 8) hit('curve80');
+      const S = DX.seen; for (const r of (B.rows || []).filter(r => r.at >= from && r.at < to)) { if (!S.launch.includes(r.t0)) { S.launch.push(r.t0); S.by[r.by] = (S.by[r.by] || 0) + 1; } }
+      S.launch = S.launch.slice(-400); if (S.launch.length >= 160) hit('launch100'); if (Object.values(S.by).some(n => n >= 5)) hit('serial');
+    }
+  }
+}
+function bingoView(st, me) {
+  const now = Date.now(), day = new Date(now).toISOString().slice(0, 10), D = bingoDay(st, day), G = st.bingo, W = weekBoard(st, 'bingoW'), closes = Date.parse(day + 'T12:00:00Z');
+  const y = G.hist?.[0];
+  return { ok: true, day, closes: new Date(closes).toISOString(), counts: { from: new Date(closes).toISOString(), to: new Date(closes + 12 * HOUR).toISOString() }, open: now < closes,
+    card: D.card.map(k => ({ key: k, text: BINGO[k], hit: !!D.hits[k], at: D.hits[k] ? new Date(D.hits[k]).toISOString() : null, picks: Object.values(D.picks).filter(p => p.includes(k)).length })),
+    mine: me ? D.picks[me] || null : null, players: Object.keys(D.picks).length, yesterday: y ? { day: y.day, hits: y.hits, card: y.card.map(k => ({ key: k, text: BINGO[k], hit: y.hits.includes(k) })), mine: me ? y.res[me] || null : null, players: Object.keys(y.res).length } : null,
+    board: boardOf(st, W.rows), note: 'Nine things the chain may do between 12:00 and 24:00 UTC. Pick four before noon. A point for each that happens, three more if all four do. Read from the radar\'s log and Bond Watch. Paper points only.' };
+}
+function bingoPick(st, b) {
+  const h = handleOf(b), day = new Date().toISOString().slice(0, 10), D = bingoDay(st, day); if (!okHandle(h)) return [400, { ok: false, why: 'handle must be 2 to 16 letters, digits or _' }];
+  if (Date.now() >= Date.parse(day + 'T12:00:00Z')) return [400, { ok: false, why: 'picks close at 12:00 UTC: back tomorrow' }];
+  if (D.picks[h]) return [409, { ok: false, why: 'you already picked today' }];
+  const ks = [...new Set((Array.isArray(b?.picks) ? b.picks : []).map(String))].filter(k => D.card.includes(k)); if (ks.length !== 4) return [400, { ok: false, why: 'pick four squares from today\'s card' }];
+  D.picks[h] = ks; return [200, bingoView(st, h)];
+}
+
+// ---------- Fantasy Launcher: back five launcher wallets for the week; their launches after your pick score ----------
+async function fantasyTick(st, env) {
+  const F = st.fant = st.fant || {}, id = seasonId(), now = Date.now(); if (F.id !== id) { const top = F.id ? Object.entries(fantasyScores(st)).sort((a, b) => b[1] - a[1])[0] : null; st.fant = { id, picks: {}, seen: {}, past: F.id ? [{ id: F.id, handle: top?.[0] || null, pts: top?.[1] || 0 }, ...(F.past || [])].slice(0, 8) : [] }; }
+  const G = st.fant; if (now - (G.t || 0) < 9 * 60000) return; G.t = now;
+  const picked = new Set(Object.values(G.picks).flatMap(p => p.w)); if (!picked.size) return;
+  const B = await bondsLoad(env), live = new Set();
+  for (const r of B.rows || []) { if (!picked.has(r.by) || r.at < G.id) continue; live.add(r.t0); const s = G.seen[r.t0] = G.seen[r.t0] || { by: r.by, at: r.at, s: r.s }; s.max = Math.max(s.max || 0, r.max || r.p || 0); if (r.g) s.g = r.g; }
+  for (const [t, s] of Object.entries(G.seen)) if (!live.has(t) && !s.g && (s.max || 0) < 3 && now - s.at > 6 * HOUR) s.dead = true;   // a curve dropped from Bond Watch without bonding
+}
+const fantPts = s => s.g ? 10 : (s.max || 0) >= 50 ? 3 : s.dead ? -1 : 0;
+function fantasyScores(st) { const G = st.fant || {}, out = {}; for (const [h, p] of Object.entries(G.picks || {})) out[h] = Object.values(G.seen || {}).filter(s => p.w.includes(s.by) && s.at >= p.t).reduce((n, s) => n + fantPts(s), 0); return out; }
+async function fantasyView(st, env, me) {
+  const G = st.fant?.id === seasonId() ? st.fant : { picks: {}, seen: {}, past: st.fant?.past || [] }, B = await bondsLoad(env), now = Date.now();
+  const by = {}; for (const r of B.rows || []) { if (now - r.at > 7 * 86400000 || !r.by) continue; const x = by[r.by] = by[r.by] || { wallet: r.by, launches: 0, bonded: 0, past50: 0, last: 0 }; x.launches++; if (r.g) x.bonded++; else if ((r.max || 0) >= 50) x.past50++; x.last = Math.max(x.last, r.at); }
+  const pool = Object.values(by).filter(x => x.launches >= 2).sort((a, b) => b.bonded - a.bonded || b.past50 - a.past50 || b.launches - a.launches).slice(0, 40).map(x => ({ ...x, last: new Date(x.last).toISOString() }));
+  const S = fantasyScores({ fant: G }), mine = me && G.picks[me] ? { wallets: G.picks[me].w, since: new Date(G.picks[me].t).toISOString(), pts: S[me] || 0, tokens: Object.entries(G.seen).filter(([, s]) => G.picks[me].w.includes(s.by) && s.at >= G.picks[me].t).map(([t, s]) => ({ token: t, symbol: s.s, launcher: s.by, bonded: !!s.g, max: Math.round(s.max || 0), dead: !!s.dead, pts: fantPts(s) })) } : null;
+  return { ok: true, week: new Date(seasonId()).toISOString().slice(0, 10), pool, mine, board: boardOf(st, S), players: Object.keys(G.picks).length, past: G.past?.slice(0, 4) || [],
+    note: 'Back five launcher wallets for the week (Monday to Monday, UTC). Each Pons token they launch after your pick scores: 10 if it bonds, 3 if its curve passes 50%, minus 1 if it dies under 3% within six hours. From Bond Watch\'s record. Paper points only. Not advice.' };
+}
+function fantasyPick(st, b) {
+  const h = handleOf(b); if (!okHandle(h)) return [400, { ok: false, why: 'handle must be 2 to 16 letters, digits or _' }];
+  const G = st.fant = st.fant?.id === seasonId() ? st.fant : { id: seasonId(), picks: {}, seen: {}, past: st.fant?.past || [] };
+  if (G.picks[h]) return [409, { ok: false, why: 'your five are set for this week' }];
+  const w = [...new Set((Array.isArray(b?.wallets) ? b.wallets : []).map(x => String(x).toLowerCase()))].filter(isAddr); if (w.length !== 5) return [400, { ok: false, why: 'pick five launcher wallets' }];
+  G.picks[h] = { w, t: Date.now() }; return [200, { ok: true }];
+}
+
+// ---------- Paper Sniper: buy a brand-new Pons launch on paper while its curve is under 5%; an hour later the chain prices it ----------
+async function snipeOpen(st, b) {
+  const h = handleOf(b), a = String(b?.token || '').toLowerCase(); if (!okHandle(h)) return [400, { ok: false, why: 'handle must be 2 to 16 letters, digits or _' }];
+  if (!isAddr(a)) return [400, { ok: false, why: 'pass the token' }];
+  const S = st.snipe = st.snipe || { open: [], closed: [] }, mine = S.open.filter(x => x.h === h);
+  if (mine.length >= 10) return [400, { ok: false, why: 'ten open snipes at a time' }]; if (mine.some(x => x.t === a)) return [409, { ok: false, why: 'you already sniped this one' }];
+  if (mine.some(x => Date.now() - x.at < 2 * 60000)) return [429, { ok: false, why: 'one snipe every two minutes' }];
+  const c = await curveSim(a); if (!c.ok) return [400, { ok: false, why: c.why }];
+  if (c.progress >= 5) return [400, { ok: false, why: `too late: its curve is at ${c.progress.toFixed(1)}%. Paper Sniper takes launches under 5%` }];
+  const px = c.quoteEth / c.tokens; S.open.push({ h, t: a, c: c.curve, at: Date.now(), px, p0: c.progress, s: String(b?.symbol || '').slice(0, 14) });
+  return [200, { ok: true, entry: { token: a, price: px, progress: c.progress, closes: new Date(Date.now() + HOUR).toISOString() } }];
+}
+async function snipeTick(st, env) {
+  const S = st.snipe; if (!S?.open?.length) return; const due = S.open.filter(x => Date.now() - x.at >= HOUR).slice(0, 8); if (!due.length) return;
+  const live = await curvesNow(due.map(x => x.c)), W = weekBoard(st, 'snipeW');
+  for (const [i, x] of due.entries()) { const v = live[i]; let px = v && !v.bonded ? v.price : null;
+    if (v?.bonded) try { const j = await (await fetch(`https://api.dexscreener.com/tokens/v1/robinhood/${x.t}`, { headers: UA, signal: AbortSignal.timeout(8000) })).json(); const q = (Array.isArray(j) ? j : []).sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0]; px = Number(q?.priceNative) || null; } catch (e) {}
+    if (px === null && v) px = v.price; if (px === null) { if (Date.now() - x.at > 3 * HOUR) { x.ret = null; S.open = S.open.filter(y => y !== x); S.closed.unshift({ ...x, ret: null, done: Date.now() }); } continue; }
+    const ret = Math.max(-1, Math.min(5, px / x.px - 1)), pts = Math.round(ret * 100); W.rows[x.h] = (W.rows[x.h] || 0) + pts;
+    S.open = S.open.filter(y => y !== x); S.closed.unshift({ ...x, px1: px, ret, pts, bonded: !!v?.bonded, done: Date.now() }); }
+  S.closed = S.closed.slice(0, 200);
+}
+async function snipeView(st, env, me) {
+  const S = st.snipe || { open: [], closed: [] }, W = weekBoard(st, 'snipeW'), B = await bondsLoad(env), now = Date.now();
+  const fresh = (B.rows || []).filter(r => !r.g && now - r.at < 45 * 60000 && (r.p ?? 0) < 5).sort((a, b) => b.at - a.at).slice(0, 12).map(r => ({ token: r.t0, symbol: r.s, launched: new Date(r.at).toISOString(), progress: Math.round((r.p || 0) * 10) / 10 }));
+  const row = x => ({ token: x.t, symbol: x.s, at: new Date(x.at).toISOString(), entryProgress: Math.round(x.p0 * 10) / 10, ret: x.ret ?? null, pts: x.pts ?? null, bonded: !!x.bonded, closes: new Date(x.at + HOUR).toISOString() });
+  return { ok: true, fresh, mine: me ? { open: S.open.filter(x => x.h === me).map(row), closed: S.closed.filter(x => x.h === me).slice(0, 10).map(row) } : null, recent: S.closed.slice(0, 8).map(x => ({ handle: x.h, ...row(x) })), board: boardOf(st, W.rows),
+    note: 'Buy a new Pons launch on paper while its curve is under 5%, at the price its curve quotes now. An hour later the curve, or the pool if it bonded, prices it again. Points are the return in percent, from minus 100 to plus 500. Paper only. Not advice.' };
+}
+
+// ---------- the Season Pass: one week of every game, as XP and a rank; the featured game is the week's tournament ----------
+const SEASON_GAMES = [['rugrun', 'Rug Run', '/rug-run/'], ['bondgame', 'Will it bond?', '/bond-game/'], ['race', 'Curve Racing', '/race/'], ['bingo', 'Launch Bingo', '/bingo/'], ['fantasy', 'Fantasy Launcher', '/fantasy/'], ['sniper', 'Paper Sniper', '/sniper/']];
+const RANKS = [[0, 'Rookie'], [100, 'Brakeman'], [300, 'Fireman'], [600, 'Driver'], [1000, 'Dispatcher'], [2000, 'Yardmaster']];
+const featured = (t = Date.now()) => SEASON_GAMES[Math.floor(seasonId(t) / (7 * 86400000)) % SEASON_GAMES.length];
+function seasonScores(st) {
+  const out = {}, add = (game, rows, k) => { for (const [h, v] of Object.entries(rows || {})) { const x = out[h] = out[h] || { games: {}, xp: 0 }; x.games[game] = (x.games[game] || 0) + v; x.xp += Math.max(0, v) * k; } };
+  yardRoll(st); add('yard', Object.fromEntries(Object.entries(st.yard.rows).map(([h, r]) => [h, r.pts])), 0.1);
+  const sun = new Date(Date.now() - new Date().getUTCDay() * 86400000).toISOString().slice(0, 10); add('rugrun', st.rrBoard?.[sun], 10);
+  const G = st.bg || {}, bw = {}; for (const d of (G.hist || []).slice(0, 7)) for (const [h, p] of Object.entries(d.board || {})) bw[h] = (bw[h] || 0) + p; add('bondgame', bw, 20);
+  add('race', weekBoard(st, 'raceW').rows, 0.5); add('bingo', weekBoard(st, 'bingoW').rows, 10); add('fantasy', st.fant?.id === seasonId() ? fantasyScores(st) : {}, 1); add('sniper', weekBoard(st, 'snipeW').rows, 0.2);
+  const H = leagueHandles(st); for (const [h, x] of Object.entries(out)) { x.holder = H.has(h); x.xp = Math.round(x.xp * (x.holder ? 1.2 : 1)); x.rank = RANKS.filter(r => x.xp >= r[0]).at(-1)[1]; }
+  return out;
+}
+function seasonView(st, me) {
+  const S = seasonScores(st), f = featured(), board = Object.entries(S).sort((a, b) => b[1].xp - a[1].xp).slice(0, 25).map(([handle, x]) => ({ handle, xp: x.xp, rank: x.rank, holder: x.holder }));
+  const game = { rugrun: 'rugrun', bondgame: 'bondgame', race: 'race', bingo: 'bingo', fantasy: 'fantasy', sniper: 'sniper' }[f[0]];
+  const lead = Object.entries(S).filter(([, x]) => x.games[game] > 0).sort((a, b) => b[1].games[game] - a[1].games[game]).slice(0, 5).map(([handle, x]) => ({ handle, pts: Math.round(x.games[game]) }));
+  return { ok: true, week: new Date(seasonId()).toISOString().slice(0, 10), ends: new Date(seasonId() + 7 * 86400000).toISOString(), ranks: RANKS.map(([xp, name]) => ({ xp, name })), games: SEASON_GAMES.map(([k, name, path]) => ({ key: k, name, path })),
+    tournament: { game: f[0], name: f[1], path: f[2], leaders: lead }, champions: (st.champions || []).slice(0, 6), me: me && S[me] ? { handle: me, ...S[me] } : null, board,
+    note: 'XP from this week\'s play: The Yard, Rug Run, Will it bond?, Curve Racing, Launch Bingo, Fantasy Launcher and Paper Sniper. $SHUNT holders in the league get 1.2 times. The week resets Monday 00:00 UTC. The featured game is the week\'s tournament; its winner is named in the Telegram group. Paper points only.' };
+}
+// the week turned: last week's featured game names its champion, once, in the home group
+async function tournamentTick(st, env) {
+  const T = st.tour = st.tour || {}, id = seasonId();
+  if (T.id && T.id !== id && !T.named) {
+    T.named = true; const L = T.leader;
+    if (L) { st.champions = [{ week: new Date(T.id).toISOString().slice(0, 10), game: T.name, handle: L.handle, pts: L.pts }, ...(st.champions || [])].slice(0, 12);
+      if (env.TELEGRAM_GROUP) tgQueue(st, [String(env.TELEGRAM_GROUP)], `<b>This week's champion</b> · ${tgEsc(T.name)}\n\n<b>${tgEsc(L.handle)}</b> won with ${L.pts} points.\n\nThis week's tournament: ${tgEsc(featured()[1])}\nhttps://shuntdesk.com/season/`); }
+  }
+  if (T.id !== id) { st.tour = { id, name: featured()[1], named: false }; }
+  const v = seasonView(st); st.tour.leader = v.tournament.leaders[0] || null;
+}
+
 // ---------- the daily line, posted to the community group at 13:00 UTC ----------
 // The site's own numbers for the last day, so the group hears from the line every day: the crew desk, the calls,
 // what the radar found, and the Pons curves closest to bonding. Once a day, nothing invented.
@@ -2801,8 +3007,26 @@ const api = {
         if (url.pathname.endsWith('/events')) { const since = Number(url.searchParams.get('since')) || 0; return json({ ok: true, code: c, events: v.events.filter(e => e.t > since), checked: S.t }); }
         return json({ ...v, checked: S.t });
       }
+      if (['/api/race', '/api/bingo', '/api/fantasy', '/api/snipe', '/api/season'].includes(url.pathname)) {
+        const me = String(url.searchParams.get('me') || '').toLowerCase(), k = url.pathname.slice(5);
+        if (body) {
+          if (!allow(st, ip, 'g2-' + k, k === 'snipe' ? 40 : 20)) return json({ ok: false, why: 'slow down' }, 429);
+          const [code, out] = k === 'race' ? racePick(st, body) : k === 'bingo' ? bingoPick(st, body) : k === 'fantasy' ? fantasyPick(st, body) : k === 'snipe' ? await snipeOpen(st, body) : [404, { ok: false, why: 'nothing to post here' }];
+          if (code === 200) await save(env, st); return json(out, code);
+        }
+        const v = k === 'race' ? raceView(st, me) : k === 'bingo' ? bingoView(st, me) : k === 'fantasy' ? await fantasyView(st, env, me) : k === 'snipe' ? await snipeView(st, env, me) : seasonView(st, me);
+        await save(env, st); return json(v);
+      }
       if (url.pathname.startsWith('/card/')) {
         const png = url.pathname.endsWith('.png'), parts = url.pathname.slice(6).replace(/\.png$/, '').toLowerCase().split('/'), kind = parts.length === 2 ? parts[0] : 'token', a = parts[parts.length - 1];
+        // the week's champion: /card/champ/latest(.png)
+        if (kind === 'champ') {
+          const c = (st.champions || [])[0], read = new Date().toISOString();
+          const svg = c ? cardFrame({ kind: 'SEASON PASS · TOURNAMENT', pill: 'CHAMPION', pillCol: '#2ed3a0', big: cardCut(c.handle, 14), meta: `${c.game} · week of ${c.week}`, body: cardStats([{ k: 'POINTS', v: String(c.pts), col: '#2ed3a0' }]) + cardRows([{ lvl: 'g', text: `won the week's ${c.game} tournament on shuntdesk.com` }], 458), read })
+            : cardFrame({ kind: 'SEASON PASS · TOURNAMENT', pill: 'THIS WEEK', big: 'No champion yet', meta: 'The first tournament is still running', body: '', read });
+          if (png) { const { svgToPng } = await import('./card.js'); return new Response(await svgToPng(svg), { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=1800' } }); }
+          return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Shuntdesk champion</title><meta property="og:title" content="${c ? cardX(c.handle) + ' is the Shuntdesk champion' : 'Shuntdesk Season Pass'}"><meta property="og:image" content="${url.origin}/card/champ/latest.png?h=${Math.floor(Date.now() / 1800000)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta http-equiv="refresh" content="0;url=/season/"></head><body></body></html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+        }
         if (!isAddr(a) || !['token', 'wallet', 'dev'].includes(kind)) return new Response('not found', { status: 404 });
         const ck = kind === 'token' ? a : (kind === 'wallet' ? 'w:' : 'd:') + a;
         if (!cards.has(ck) && !allow(st, ip, 'card', 60)) return new Response('slow down', { status: 429 });
@@ -2884,6 +3108,11 @@ const api = {
     try { await gradScan(st, env); } catch (e) { st.grads = { ...(st.grads || { rows: [] }), err: String(e.message || e).slice(0, 120) }; }   // the graduation feed is extra: a failed read never stops the desk
     try { await looksTick(env); } catch (e) {}
     try { await watchTick(st, env); } catch (e) {}
+    try { await raceTick(st, env); } catch (e) {}
+    try { await bingoTick(st, env); } catch (e) {}
+    try { await fantasyTick(st, env); } catch (e) {}
+    try { await snipeTick(st, env); } catch (e) {}
+    try { await tournamentTick(st, env); } catch (e) {}
     try { await twinsTick(env); } catch (e) {}
     try { await bondTick(env); } catch (e) {}
     try { await lindexTick(env); } catch (e) {}
