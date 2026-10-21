@@ -129,12 +129,24 @@ const LOCAL = /^(localhost|127\.)/.test(location.hostname), LIVE = 'https://shun
 async function get(path) { const r = await fetch(path, { cache: 'no-store' }); if (!r.ok) throw new Error(r.status); return r.json(); }
 // a local copy of the site has its own thin record; read the public one when it comes back empty
 async function getLive(path, ok) { try { const j = await get(path); if (!LOCAL || ok(j)) return j; } catch (e) {} if (LOCAL) try { return await get(LIVE + path); } catch (e) {} return null; }
-let TRAINS = [], loaded = false;
+let TRAINS = [], LAUNCH = [], loaded = false;
 async function loadTrains() {
   const j = await getLive('/api/play', j => (j.trains || []).length > 0); TRAINS = (j?.trains || []).filter(t => t.move24h != null || t.move1h != null);
-  loaded = true; $('load').textContent = TRAINS.length ? `${TRAINS.length} real calls on file` : 'No trains on file right now: you can still walk the city';
+  LAUNCH = (j?.launches || []).filter(t => t.move24h != null || t.move1h != null);   // today's real launches, with their hour after
+  loaded = true; $('load').textContent = TRAINS.length ? `${TRAINS.length} real calls on file · ${LAUNCH.length} launches from today` : 'No trains on file right now: you can still walk the city';
+  challengeFromLink();
 }
 loadTrains();
+// a friend's challenge: /play/?c=id carries the same trains and the score to beat
+async function challengeFromLink() {
+  const id = new URLSearchParams(location.search).get('c'); if (!id || !/^[0-9a-f]{8}$/.test(id)) return;
+  let d = null; try { d = await get('/api/yard?c=' + id); } catch (e) {}
+  if (!d?.ok) return banner('CHALLENGE', 'That challenge has ended: it lasts a week.');
+  const list = d.tokens.map(a => TRAINS.find(t => t.token === a) || LAUNCH.find(t => t.token === a)).filter(Boolean);
+  if (!list.length) return banner('CHALLENGE', 'Those trains are not on file any more.');
+  info(`${esc(d.by)} challenged you`, 'The Yard', `<p class="pm">The same ${list.length} trains ${esc(d.by)} took. They read <b>${d.right} of ${d.n}</b> right for ${d.pts} points. Can you beat it?</p><div class="row2"><button class="btn" id="ch-go">Take the challenge</button></div>`, null);
+  $('ch-go').onclick = () => { closeInfo(); const go = () => startShift(list, 'duel', { vs: id, by: d.by, right: d.right, n: d.n }); if (!save.handle) return askName(go); go(); };
+}
 const DATA = { desk: null, verdicts: null, grads: null, rugs: null };
 async function refresh() {
   const [d, v, g, r] = await Promise.all([getLive('/api/v1/desk', j => j.equity != null), getLive('/api/v1/verdicts', j => (j.verdicts || []).length > 0), getLive('/api/v1/graduated', j => (j.tokens || []).length > 0), getLive('/api/rugs', j => (j.rows || []).length > 0)]);
@@ -173,8 +185,8 @@ const tone = t => /^(FOUND|PASS|SPREAD|TRACED|NO GROUP|READS CLEAN)$/.test(t) ? 
 const moveOf = t => t.move24h != null ? [t.move24h, 'a day later'] : [t.move1h, 'an hour later'];
 const FLAT = 0.02, SPEED = 14, SPAWN = -300;
 const G = { on: false, list: [], i: 0, results: [], train: null, gotXp: 0, streak: 0, old: [] };
-function pickShift() {
-  const pool = [...TRAINS].sort(() => Math.random() - 0.5), out = [];
+function pickShift(from = TRAINS) {
+  const pool = [...from].sort(() => Math.random() - 0.5), out = [];
   const fell = pool.find(t => moveOf(t)[0] < -0.1), rose = pool.find(t => moveOf(t)[0] > 0.05);
   for (const t of [fell, rose]) if (t) out.push(t);
   for (const t of pool) { if (out.length >= 5) break; if (!out.includes(t)) out.push(t); }
@@ -210,7 +222,7 @@ function decide() {
   else if (call === 'RIDE') { right = rose; pts = rose ? 100 : !fell ? 20 : 0; head = rose ? 'GOOD RIDE' : fell ? 'DERAILED' : 'NOTHING MOVED'; why = rose ? 'It rode the line and the price rose.' : fell ? 'You let it ride, and the price fell.' : 'It rode the line; the price barely moved.'; }
   else { right = !rose; pts = fell ? 100 + Math.round(Math.min(1, -m) * 80) : !rose ? 40 : 0; head = fell ? 'SAVED THE LINE' : !rose ? 'SAFE ON THE SIDING' : 'MISSED THE RIDE'; why = fell ? 'You put it on the siding, and the price fell.' : !rose ? 'You held it back; the price barely moved.' : 'You held it back, and the price rose.'; }
   G.streak = right ? G.streak + 1 : 0; if (right && G.streak >= 3) pts = Math.round(pts * 1.5);
-  const sdRide = d.verdict === 'CLEAN', sdRight = sdRide ? rose : !rose;
+  const sdRide = d.verdict === 'CLEAN' || d.verdict === 'NO FLAG', sdRight = sdRide ? rose : !rose;   // a launch train: the radar's flag stands in for the desk
   tr.route = call === 'SIDING' ? 'siding' : 'main'; tr.end = { m, when, right, pts, head, why, fell, rose };
   G.results.push({ d, call, right, sdRight, m, when, pts }); addCard({ symbol: d.symbol, token: d.token, verdict: d.verdict, score: d.score, call, m, right, rare: call === 'SIDING' && m < -0.1 }); G.gotXp += pts; save.read++; if (right) save.right++; addXp(pts); if (right) pay(12, 'shift');
   setTimeout(() => reveal(tr, d, sdRide), 1300);
@@ -230,7 +242,11 @@ function next() {
   if (G.mode === 'own') { G.on = false; $('man').classList.remove('on'); setLever(null); return; }
   G.on = false; $('man').classList.remove('on'); setLever(null); save.shifts++; keep(); complete('shift');
   const you = G.results.filter(r => r.right).length, sd = G.results.filter(r => r.sdRight).length;
-  $('d-h').textContent = you > sd ? 'You beat the desk.' : you === sd ? 'Level with the desk.' : 'The desk read it better.';
+  const radar = G.list.some(t => t.launch), who = radar ? 'the radar' : 'the desk';   // today's launches are judged against the radar's flags, not a verdict
+  $('d-h').textContent = you > sd ? `You beat ${who}.` : you === sd ? `Level with ${who}.` : `${who[0].toUpperCase() + who.slice(1)} read it better.`;
+  const cap = $('d-sd').previousElementSibling; if (cap) cap.textContent = radar ? "The radar's flags" : "Shuntdesk's call";
+  if (G.mode === 'duel') $('d-h').textContent = you > G.meta.right ? `You beat ${G.meta.by}.` : you === G.meta.right ? `Level with ${G.meta.by}.` : `${G.meta.by} read it better.`;
+  const ch = $('d-ch'); if (ch) ch.remove();
   $('d-you').textContent = `${you} / ${G.results.length}`; $('d-sd').textContent = `${sd} / ${G.results.length}`; $('d-xp').textContent = '+' + G.gotXp + ' · ' + rankUI();
   $('d-list').innerHTML = G.results.map(r => `<div><span>${esc(r.d.symbol || r.d.token.slice(0, 8))} · ${r.call || 'no call'}</span><b class="${r.m >= 0 ? 'ok' : 'bad'}">${pct(r.m)} ${r.when === 'a day later' ? '24h' : '1h'}</b></div>`).join('');
   $('done').hidden = false;
@@ -695,9 +711,13 @@ function riding(dt) {
 async function submitShift(results) {
   if (!save.handle || !results.length) return;
   try {
-    const r = await fetch('/api/yard', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ handle: save.handle, calls: results.map(x => ({ token: x.d.token, call: x.call })) }) });
+    const r = await fetch('/api/yard', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ handle: save.handle, calls: results.map(x => ({ token: x.d.token, call: x.call })), vs: G.meta?.vs }) });
     const j = await r.json(); if (!j.ok) return banner('THE BOARD', j.why || 'not counted');
-    LB.data = j; complete('lead'); banner('ON THE BOARD', `#${j.rank} this week · ${j.shift.pts} points`);
+    LB.data = j; complete('lead');
+    banner(j.vs ? 'CHALLENGE' : 'ON THE BOARD', j.vs ? `You ${j.shift.right} of ${j.shift.read} · ${j.vs.by} ${j.vs.right} of ${j.vs.n}` : `#${j.rank} this week · ${j.shift.pts} points`);
+    // the same trains for a friend: a link with this score to beat
+    if (j.challenge) { const link = `${location.origin}/play/?c=${j.challenge}`, box = $('d-list'); if (box && !$('d-ch')) box.insertAdjacentHTML('afterend', `<p class="pm" id="d-ch">Play a friend on these trains: <a href="${link}" style="color:inherit">${link.replace(/^https?:\/\//, '')}</a> <button class="btn ghost" id="d-ch-copy" type="button">Copy link</button></p>`);
+      const cb = $('d-ch-copy'); if (cb) cb.onclick = async () => { try { await navigator.clipboard.writeText(link); cb.textContent = 'Copied'; } catch (e) { cb.textContent = link; } }; }
   } catch (e) {}
 }
 const LB = { data: null };
@@ -976,6 +996,7 @@ function signalMenu() {
   info('Signal Box', 'Pick a shift', `<div class="menu">
     <button class="btn ghost" data-sm="practice"><span>Practice shift<small>Five random calls from the record. As many as you like.</small></span><b>5</b></button>
     <button class="btn ghost" data-sm="daily" ${!d || !d.trains.length || played ? 'disabled' : ''}><span>Daily shift #${d?.no ?? '·'}<small>${played ? 'Played today. Back tomorrow.' : 'The same five trains for everyone today. One go.'}</small></span><b>${d?.players ?? 0} played</b></button>
+    <button class="btn ghost" data-sm="launch" ${LAUNCH.length < 3 ? 'disabled' : ''}><span>Today's launches<small>Five tokens that launched in the last day and a half, as the radar read them. Judged against the radar's flags.</small></span><b>NEW</b></button>
     <button class="btn ghost" data-sm="own"><span>Bring your own token<small>Paste an address: the seven checks run live and it comes down the line.</small></span><b>LIVE</b></button>
   </div>${save.pending.length ? `<p class="pm">${save.pending.length} of your tokens are waiting on their hour.</p>` : ''}`);
   $('in-b').querySelectorAll('[data-sm]').forEach(b => b.onclick = () => {
@@ -983,6 +1004,7 @@ function signalMenu() {
     if (k === 'practice') startShift();
     if (k === 'daily') { if (!save.handle) return askName(() => startDaily()); startDaily(); }
     if (k === 'own') ownToken();
+    if (k === 'launch') startShift(pickShift(LAUNCH), 'launch');
   });
 }
 ACTS[0].go = () => { if (!loaded) return; checkPending(); signalMenu(); };

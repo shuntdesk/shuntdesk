@@ -490,6 +490,16 @@ function playTrains(st) {
     at: new Date(v.t).toISOString(), move1h: v.p1h ? v.p1h / v.p0 - 1 : null, move24h: v.p24h ? v.p24h / v.p0 - 1 : null }));
 }
 
+// today's launches: new tokens the radar read in the last day and a half, each with its price an hour (and a day) later.
+// They carry no verdict; what stands in for the desk is the radar's flag, and the page says so.
+function launchTrains(L) {
+  const now = Date.now();
+  return (L.rows || []).filter(r => r.x && r.p0 && r.p1 !== undefined && now - r.t < 36 * HOUR).sort((a, b) => b.t - a.t).slice(0, 80).map(r => { const fl = radarFlags(r);
+    return { token: r.a, symbol: r.s, liq: r.l0, zone: 0, score: null, verdict: fl.length ? 'FLAGGED' : 'NO FLAG', stops: fl.slice(0, 3), at: new Date(r.t).toISOString(), launch: true, move1h: lookMove(r, 'p1'), move24h: lookMove(r, 'p24') }; });
+}
+// a launch train as the scorer reads a call on file; a price read as zero (the pool is gone) counts as a total loss
+const launchAsCall = r => { const px = v => v === undefined ? null : v === 0 ? r.p0 * 1e-9 : v; return { addr: r.a, p0: r.p0, p1h: px(r.p1), p24h: px(r.p24), verdict: radarFlags(r).length ? 'FLAGGED' : 'CLEAN' }; };
+
 // ---------- the Yard's leaderboard: each shift is scored here, from the calls on file ----------
 // The page only says which trains it got and which lever it pulled; the price after comes from the record, so a
 // shift cannot claim a read it did not make. Weekly, like the board of desks.
@@ -513,14 +523,16 @@ function yardView(st, me) {
   const rows = Object.entries(st.yard.rows).map(([handle, r]) => ({ handle, ...r })).sort((a, b) => b.pts - a.pts || a.t - b.t);
   return { season: st.yard.id, ends: st.yard.id + 7 * 24 * HOUR, rows: rows.slice(0, 30), past: st.yard.past, rank: me ? rows.findIndex(r => r.handle === me) + 1 || null : null, players: rows.length };
 }
-function yardShift(st, body) {
+function yardShift(st, body, L) {
   const h = String(body?.handle || '').trim().toLowerCase();
   if (!/^[a-z0-9_]{2,16}$/.test(h)) return [400, { ok: false, why: 'handle must be 2 to 16 letters, digits or _' }];
   const calls = Array.isArray(body.calls) ? body.calls.slice(0, 5) : [], seen = new Set();
   let pts = 0, right = 0, read = 0, desk = 0;
   for (const c of calls) {
     const a = String(c?.token || '').toLowerCase(); if (!isAddr(a) || seen.has(a)) continue; seen.add(a);
-    const v = st.verdicts.find(x => x.addr === a && x.p0 && (x.p1h || x.p24h)); if (!v) continue;
+    let v = st.verdicts.find(x => x.addr === a && x.p0 && (x.p1h || x.p24h));
+    if (!v && L) { const r = (L.rows || []).find(x => x.a === a && x.x && x.p0 && x.p1 !== undefined); if (r) v = launchAsCall(r); }
+    if (!v) continue;
     const s = yardScore(v, c.call === 'RIDE' || c.call === 'SIDING' ? c.call : null);
     pts += s.pts; read++; if (s.right) right++; if (s.desk) desk++;
   }
@@ -2762,7 +2774,7 @@ const api = {
       if (url.pathname === '/api/site') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); if (!sites.has(a) && !allow(st, ip, 'site', 40)) return json({ ok: false, why: 'slow down: 40 sites an hour' }, 429); const extra = (url.searchParams.get('u') || '').split(' ').filter(Boolean).slice(0, 6); const r = await siteCheck(st, env, a, extra); await save(env, st); return json(r); }
       if (url.pathname === '/api/xray') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); if (!xrays.has(a) && !allow(st, ip, 'xray', 40)) return json({ ok: false, why: 'slow down: 40 scans an hour' }, 429); const r = await xray(st, env, a); await save(env, st); return json(r); }
       if (url.pathname === '/api/rugs') return json({ rows: rugs(st) });
-      if (url.pathname === '/api/play') return json({ trains: playTrains(st) });
+      if (url.pathname === '/api/play') return json({ trains: playTrains(st), launches: launchTrains(await looksLoad(env)) });
       if (url.pathname === '/api/proof') { const [dl, x, L] = await Promise.all([devLedger(env, SHUNT).catch(() => null), xray(st, env, SHUNT).catch(() => null), launch(env, SHUNT).catch(() => null)]);
         const rec = record(st); return json({ ok: true, token: SHUNT, ledger: dl?.ok ? dl : null, contract: x?.ok ? { functions: x.functions, named: x.named, unknown: x.unknown, proxy: !!x.proxy, owner: x.owner, powers: x.powers.filter(p => p.level === 'high').map(p => p.what), verified: x.source?.verified ?? null } : null,
           curve: L?.launchpad === 'pons' ? { progress: L.progress, graduated: L.graduated, raised: L.raised, need: L.need, holders: L.holders ?? null } : null,
@@ -2825,7 +2837,19 @@ const api = {
         const v = dailyView(st, String(url.searchParams.get('me') || '').toLowerCase()); await save(env, st); return json(v);
       }
       if (url.pathname === '/api/yard') {
-        if (body) { if (!allow(st, ip, 'yard', 20)) return json({ ok: false, why: 'slow down: 20 shifts an hour' }, 429); const [code, out] = yardShift(st, body); if (code === 200) await save(env, st); return json(out, code); }
+        if (body) { if (!allow(st, ip, 'yard', 20)) return json({ ok: false, why: 'slow down: 20 shifts an hour' }, 429);
+          const [code, out] = yardShift(st, body, await looksLoad(env));
+          if (code === 200) {
+            // a challenge: the same trains for a friend, with this score to beat
+            const D = st.duels = st.duels || {}, id = crypto.randomUUID().replace(/-/g, '').slice(0, 8), h = String(body.handle).toLowerCase();
+            D[id] = { by: h, tokens: body.calls.slice(0, 5).map(c => String(c.token).toLowerCase()), right: out.shift.right, pts: out.shift.pts, n: out.shift.read, t: Date.now() };
+            for (const [k, v] of Object.entries(D)) if (Date.now() - v.t > 7 * 86400000) delete D[k];
+            const all = Object.entries(D); if (all.length > 400) all.sort((a, b) => a[1].t - b[1].t).slice(0, all.length - 400).forEach(([k]) => delete D[k]);
+            out.challenge = id; const vs = D[String(body.vs || '')]; if (vs) out.vs = { by: vs.by, right: vs.right, pts: vs.pts, n: vs.n };
+            await save(env, st);
+          }
+          return json(out, code); }
+        const cid = String(url.searchParams.get('c') || ''); if (cid) { const d = st.duels?.[cid]; return d ? json({ ok: true, id: cid, ...d, at: new Date(d.t).toISOString() }) : json({ ok: false, why: 'that challenge has ended' }); }
         return json(yardView(st, String(url.searchParams.get('me') || '').toLowerCase()));
       }
       if (url.pathname === '/api/push/key') return json({ key: env.VAPID_PUBLIC || null });
