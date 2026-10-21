@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shuntdesk on Solana</title>
+<meta name="description" content="Every Shuntdesk tool for Solana in one place: the seven checks, First Buyers, the deployer and its ring, Graduation Watch, Rug of the Day and the Deployer Board.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shuntdesk">
+<meta property="og:title" content="Shuntdesk on Solana">
+<meta property="og:description" content="Every Shuntdesk tool for Solana in one place: the seven checks, First Buyers, the deployer and its ring, Graduation Watch, Rug of the Day and the Deployer Board.">
+<meta property="og:url" content="https://shuntdesk.com/solana/">
+<meta property="og:image" content="https://shuntdesk.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shuntdesk. One score. Three tracks.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://shuntdesk.com/og.png">
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#060708">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/simple.css">
+<script src="/assets/ui-mode.js"></script>
+</head>
+<body class="sub">
+<canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
+<main class="page">
+  <div class="ph">
+    <div><div class="eyebrow">Shuntdesk · Solana</div><h1 class="disp">Read it before<br><span class="acc">you ride it.</span></h1></div>
+    <div class="side"><form id="sx-f" class="pf-form" style="margin-top:12px"><input id="sx-a" placeholder="a Solana mint or wallet" autocomplete="off" spellcheck="false"><button class="btn" type="submit">Read it →</button></form><p class="note" id="sx-msg"></p></div>
+  </div>
+  <div class="stub n"><div class="in">
+    <div class="cap"><b>Rug of the Day</b><span id="rd-by">the token that fell furthest from its peak, picked at 12:00 UTC</span></div>
+    <div id="rd"><p class="note">READING…</p></div>
+  </div></div>
+  <div class="tk-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;margin-top:16px">
+    <div class="stub n"><div class="in"><div class="cap"><b>Deployer Board</b><span id="db-by">the wallets that launch the most</span></div><div class="dep" id="db-f"></div></div></div>
+    <div class="stub n"><div class="in"><div class="cap"><b>Near the line</b><span><a class="acc" href="/graduation/">Graduation Watch →</a></span></div><div class="dep" id="gl"></div><div class="bw-done" id="gd" style="margin-top:10px"></div></div></div>
+  </div>
+  <div class="stub n" style="margin-top:16px"><div class="in"><div class="cap"><b>Deployers whose tokens graduate</b><span>from the same board</span></div><div class="dep" id="db-l"></div></div></div>
+  <h2 class="disp" style="font-size:42px;margin:34px 0 14px">The tools</h2>
+  <div class="tools" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px">
+    <a class="stub tool g" href="/ticket/"><div class="in"><div class="cap"><b>Ticket</b><span>seven checks</span></div><h2>One token in, one verdict out</h2><p>The pool or the Pump.fun curve, the largest wallets and who funded them, snipers and bundles, the deployer, mint and freeze authority.</p></div></a>
+    <a class="stub tool g" href="/ticket/"><div class="in"><div class="cap"><b>First Buyers</b><span>on every Pump.fun ticket</span></div><h2>Who bought in the launch slot</h2><p>The wallets that bought beside the deployer in the first seconds, what they still hold, and who funded them.</p></div></a>
+    <a class="stub tool g" href="/graduation/"><div class="in"><div class="cap"><b>Graduation Watch</b><span>live</span></div><h2>Near the line</h2><p>The Pump.fun curves closest to graduating, read off each curve, with the pace of the last hour.</p></div></a>
+    <a class="stub tool g" href="/dev/"><div class="in"><div class="cap"><b>Dev Score and Ring</b><span>deployers</span></div><h2>Who launched it, what they did before</h2><p>Every token a deployer launched and how many died inside the hour, and the other deployers its funder paid.</p></div></a>
+    <a class="stub tool g" href="/exit/"><div class="in"><div class="cap"><b>Exit Door</b><span>curve or pool</span></div><h2>What $500 gets back</h2><p>Sold straight back, or after the largest wallets, the deployer or the launch bundles sell first.</p></div></a>
+    <a class="stub tool g" href="/wallet/"><div class="in"><div class="cap"><b>Wallet X-ray</b><span>any wallet</span></div><h2>What a bag would fetch</h2><p>Every token in a Solana wallet, priced, with copies of well-known tokens marked.</p></div></a>
+    <a class="stub tool g" href="/sim/"><div class="in"><div class="cap"><b>Curve Simulator</b><span>Pump.fun</span></div><h2>A buy, worked on the curve</h2><p>What a buy gets, how far it moves the curve, and what comes back on a straight sell.</p></div></a>
+    <a class="stub tool g" href="/replay/"><div class="in"><div class="cap"><b>Replay</b><span>the chart</span></div><h2>Watch it fall</h2><p>The price since the pool opened: its peak, its steepest fall, where it stands.</p></div></a>
+    <a class="stub tool g" href="/shared/"><div class="in"><div class="cap"><b>Shared Bags</b><span>two tokens</span></div><h2>Wallets in both</h2><p>The largest holders of two tokens that hold both.</p></div></a>
+  </div>
+  <p class="note" style="margin-top:14px">Every read is from public Solana data: Helius, DexScreener, GeckoTerminal, GoPlus and Codex. Also in the bot (paste a mint to @shuntdesk_bot), the CLI and the extension on Pump.fun, DexScreener and Solscan. Rule-based readings that can be wrong. Not advice.</p>
+</main>
+<footer class="foot"></footer>
+<script type="module" src="/assets/solana.js"></script>
+</body>
+</html>

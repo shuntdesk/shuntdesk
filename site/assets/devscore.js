@@ -49,6 +49,21 @@ function paintSol(v) {
   const l = $('#dv-list'); l.innerHTML = '<div class="r h"><span>TOKEN</span><span>LAUNCHED</span><span>MARKET CAP</span><span>HOLDERS</span><span>DEV HOLDS</span><span>RESULT</span></div>';
   l.insertAdjacentHTML('beforeend', v.launches.map(x => `<a class="r" href="/ticket/?a=${x.token}"><span class="sy">${esc(x.symbol)}<small>${x.token.slice(0, 4)}…${x.token.slice(-4)}</small></span><span>${when(x.launched)}</span><span>${usd(x.marketCap)}</span><span>${x.holders ?? '—'}</span><span>${x.devHolds == null ? '—' : Number(x.devHolds).toFixed(1) + '%'}</span><span>${x.bonded ? '<b class="long">graduated</b>' : x.dead ? '<b class="short">dead</b>' : x.progress != null ? Math.round(x.progress) + '% to graduation' : 'live'}</span></a>`).join(''));
   $('#dv-note').textContent = v.note;
+  ring(v.wallet);
+}
+// Deployer Ring: who funded this deployer, and the other deployers that funder paid
+async function ring(w) {
+  let box = document.getElementById('dv-ring');
+  if (!box) { box = document.createElement('div'); box.id = 'dv-ring'; box.className = 'stub n'; box.style.marginTop = '16px'; $('#dv-note').before(box); }
+  box.innerHTML = '<div class="in"><div class="cap"><b>Deployer Ring</b><span>who funded it, and who else that funder paid</span></div><p class="note">FOLLOWING THE FIRST SOL BACK…</p></div>';
+  let r = null; try { r = await api('ring?a=' + w); } catch (e) {}
+  const body = box.querySelector('.in');
+  if (!r?.ok) { body.lastElementChild.textContent = (r?.why || 'not answering right now').toUpperCase() + '.'; return; }
+  if (!r.funder) { body.lastElementChild.textContent = (r.why || 'no first funding found').toUpperCase() + '.'; return; }
+  const w4 = a => a.slice(0, 4) + '…' + a.slice(-4);
+  body.lastElementChild.outerHTML = `<p style="margin:6px 0 10px">First funded by <a class="acc" href="/wallet/?w=${r.funder}">${w4(r.funder)}</a>, which paid ${r.paidWallets} wallet${r.paidWallets === 1 ? '' : 's'} in its latest transactions. ${r.ring.length ? `${r.ring.length} of them launch tokens too:` : 'None of the ones checked launch tokens.'}</p>
+    <div class="dep">${r.ring.map(x => `<a class="r" href="/dev/?w=${x.wallet}"><span class="sy">${w4(x.wallet)}<small>got ${x.sol} SOL</small></span><span>${x.launched} launched</span><span>${x.recent.map(y => esc('$' + (y.symbol || '?'))).join(', ')}</span><span class="go">→</span></a>`).join('')}</div>
+    <p class="note" style="margin-top:8px">${esc(r.note)}</p>`;
 }
 $('#dv-form').addEventListener('submit', e => { e.preventDefault(); const a = $('#dv-a').value.trim(); if (isAddr(a)) run(a); else $('#dv-msg').textContent = 'PASTE A 0x… ADDRESS OR A SOLANA WALLET OR MINT.'; });
 const q = new URLSearchParams(location.search).get('w') || new URLSearchParams(location.search).get('a');

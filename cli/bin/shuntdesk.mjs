@@ -147,6 +147,37 @@ const COMMANDS = {
       foot(v.note, `${BASE}/graduation/`);
     });
   },
+  // Deployer Ring: who funded a Solana deployer, and the other deployers that funder paid
+  async ring([a]) {
+    if (!isSol(a)) die('pass a Solana deployer wallet or token');
+    const v = await get('ring?a=' + a, 'following the first SOL back');
+    out(v, v => {
+      head('Deployer Ring', short(v.wallet) + dim(' · Solana'));
+      if (v.own) line('this deployer', `${v.own.launched} launched · ${v.own.dead} dead · ${v.own.bonded} graduated`);
+      if (!v.funder) { console.log('\n  ' + yellow('○ ') + (v.why || 'no first funding found')); return foot(v.note, `${BASE}/dev/?w=${v.wallet}`); }
+      line('first funded by', v.funder); line('it paid', `${v.paidWallets} wallets ${dim('· ' + v.checked + ' checked')}`);
+      console.log(); if (!v.ring.length) console.log('  ' + dim('none of the wallets checked launch tokens'));
+      for (const x of v.ring) console.log('  ' + pad(short(x.wallet), 14) + pad(x.sol + ' SOL', 12) + pad(yellow(x.launched + ' launched'), 16) + dim(x.recent.map(y => '$' + (y.symbol || '?')).join(', ')));
+      foot(v.note, `${BASE}/dev/?w=${v.wallet}`);
+    });
+  },
+  // the Solana deployers Shuntdesk has read this week
+  async deployers() {
+    const v = await get('deployers', 'reading the board');
+    out(v, v => {
+      head('Deployer Board', `Solana · ${v.deployers} deployers read this week`); console.log();
+      for (const x of v.factories) console.log('  ' + pad(short(x.wallet), 14) + pad(bold(x.launched + ' launched'), 16) + pad((x.judged && x.dead / x.judged >= 0.7 ? red : dim)(x.dead + ' dead'), 12) + (x.graduated ? green(x.graduated + ' graduated') : dim('0 graduated')));
+      foot('Every Solana deployer Shuntdesk read this week, the ones that launch the most first. Not advice.', `${BASE}/solana/`);
+    });
+  },
+  // Rug of the Day, with its draft post
+  async rugday() {
+    const v = await get('rugday', 'reading the day');
+    out(v, v => { const r = v.rugDay[0]; head('Rug of the Day', r ? r.day : 'none yet');
+      if (!r) { console.log('\n  ' + dim('picked at 12:00 UTC: a peak of $20K or more, then a fall of 75% or more within a day')); return console.log(); }
+      line('token', `$${r.symbol} ${dim(short(r.token))}`); line('fell', red(`${r.fell}%`) + dim(` from ${usd(r.peak)} to ${usd(r.now)}`)); if (r.sold != null) line('deployer sold', r.sold + '%');
+      console.log('\n' + r.caption.split('\n').map(l => '  ' + l).join('\n')); foot('', `${BASE}/solana/`); });
+  },
   async check([a]) {
     if (isSol(a)) return COMMANDS.sol([a]);
     a = need(a);
@@ -624,7 +655,7 @@ async function auto(a) {
 function help() {
   banner();
   const c = (cmd, what) => console.log('  ' + pad(bold(cmd), 34) + dim(what));
-  console.log('\n  ' + dim('paste any address:') + '\n'); c('shuntdesk <0x…>', 'a token gets the full check, a wallet its X-ray'); c('shuntdesk <solana mint>', 'a Solana token through the seven checks'); c('shuntdesk first <mint>', 'a Pump.fun launch: who bought first, who still holds'); c('shuntdesk graduation', 'Pump.fun curves closest to graduating');
+  console.log('\n  ' + dim('paste any address:') + '\n'); c('shuntdesk <0x…>', 'a token gets the full check, a wallet its X-ray'); c('shuntdesk <solana mint>', 'a Solana token through the seven checks'); c('shuntdesk first <mint>', 'a Pump.fun launch: who bought first, who still holds'); c('shuntdesk graduation', 'Pump.fun curves closest to graduating'); c('shuntdesk ring <deployer>', 'who funded a Solana deployer, who else it paid'); c('shuntdesk deployers', 'the Solana deployers that launch the most'); c('shuntdesk rugday', 'Rug of the Day, with a draft post');
   console.log('\n  ' + dim('tokens:') + '\n'); c('shuntdesk check <token>', 'everything at once, and what the chain shows'); c('shuntdesk scan <token>', 'the contract: powers, owner, proxy, source'); c('shuntdesk token <token>', 'the verdict, flags, holders, launch facts'); c('shuntdesk ledger <token>', 'where the launcher sent its tokens'); c('shuntdesk twins <token>', 'contracts running exactly the same code'); c('shuntdesk shared <token> <token>', 'top wallets holding both'); c('shuntdesk site <token>', 'its website: domain age, urlscan, links'); c('shuntdesk alike <token>', 'tokens that looked like it, and how they ended'); c('shuntdesk exit <token> [size]', 'what a buy gets back if the dev or snipers sell first'); c('shuntdesk replay <token>', 'its chart in your terminal: launch, peak, drop, now');
   console.log('\n  ' + dim('pons curves:') + '\n'); c('shuntdesk live [--clean]', 'every Pons launch and bond as it lands, read on arrival'); c('shuntdesk watchlist [code]', 'your watchlist, the same one as the site, extension and bot'); c('shuntdesk sim <token> [eth]', 'run a buy before you make it, and its break even'); c('shuntdesk watch <token> [seconds]', 'the curve live in your terminal'); c('shuntdesk bonds [n]', 'the curves closest to bonding'); c('shuntdesk grads', 'curves that just bonded');
   console.log('\n  ' + dim('wallets and the radar:') + '\n'); c('shuntdesk wallet <wallet>', 'every token in it, flags and copies'); c('shuntdesk dev <wallet>', 'a launcher\'s record on Pons'); c('shuntdesk radar [n]', 'the newest tokens the radar read');

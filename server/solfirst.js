@@ -3,16 +3,18 @@
 // Launcher: how many tokens the deployer created in its latest transactions. Both from the Helius node and its
 // parsed history, no paid source.
 import { rpc, getJ, pumpCurve, pda, b58decode, SYSTEM } from './solana.js';
-import { parsed } from './soltools.js';
+import { parsed, ledgerFrom, RAY_AUTH } from './soltools.js';
 
 const ATA = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL', PAGES = 14;
 const keep = (m, k, v, n = 200) => { m.set(k, { t: Date.now(), v }); if (m.size > n) m.delete(m.keys().next().value); return v; };
 async function pool4(items, fn) { const out = []; let i = 0; await Promise.all([0, 1, 2, 3].map(async () => { while (i < items.length) { const k = i++; try { out[k] = await fn(items[k]); } catch (e) { out[k] = null; } } })); return out; }
 
 // who first sent SOL to a wallet: its oldest transaction, when the wallet is young enough to reach it
-async function funderOf(env, w) {
-  const sigs = await rpc(env, 'getSignaturesForAddress', [w, { limit: 200 }]);
-  if (sigs.length >= 200) return { old: true, funder: null };
+// deep: page back through up to ten thousand signatures to reach the first one
+export async function funderOf(env, w, deep = false) {
+  let sigs = await rpc(env, 'getSignaturesForAddress', [w, { limit: deep ? 1000 : 200 }]);
+  if (deep) for (let p = 0; p < 9 && sigs.length % 1000 === 0 && sigs.length; p++) { const more = await rpc(env, 'getSignaturesForAddress', [w, { limit: 1000, before: sigs[sigs.length - 1].signature }]); if (!more.length) break; sigs = sigs.concat(more); }
+  if (sigs.length >= (deep ? 10000 : 200)) return { old: true, funder: null };
   const first = sigs[sigs.length - 1]; if (!first) return { old: false, funder: null };
   const tx = await rpc(env, 'getTransaction', [first.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }]);
   const ins = [...(tx?.transaction?.message?.instructions || []), ...(tx?.meta?.innerInstructions || []).flatMap(x => x.instructions)];
@@ -70,10 +72,12 @@ export async function solFirst(env, mint, scan) {
 
 // Serial Launcher: tokens the deployer created among its latest parsed transactions
 const serialHit = new Map();
-export async function solSerial(env, w) {
-  const h = serialHit.get(w); if (h && Date.now() - h.t < 30 * 60000) return h.v;
-  let txs; try { txs = await parsed(env, w, 1); } catch (e) { return null; }
+export async function solSerial(env, w, mint, pool) {
+  const k = w + ':' + (mint || ''), h = serialHit.get(k); if (h && Date.now() - h.t < 30 * 60000) return h.v;
+  let txs; try { txs = await parsed(env, w, 2); } catch (e) { return null; }
   const made = txs.filter(t => t.type === 'CREATE' && t.feePayer === w);
   const span = made.length > 1 ? (made[0].timestamp - made[made.length - 1].timestamp) / 3600 : null;
-  return keep(serialHit, w, { created: made.length, read: txs.length, hours: span, full: txs.length >= 100 });
+  // and, in the same transactions, what the deployer did with this token
+  const { L } = mint ? ledgerFrom(txs, mint, w, new Set([pool, ...RAY_AUTH].filter(Boolean))) : { L: null };
+  return keep(serialHit, k, { created: made.length, read: txs.length, hours: span, full: txs.length >= 100, got: L ? L.bought + L.received : 0, sold: L ? L.sold : 0, sent: L ? L.toWallets : 0 });
 }

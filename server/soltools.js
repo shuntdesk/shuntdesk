@@ -44,6 +44,25 @@ export async function solShared(env, a, b) {
     note: 'The largest 20 holders of each token from the Solana node (that is as many as it lists); wallets that hold both, pools, curves and programs left out. Holding both is a link, not proof of a group. Not advice.' });
 }
 
+// every move of one token in a deployer's parsed transactions: bought, received, sold, sent, burned, and the buys it
+// paid for that landed in another wallet
+export function ledgerFrom(txs, mint, dev, pools) {
+  const L = { bought: 0, received: 0, burned: 0, sold: 0, toContracts: 0, toWallets: 0 }, moves = [], side = new Map();
+  for (const t of [...txs].reverse()) {
+    const swap = /SWAP|BUY|SELL|CREATE/.test(t.type || '') || /PUMP|RAYDIUM|JUPITER|METEORA|ORCA/.test(t.source || '');
+    for (const x of (t.tokenTransfers || []).filter(x => x.mint === mint)) {
+      const v = Number(x.tokenAmount) || 0, from = x.fromUserAccount, to = x.toUserAccount, at = new Date(t.timestamp * 1000).toISOString();
+      let kind = null;
+      if (to === dev && from !== dev) kind = pools.has(from) || swap ? 'bought' : 'received';
+      else if (from === dev && to !== dev) kind = to === INCIN || t.type === 'BURN' ? 'burned' : pools.has(to) || swap ? 'sold' : 'toWallets';
+      else if (t.feePayer === dev && from !== dev && to && to !== dev) { side.set(to, (side.get(to) || 0) + v); continue; }   // the creator paid, another wallet got the tokens
+      if (!kind) continue;
+      L[kind] += v; moves.push({ kind, amount: v, to: kind === 'bought' || kind === 'received' ? from : to, at, tx: t.signature });
+    }
+  }
+  return { L, moves, side };
+}
+export { RAY_AUTH };
 // Dev Ledger on Solana: the creator's own transactions, parsed by Helius, and every move of this token in them
 const parsedHit = new Map();
 export async function parsed(env, w, pages = 2) {
@@ -65,19 +84,7 @@ export async function solLedger(env, mint, scan) {
   const dev = scan?.creator; if (!dev) return { ok: false, why: 'the creator could not be found' };
   const pools = new Set([scan.pool, ...RAY_AUTH].filter(Boolean));
   let txs; try { txs = await parsed(env, dev); } catch (e) { return { ok: false, why: 'the parsed history did not answer' }; }
-  const L = { bought: 0, received: 0, burned: 0, sold: 0, toContracts: 0, toWallets: 0 }, moves = [], side = new Map();
-  for (const t of [...txs].reverse()) {
-    const swap = /SWAP|BUY|SELL|CREATE/.test(t.type || '') || /PUMP|RAYDIUM|JUPITER|METEORA|ORCA/.test(t.source || '');
-    for (const x of (t.tokenTransfers || []).filter(x => x.mint === mint)) {
-      const v = Number(x.tokenAmount) || 0, from = x.fromUserAccount, to = x.toUserAccount, at = new Date(t.timestamp * 1000).toISOString();
-      let kind = null;
-      if (to === dev && from !== dev) kind = pools.has(from) || swap ? 'bought' : 'received';
-      else if (from === dev && to !== dev) kind = to === INCIN || t.type === 'BURN' ? 'burned' : pools.has(to) || swap ? 'sold' : 'toWallets';
-      else if (t.feePayer === dev && from !== dev && to && to !== dev) { side.set(to, (side.get(to) || 0) + v); continue; }   // the creator paid, another wallet got the tokens
-      if (!kind) continue;
-      L[kind] += v; moves.push({ kind, amount: v, to: kind === 'bought' || kind === 'received' ? from : to, at, tx: t.signature });
-    }
-  }
+  const { L, moves, side } = ledgerFrom(txs, mint, dev, pools);
   let holdsNow = null;
   try { holdsNow = ((await rpc(env, 'getTokenAccountsByOwner', [dev, { mint }, { encoding: 'jsonParsed' }]))?.value || []).reduce((s, a) => s + Number(a.account.data.parsed.info.tokenAmount.uiAmount || 0), 0); } catch (e) {}
   const v = { ok: true, chain: 'solana', token: mint, dev, devFound: 'deployer record', curve: scan.launch?.pad === 'pumpfun' ? scan.pool : null, ledger: L, holdsNow, moves: moves.slice(-40).reverse(), partial: txs.length >= 200,

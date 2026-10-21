@@ -14,7 +14,8 @@ import { FEE, MAX_IMPACT, impact, fill, value } from '../site/assets/trade.js';
 import { sameHand } from '../site/assets/hand.js';
 import { solScan, isSol, solPrice, pumpCurve, curveAt, curveFrom, rpc as solRpc, cache as solCache } from './solana.js';
 import { solHolders, solShared, solLedger, solWallet, solSim } from './soltools.js';
-import { solFirst, solSerial } from './solfirst.js';
+import { solFirst, solSerial, funderOf } from './solfirst.js';
+import { parsed as solParsed } from './soltools.js';
 
 const DS = 'https://api.dexscreener.com';
 // some data services turn away requests that do not say who is asking
@@ -399,12 +400,15 @@ const MCP_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 const ADDR = { type: 'string', pattern: '^0x[0-9a-fA-F]{40}$', description: 'A token address on Robinhood Chain (chain id 4663)' };
 const AGENT_LIMIT = { shared: 20, devscore: 30, wallet: 30, holders: 30, sol: 30 };
 // a Solana token through the seven stops, on the server (the Helius key stays here)
-const solRead = (env, mint) => solScan(env, mint, { goplus: m => goplusSol(env, m), codex: m => launchCodex(env, m, 1399811149), serial: w => solSerial(env, w) });
+const solRead = (env, mint) => solReadRaw(env, mint).then(r => { if (stRef && r?.fdv && r.verdict !== 'NO POOL') trackKeep(stRef, mint, r.sym, r.creator, r.fdv); return r; });
+let stRef = null;
+const solReadRaw = (env, mint) => solScan(env, mint, { goplus: m => goplusSol(env, m), codex: m => launchCodex(env, m, 1399811149), serial: (w, m, p) => solSerial(env, w, m, p) });
 // the Robinhood Chain tools answered for a Solana mint or wallet: the same shapes, read from Solana
-const SOL_TOOLS = ['first', 'ledger', 'devledger', 'wallet', 'sim', 'shared', 'replay', 'site', 'looks', 'lookalikes', 'xray', 'scan', 'twins', 'devscore', 'holders'];
+const SOL_TOOLS = ['ring', 'first', 'ledger', 'devledger', 'wallet', 'sim', 'shared', 'replay', 'site', 'looks', 'lookalikes', 'xray', 'scan', 'twins', 'devscore', 'holders'];
 async function solRoute(st, env, p, a, b = '', extra = []) {
   if (p === 'ledger' || p === 'devledger') return solLedger(env, a, await solRead(env, a));
   if (p === 'first') return solFirst(env, a, await solRead(env, a).catch(() => null));
+  if (p === 'ring') return solRing(st, env, a);
   if (p === 'wallet') return solWallet(env, a);
   if (p === 'sim') return solSim(env, a);
   if (p === 'holders') return solHolders(env, a);
@@ -417,6 +421,80 @@ async function solRoute(st, env, p, a, b = '', extra = []) {
   if (p === 'twins') return { ok: false, why: 'every SPL token runs the same token program, so there is no code of its own to compare. Twin Finder reads Robinhood Chain contracts' };
   return { ok: false, why: 'not on Solana yet' };
 }
+function gradPost(st, env, x, d) {
+  const day = new Date().toISOString().slice(0, 10); if (st.gradTg?.day !== day) st.gradTg = { day, n: 0 }; if (st.gradTg.n >= 12) return; st.gradTg.n++;
+  const v = solCache.get(x.token), usd = n => '$' + (n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'K' : Math.round(n));
+  tgQueue(st, alarmChats(st, env), `<b>Graduated on Pump.fun</b> · ${tgEsc('$' + x.symbol)}\n${d.hours} h after launch${x.mc ? ` · ${usd(x.mc)} market cap` : ''}${v && v.verdict !== 'NO POOL' ? ` · Shuntdesk read it ${v.verdict} ${v.score}` : ''}\nThe seven checks, the first buyers and the deployer: https://shuntdesk.com/ticket/?a=${x.token}`);
+}
+// Deployer Ring: who first funded a deployer, and which other wallets that funder paid that also launch tokens
+const rings = new Map();
+async function solRing(st, env, a) {
+  let w = a; const r = await solRead(env, a).then(x => x.verdict !== 'NO POOL' ? x : null).catch(() => null); if (r) { w = r.creator; if (!w) return { ok: false, why: 'the deployer of this token could not be found' }; }
+  const hit = rings.get(w); if (hit && Date.now() - hit.t < 12 * 3600000) return hit.v;
+  let f; try { f = await funderOf(env, w, true); } catch (e) { return { ok: false, why: 'the node did not answer' }; }
+  const base = { ok: true, chain: 'solana', wallet: w, from: r ? a : null, note: 'The wallet that sent this deployer its first SOL, and the other wallets that funder paid in its latest hundred transactions which have launched tokens of their own (Codex). A funder can be an exchange or a bot service shared by strangers: a ring is a lead, not proof. Read only. Not advice.' };
+  if (!f.funder) { const v = { ...base, funder: null, old: f.old, ring: [], why: f.old ? 'the deployer is too old a wallet to reach its first funding' : 'no first funding found' }; rings.set(w, { t: Date.now(), v }); return v; }
+  let txs = []; try { txs = await solParsed(env, f.funder, 1); } catch (e) {}
+  const sent = new Map();
+  for (const t of txs) for (const n of t.nativeTransfers || []) if (n.fromUserAccount === f.funder && n.toUserAccount && n.toUserAccount !== f.funder && n.amount >= 0.05e9) sent.set(n.toUserAccount, (sent.get(n.toUserAccount) || 0) + n.amount / 1e9);
+  const peers = [...sent].filter(([x]) => x !== w).sort((p, q) => q[1] - p[1]).slice(0, 10);
+  let ring = [];
+  if (peers.length && codexOn(env) && await codexOk(env, 'devsol')) try {
+    const q = '{ ' + peers.map(([x], i) => `a${i}: filterTokens(filters: { network: [1399811149], creatorAddress: "${x}" }, limit: 3, rankings: { attribute: createdAt, direction: DESC }) { count results { createdAt token { symbol address } } }`).join(' ') + ' }';
+    const d = (await (await codexPost(env, q)).json()).data || {};
+    ring = peers.map(([x, sol], i) => ({ wallet: x, sol: Math.round(sol * 100) / 100, launched: d['a' + i]?.count || 0, recent: (d['a' + i]?.results || []).map(y => ({ symbol: y.token?.symbol, token: y.token?.address, at: new Date(y.createdAt * 1000).toISOString() })) })).filter(x => x.launched > 0).sort((p, q) => q.launched - p.launched);
+  } catch (e) {}
+  const self = await solDevScore(st, env, w).catch(() => null);
+  const v = { ...base, funder: f.funder, paidWallets: sent.size, checked: peers.length, ring, own: self?.ok ? { launched: self.launched, dead: self.dead, bonded: self.bonded } : null };
+  rings.set(w, { t: Date.now(), v }); if (rings.size > 150) rings.delete(rings.keys().next().value);
+  return v;
+}
+// Deployer Board: every Solana deployer Shuntdesk has read, the ones that launch the most and the ones whose tokens live
+// the board fills itself: one deployer behind a followed token is read about every forty minutes
+async function boardTick(st, env) {
+  if (Date.now() - (st.boardT || 0) < 40 * 60000) return; st.boardT = Date.now();
+  const B = st.solBoard || {}, T = st.solTrack || {}, w = Object.values(T).sort((p, q) => q.p - p.p).map(x => x.c).find(c => c && (!B[c] || Date.now() - B[c].t > 86400000));
+  if (w) await solDevScore(st, env, w).catch(() => null);
+}
+function boardKeep(st, v) {
+  if (!v?.ok || !v.launched) return; const B = st.solBoard = st.solBoard || {};
+  B[v.wallet] = { l: v.launched, d: v.dead, j: v.judged, b: v.bonded, s: v.score, t: Date.now(), last: v.launches?.[0] ? { symbol: v.launches[0].symbol, token: v.launches[0].token, at: v.launches[0].launched } : null };
+  const keys = Object.keys(B); if (keys.length > 400) for (const k of keys.sort((p, q) => B[p].t - B[q].t).slice(0, keys.length - 400)) delete B[k];
+}
+function solBoardView(st) {
+  const rows = Object.entries(st.solBoard || {}).filter(([, x]) => Date.now() - x.t < 7 * 86400000).map(([wallet, x]) => ({ wallet, launched: x.l, dead: x.d, judged: x.j, graduated: x.b, score: x.s, last: x.last, read: new Date(x.t).toISOString() }));
+  return { factories: [...rows].sort((p, q) => q.launched - p.launched).slice(0, 15), lasting: rows.filter(x => x.graduated > 0).sort((p, q) => q.graduated - p.graduated || (q.score ?? 0) - (p.score ?? 0)).slice(0, 10), deployers: rows.length };
+}
+// the tokens being followed for Rug of the Day: every token on the Graduation Watch and every Solana token read here,
+// with its market cap at its peak and now (Codex, twenty-five a call, once an hour)
+function trackKeep(st, token, sym, creator, mc) {
+  if (!mc) return; const T = st.solTrack = st.solTrack || {}, now = Date.now(), x = T[token] = T[token] || { s: sym, c: creator || null, f: now, p: 0, pt: now, m: 0, mt: now };
+  if (sym) x.s = sym; if (creator) x.c = creator; x.m = mc; x.mt = now; if (mc > x.p) { x.p = mc; x.pt = now; }
+}
+async function trackTick(st, env) {
+  const T = st.solTrack = st.solTrack || {}, now = Date.now();
+  for (const [k, x] of Object.entries(T)) if (now - x.f > 3 * 86400000) delete T[k];
+  const keys = Object.keys(T); if (keys.length > 300) for (const k of keys.sort((p, q) => T[p].p - T[q].p).slice(0, keys.length - 300)) delete T[k];
+  if (now - (st.solTrackT || 0) < 3600000 || !codexOn(env) || !(await codexOk(env, 'track'))) return; st.solTrackT = now;
+  const due = Object.keys(T).filter(k => now - T[k].mt > 50 * 60000).sort((p, q) => T[q].p - T[p].p).slice(0, 25); if (!due.length) return;
+  try { const q = `{ filterTokens(tokens: [${due.map(k => `"${k}:1399811149"`).join(',')}], limit: 25) { results { marketCap token { address symbol creatorAddress } } } }`;
+    for (const r of (await (await codexPost(env, q)).json()).data?.filterTokens?.results || []) trackKeep(st, r.token.address, r.token.symbol, r.token.creatorAddress, Number(r.marketCap) || 0); } catch (e) {}
+}
+// Rug of the Day: once a day after 12:00 UTC, the followed token that fell furthest from a peak of $20K or more within a
+// day, with what its deployer did; a card and a draft post for Dim to read and post himself
+async function rugDayTick(st, env) {
+  const now = new Date(), day = now.toISOString().slice(0, 10); if (now.getUTCHours() < 12 || st.rugDay?.[0]?.day === day) return;
+  const T = st.solTrack || {}, pick = Object.entries(T).filter(([, x]) => x.p >= 20000 && x.m > 0 && x.m / x.p <= 0.25 && Date.now() - x.pt < 30 * 3600000 && x.pt - x.f < 24 * 3600000).sort((p, q) => q[1].p - p[1].p)[0];
+  if (!pick) return; const [token, x] = pick;
+  const ser = x.c ? await solSerial(env, x.c, token, null).catch(() => null) : null, sold = ser?.got ? Math.round((ser.sold + ser.sent) / ser.got * 100) : null;
+  const usd = n => '$' + (n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'K' : Math.round(n));
+  const fell = Math.round((1 - x.m / x.p) * 100), hrs = Math.max(1, Math.round((x.pt - x.f) / 3600000));
+  const caption = [`Rug of the day: $${x.s} on Solana.`, '', `It ran to ${usd(x.p)} within ${hrs} hour${hrs > 1 ? 's' : ''} of Shuntdesk first seeing it, then fell ${fell}% to ${usd(x.m)}.`,
+    sold != null && sold >= 50 ? `The wallet that deployed it sold or sent away ${sold}% of what it got${ser.created >= 3 ? `, and it created ${ser.created} tokens in its latest ${ser.read} transactions` : ''}.` : ser?.created >= 3 ? `The wallet that deployed it created ${ser.created} tokens in its latest ${ser.read} transactions.` : '',
+    '', 'Read any token before you ride it: the seven checks, the first buyers and the deployer.', `shuntdesk.com/ticket/?a=${token}`].filter((l, i, A) => !(l === '' && A[i - 1] === '')).join('\n');
+  (st.rugDay = st.rugDay || []).unshift({ day, token, symbol: x.s, creator: x.c, peak: x.p, now: x.m, fell, hoursToPeak: hrs, sold, created: ser?.created ?? null, caption });
+  st.rugDay.splice(14);
+}
 // Graduation Watch: the Pump.fun curves closest to graduating. Codex lists the open curves past 50% every twenty
 // minutes; every curve on the list is then read from the chain, all in one call, at most every thirty seconds
 let grad = { t: 0, live: 0, list: [], hist: new Map(), why: null };
@@ -428,6 +506,7 @@ async function solGrad(st, env) {
       const q = `{ filterTokens(filters: { network: [1399811149], launchpadName: ["Pump.fun"], launchpadCompleted: false, launchpadGraduationPercent: { gte: 50 } }, rankings: { attribute: volume1, direction: DESC }, limit: 60) { results { createdAt marketCap holders volume1 token { address symbol name creatorAddress } } } }`;
       const rows = (await (await codexPost(env, q)).json()).data?.filterTokens?.results || [];
       if (rows.length) { const keep = new Map(grad.list.map(x => [x.token, x]));
+        for (const x of rows) trackKeep(st, x.token.address, x.token.symbol, x.token.creatorAddress, Number(x.marketCap) || 0);
         grad.list = rows.map(x => ({ token: x.token.address, symbol: x.token.symbol || '?', name: x.token.name || '', creator: x.token.creatorAddress || null, launched: x.createdAt * 1000, mc: Number(x.marketCap) || 0, holders: x.holders ?? null, vol1: Number(x.volume1) || 0, at: keep.get(x.token.address)?.at || null }));
         grad.why = null; } else grad.why = 'the launch index gave no list';
     } catch (e) { grad.why = 'the launch index did not answer'; }
@@ -440,7 +519,7 @@ async function solGrad(st, env) {
       const done = st.gradSol = st.gradSol || [];
       grad.list.forEach((x, i) => { const c = curveFrom(vals[i]); if (!c) return; Object.assign(x, { progress: c.progress, raised: c.realSol, need: c.need, sq: c.solQuoted, complete: c.complete });
         const h = grad.hist.get(x.token) || []; h.push([now, c.progress]); while (h.length > 1 && now - h[0][0] > 3 * 3600000) h.shift(); grad.hist.set(x.token, h);
-        if (c.complete && !done.some(d => d.token === x.token)) { done.unshift({ token: x.token, symbol: x.symbol, at: now, hours: Math.round((now - x.launched) / 360000) / 10 }); done.splice(30); } });
+        if (c.complete && !done.some(d => d.token === x.token)) { const d = { token: x.token, symbol: x.symbol, at: now, hours: Math.round((now - x.launched) / 360000) / 10 }; done.unshift(d); done.splice(30); if (h.length > 1) gradPost(st, env, x, d); } });
       st.gradSol = done.filter(d => now - d.at < 2 * 86400000);
     } catch (e) {}
   }
@@ -502,6 +581,7 @@ async function solDevScore(st, env, a) {
   const v = { ok: true, chain: 'solana', wallet: w, from: isMint ? a : null, launched: j.count ?? launches.length, read: launches.length, bonded: launches.filter(x => x.bonded).length, dead, judged: judged.length,
     score: judged.length ? Math.round((1 - dead / judged.length) * 100) : null, launches,
     note: 'Every token Codex lists as deployed by this wallet on Solana, newest 50. Dead: not graduated and under $5K market cap an hour or more after launch. The score is the share of launches over an hour old that are not dead. Read only. Not advice.' };
+  boardKeep(st, v);
   solDevs.set(w, { t: Date.now(), v }); if (solDevs.size > 200) solDevs.delete(solDevs.keys().next().value);
   return v;
 }
@@ -980,6 +1060,8 @@ async function telegram(st, env, request, body) {
 async function agentData(st, env, p, a, b = '') {
   const need = 'pass ?a=0x… a token address on Robinhood Chain';
   if (p === 'graduation' || p === 'gradsol') return [200, await solGrad(st, env)];
+  if (p === 'rugday') return [200, { rugDay: st.rugDay || [] }];
+  if (p === 'deployers') return [200, solBoardView(st)];
   if (p === 'sol') { if (!isSol(a)) return [400, { error: 'pass ?a= a Solana mint address' }]; try { return [200, await solRead(env, a)]; } catch (e) { return [502, { error: e.message }]; } }
   if (p === 'token') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a token address on Robinhood Chain' }]; const r = await agentToken(st, env, a); await save(env, st); return [200, r]; }
   if (p === 'verdicts') return [200, { verdicts: st.verdicts.slice(0, 50).map(v => ({ token: v.addr, symbol: v.sym, verdict: v.verdict, score: v.score, desk: v.platform, at: new Date(v.t).toISOString(), priceAtVerdict: v.p0, after1h: v.p1h || null, after24h: v.p24h || null })), record: record(st).after1h }];
@@ -1077,7 +1159,7 @@ async function codexPost(env, q) {
   }
   return new Response('{"errors":[{"message":"no Codex key with calls left"}]}', { status: 503, headers: { 'Content-Type': 'application/json' } });
 }
-const CODEX_SHARE = { looks: 120, launch: 230, candles: 80, replay: 60, push: 80, devsol: 40, gradsol: 75 };   // launch facts feed every ticket, so they get the largest share
+const CODEX_SHARE = { looks: 110, launch: 220, candles: 70, replay: 60, push: 70, devsol: 50, gradsol: 75, track: 25 };   // launch facts feed every ticket, so they get the largest share
 async function codexOk(env, kind) {
   if (!codexOn(env)) return false;
   const st = await load(env), day = new Date().toISOString().slice(0, 10);
@@ -2158,6 +2240,7 @@ async function watchTick(st, env) {
     const c = await pumpCurve(env, a).catch(() => null), s = S.tok[a] = S.tok[a] || {};
     if (!c || c.complete) { if (c?.complete && !s.bonded) { if (s.progress != null) add(a, 'bonded', `${sym[a]}: it graduated from the Pump.fun curve`); s.bonded = true; } solPooled.push(a); continue; }
     if (s.progress != null && s.progress < 80 && c.progress >= 80) add(a, 'curve80', `${sym[a]}: its Pump.fun curve passed 80%, now ${c.progress.toFixed(1)}% (${c.realSol.toFixed(1)} of ${c.need ?? 85} SOL)`);
+    if (s.progress != null && s.progress < 90 && c.progress >= 90) add(a, 'curve90', `${sym[a]}: its Pump.fun curve passed 90%, close to graduating`);
     s.peak = Math.max(s.peak || 0, c.realSol); if (s.peak >= 5 && c.realSol <= s.peak / 2) { add(a, 'curvehalf', `${sym[a]}: half the SOL has left its curve, ${c.realSol.toFixed(1)} SOL from a peak of ${s.peak.toFixed(1)}`); s.peak = c.realSol; }
     s.progress = c.progress;
   }
@@ -3153,7 +3236,7 @@ const api = {
       if (url.pathname === '/api/hand/launches') { const ws = [...new Set((url.searchParams.get('w') || '').toLowerCase().split(',').filter(isAddr))].slice(0, 40); return ws.length ? json(await handLaunches(env, ws)) : json({ ok: false, why: 'pass ?w= up to 40 wallets, comma separated' }, 400); }
       if (url.pathname === '/api/hand') { const w = (url.searchParams.get('w') || '').toLowerCase(); return isAddr(w) ? json(await handWallet(env, w, url.searchParams.get('creator') === '1')) : json({ ok: false, why: 'bad address' }, 400); }
       if (url.pathname === '/api/looks' && !isSol((url.searchParams.get('a') || '').trim())) { const a = (url.searchParams.get('a') || '').toLowerCase(); return isAddr(a) ? json(await lookalikes(env, a)) : json({ ok: false, why: 'bad address' }, 400); }
-      const st = await load(env);
+      const st = await load(env); stRef = st;
       const body = request.method === 'POST' ? await request.json().catch(() => ({})) : null;
       // a Solana mint or wallet on a Robinhood Chain tool's route gets that tool's Solana reading
       { const sa = (url.searchParams.get('a') || url.searchParams.get('w') || '').trim(), sp = url.pathname.slice(5);
@@ -3199,6 +3282,7 @@ const api = {
       if (url.pathname === '/api/holder' && body) { if (!allow(st, ip, 'holder', 20)) return json({ ok: false, why: 'slow down' }, 429); const [code, out] = await holderVerify(st, env, body); await save(env, st); return json(out, code); }
       if (url.pathname === '/api/holder') return json({ ok: true, message: holderMessage(String(url.searchParams.get('c') || '')), min: HOLD_MIN, pro: HOLD_PRO, boost: BOOST_MIN, trip: HOLD_TRIP });
       if (url.pathname === '/api/caught') return json(await caughtView(env));
+      if (url.pathname === '/api/solhub') { const g = await solGrad(st, env); await save(env, st); return json({ ok: true, rugDay: st.rugDay || [], board: solBoardView(st), graduation: { rows: g.rows.slice(0, 8), graduated: g.graduated.slice(0, 8), read: g.read } }); }
       if (url.pathname === '/api/gradsol') { const r = await solGrad(st, env); await save(env, st); return json(r); }
       if (url.pathname === '/api/sol') { const a = (url.searchParams.get('a') || '').trim(); if (!isSol(a)) return json({ ok: false, why: 'not a Solana mint address' }, 400); if (!allow(st, ip, 'sol', 60)) return json({ ok: false, why: 'slow down: 60 Solana checks an hour' }, 429); try { return json({ ok: true, ...(await solRead(env, a)) }); } catch (e) { return json({ ok: false, why: e.message }, 502); } }
       if (url.pathname === '/api/sim') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); return json(await curveSim(a)); }
@@ -3321,7 +3405,9 @@ const api = {
     try { await gradScan(st, env); } catch (e) { st.grads = { ...(st.grads || { rows: [] }), err: String(e.message || e).slice(0, 120) }; }   // the graduation feed is extra: a failed read never stops the desk
     try { await looksTick(env); } catch (e) {}
     try { await watchTick(st, env); } catch (e) {}
-    try { await solGrad(st, env); } catch (e) {}   // Graduation Watch keeps reading its curves, so a graduation is caught with nobody on the page
+    try { await solGrad(st, env); } catch (e) {}
+    try { await trackTick(st, env); await rugDayTick(st, env); } catch (e) {}
+    try { await boardTick(st, env); } catch (e) {}   // Graduation Watch keeps reading its curves, so a graduation is caught with nobody on the page
     try { await raceTick(st, env); } catch (e) {}
     try { await bingoTick(st, env); } catch (e) {}
     try { await fantasyTick(st, env); } catch (e) {}
