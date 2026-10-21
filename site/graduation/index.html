@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Graduation Watch — Shuntdesk</title>
+<meta name="description" content="The Pump.fun curves on Solana closest to graduating, each read from its own curve account: how far it is, how fast it is moving, and the ones that just made it.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shuntdesk">
+<meta property="og:title" content="Graduation Watch — Shuntdesk">
+<meta property="og:description" content="The Pump.fun curves on Solana closest to graduating, each read from its own curve account: how far it is, how fast it is moving, and the ones that just made it.">
+<meta property="og:url" content="https://shuntdesk.com/graduation/">
+<meta property="og:image" content="https://shuntdesk.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shuntdesk. One score. Three tracks.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://shuntdesk.com/og.png">
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#060708">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/simple.css">
+<script src="/assets/ui-mode.js"></script>
+</head>
+<body class="sub">
+<canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
+<main class="page">
+  <div class="ph">
+    <div><div class="eyebrow">Graduation Watch · Solana</div><h1 class="disp">Pump.fun, near the line.<br><span class="acc">Read off each curve.</span></h1></div>
+    <div class="side bw-odds">
+      <div class="stub stat"><div class="in"><div class="cap"><b>Past 90%</b><span id="gw-when">···</span></div><div class="v" id="gw-90">···</div><small>curves within a tenth of graduating</small></div></div>
+    </div>
+  </div>
+  <div class="stats">
+    <div class="stub stat"><div class="in"><div class="cap"><b>On the board</b></div><div class="v" id="gw-on">···</div><small>open curves past 50%</small></div></div>
+    <div class="stub stat"><div class="in"><div class="cap"><b>Fastest</b></div><div class="v sm" id="gw-fast">···</div><small id="gw-fast2">points an hour</small></div></div>
+    <div class="stub stat"><div class="in"><div class="cap"><b>Graduated</b></div><div class="v sm" id="gw-done-n">···</div><small>seen here, the last two days</small></div></div>
+    <div class="stub stat"><div class="in"><div class="cap"><b>Last one</b></div><div class="v sm" id="gw-last">···</div><small id="gw-last2">···</small></div></div>
+  </div>
+  <div class="stub n"><div class="in">
+    <div class="cap"><b>Closest to graduating</b><span id="gw-read">read from each curve on Solana</span></div>
+    <div class="dep bwlist" id="gw-list"><div class="r h"><span>TOKEN</span><span>PROGRESS</span><span>RAISED</span><span>LAST HOUR</span><span>AT THIS PACE</span><span>AGE</span><span></span></div></div>
+  </div></div>
+  <div class="stub n" style="margin-top:16px"><div class="in">
+    <div class="cap"><b>Just graduated</b><span>seen here, the last two days</span></div>
+    <div class="bw-done" id="gw-done"></div>
+  </div></div>
+  <p class="note" style="margin-top:14px" id="gw-note">Progress is the share of the curve's tokens sold, as Pump.fun counts it; raised is the SOL in the curve, of the 85 that graduate it. Each curve is read from its own account on Solana. "At this pace" only carries the last hour on; most curves stall well before the line. Open a token for its seven checks, its first buyers and its deployer. Not advice.</p>
+  <p class="note"><a class="acc" href="/bonds/">Bond Watch, for Pons on Robinhood Chain →</a></p>
+</main>
+<footer class="foot"></footer>
+<script type="module" src="/assets/graduation.js"></script>
+</body>
+</html>

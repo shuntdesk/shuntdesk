@@ -137,6 +137,16 @@ const COMMANDS = {
       foot(v.note, `${BASE}/ticket/?a=${v.token}`);
     });
   },
+  // Graduation Watch: the Pump.fun curves closest to graduating
+  async graduation() {
+    const v = await get('graduation', 'reading the Pump.fun curves');
+    out(v, v => {
+      head('Graduation Watch', 'Pump.fun on Solana · closest first'); console.log();
+      for (const r of v.rows.slice(0, 20)) console.log('  ' + pad(bold((r.symbol || '?').slice(0, 12)), 14) + pad(dim(short(r.token)), 14) + bar(r.progress, 16) + ' ' + pad(r.progress.toFixed(1) + '%', 8) + pad(r.raised == null ? dim('other quote') : `${r.raised.toFixed(1)}/${r.need} SOL`, 16) + (r.perHour == null ? dim('pace ···') : (r.perHour > 0 ? green : red)((r.perHour > 0 ? '+' : '') + r.perHour + ' pts/h')));
+      if (v.graduated.length) { console.log('\n  ' + dim('just graduated: ') + v.graduated.slice(0, 6).map(g => `${g.symbol} (${ago(g.at)})`).join(', ')); }
+      foot(v.note, `${BASE}/graduation/`);
+    });
+  },
   async check([a]) {
     if (isSol(a)) return COMMANDS.sol([a]);
     a = need(a);
@@ -602,7 +612,7 @@ const COMMANDS = {
     out(v.bonded || [], B => { head('Fresh bonds', 'Pons curves that reached the bond mark'); console.log(); for (const b of B.slice(0, 20)) console.log('  ' + pad(bold(b.symbol || '?'), 14) + pad(dim(ago(b.bonded)), 10) + pad(toBond(b.hoursToBond), 18) + dim(b.token)); foot('', `${BASE}/bonds/`); });
   },
 };
-const ALIAS = { xray: 'scan', verdict: 'token', simulate: 'sim', devledger: 'ledger', devscore: 'dev', score: 'dev', twin: 'twins', bags: 'shared', feed: 'live', launches: 'live', wl: 'watchlist', curves: 'bonds', new: 'radar', graduated: 'grads', bonded: 'grads', report: 'check', website: 'site', lookalikes: 'alike', looks: 'alike', verdicts: 'calls', record: 'calls', crew: 'desk', stock: 'stocks', shunt: 'proof', weekly: 'week', game: 'rugrun', 'rug-run': 'rugrun', door: 'exit', 'exit-door': 'exit', bond: 'bondgame', 'will-it-bond': 'bondgame', chart: 'replay', rules: 'lab' };
+const ALIAS = { grad: 'graduation', pumpfun: 'graduation', xray: 'scan', verdict: 'token', simulate: 'sim', devledger: 'ledger', devscore: 'dev', score: 'dev', twin: 'twins', bags: 'shared', feed: 'live', launches: 'live', wl: 'watchlist', curves: 'bonds', new: 'radar', graduated: 'grads', bonded: 'grads', report: 'check', website: 'site', lookalikes: 'alike', looks: 'alike', verdicts: 'calls', record: 'calls', crew: 'desk', stock: 'stocks', shunt: 'proof', weekly: 'week', game: 'rugrun', 'rug-run': 'rugrun', door: 'exit', 'exit-door': 'exit', bond: 'bondgame', 'will-it-bond': 'bondgame', chart: 'replay', rules: 'lab' };
 
 // a bare address: a contract gets the full check, a wallet (or a smart wallet) its X-ray
 async function auto(a) {
@@ -614,7 +624,7 @@ async function auto(a) {
 function help() {
   banner();
   const c = (cmd, what) => console.log('  ' + pad(bold(cmd), 34) + dim(what));
-  console.log('\n  ' + dim('paste any address:') + '\n'); c('shuntdesk <0x…>', 'a token gets the full check, a wallet its X-ray'); c('shuntdesk <solana mint>', 'a Solana token through the seven checks'); c('shuntdesk first <mint>', 'a Pump.fun launch: who bought first, who still holds');
+  console.log('\n  ' + dim('paste any address:') + '\n'); c('shuntdesk <0x…>', 'a token gets the full check, a wallet its X-ray'); c('shuntdesk <solana mint>', 'a Solana token through the seven checks'); c('shuntdesk first <mint>', 'a Pump.fun launch: who bought first, who still holds'); c('shuntdesk graduation', 'Pump.fun curves closest to graduating');
   console.log('\n  ' + dim('tokens:') + '\n'); c('shuntdesk check <token>', 'everything at once, and what the chain shows'); c('shuntdesk scan <token>', 'the contract: powers, owner, proxy, source'); c('shuntdesk token <token>', 'the verdict, flags, holders, launch facts'); c('shuntdesk ledger <token>', 'where the launcher sent its tokens'); c('shuntdesk twins <token>', 'contracts running exactly the same code'); c('shuntdesk shared <token> <token>', 'top wallets holding both'); c('shuntdesk site <token>', 'its website: domain age, urlscan, links'); c('shuntdesk alike <token>', 'tokens that looked like it, and how they ended'); c('shuntdesk exit <token> [size]', 'what a buy gets back if the dev or snipers sell first'); c('shuntdesk replay <token>', 'its chart in your terminal: launch, peak, drop, now');
   console.log('\n  ' + dim('pons curves:') + '\n'); c('shuntdesk live [--clean]', 'every Pons launch and bond as it lands, read on arrival'); c('shuntdesk watchlist [code]', 'your watchlist, the same one as the site, extension and bot'); c('shuntdesk sim <token> [eth]', 'run a buy before you make it, and its break even'); c('shuntdesk watch <token> [seconds]', 'the curve live in your terminal'); c('shuntdesk bonds [n]', 'the curves closest to bonding'); c('shuntdesk grads', 'curves that just bonded');
   console.log('\n  ' + dim('wallets and the radar:') + '\n'); c('shuntdesk wallet <wallet>', 'every token in it, flags and copies'); c('shuntdesk dev <wallet>', 'a launcher\'s record on Pons'); c('shuntdesk radar [n]', 'the newest tokens the radar read');

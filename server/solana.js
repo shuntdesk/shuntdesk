@@ -55,14 +55,27 @@ export const getJ = async (url, opt = {}) => { const r = await fetch(url, { ...o
 async function pool3(items, fn) { const out = []; let i = 0; await Promise.all([0, 1, 2, 3].map(async () => { while (i < items.length) { const k = i++; try { out[k] = await fn(items[k]); } catch (e) { out[k] = null; } } })); return out; }
 
 // the Pump.fun curve for a mint: how far to graduation, whether it graduated, and the wallet that made it
+// a constant product: once the curve's real tokens are all sold, its SOL is k over what is left of the virtual tokens
+const solLike = need => need != null && need >= 10 && need <= 500;   // a Pump.fun curve in SOL graduates somewhere near 85
+const needOf = (vTok, vSol, rTok, realSol) => vTok > rTok ? Math.round((realSol + vSol * vTok / (vTok - rTok) - vSol) * 100) / 100 : null;
+export const curveAt = mint => pda([new TextEncoder().encode('bonding-curve'), b58decode(mint)], PUMP);
+// a curve account's bytes: virtual and real reserves, whether it completed, the creator it pays
+export function curveFrom(v) {
+  if (!v || v.owner !== PUMP) return null;
+  const b = Uint8Array.from(atob(v.data[0]), c => c.charCodeAt(0)), dv = new DataView(b.buffer); if (b.length < 49) return null;
+  const u = o => dv.getBigUint64(o, true), realTok = u(24), complete = b[48] === 1;
+  const vTok = Number(u(8)) / 1e6, vSol = Number(u(16)) / 1e9, realSol = Number(u(32)) / 1e9, rTok = Number(realTok) / 1e6;
+  const need = needOf(vTok, vSol, rTok, realSol);
+  return { complete, progress: complete ? 100 : Math.max(0, Math.min(100, Number((PUMP_REAL0 - realTok) * 10000n / PUMP_REAL0) / 100)), vTok, vSol, realSol, need, solQuoted: solLike(need) };
+}
 export async function pumpCurve(env, mint) {
-  const at = await pda([new TextEncoder().encode('bonding-curve'), b58decode(mint)], PUMP); if (!at) return null;
+  const at = await curveAt(mint); if (!at) return null;
   const v = (await rpc(env, 'getAccountInfo', [at, { encoding: 'base64' }]))?.value; if (!v || v.owner !== PUMP) return null;
   const b = Uint8Array.from(atob(v.data[0]), c => c.charCodeAt(0)), dv = new DataView(b.buffer); if (b.length < 49) return null;
   const u = o => dv.getBigUint64(o, true), vTok = u(8), vSol = u(16), realTok = u(24), realSol = u(32), complete = b[48] === 1;
   const creator = b.length >= 81 ? b58encode(b.subarray(49, 81)) : null;
   const progress = complete ? 100 : Math.max(0, Math.min(100, Number((PUMP_REAL0 - realTok) * 10000n / PUMP_REAL0) / 100));
-  return { curve: at, complete, progress, vTok: Number(vTok) / 1e6, vSol: Number(vSol) / 1e9, realSol: Number(realSol) / 1e9, fee: await pumpFee(env), creator: creator && creator !== SYSTEM ? creator : null };
+  return { curve: at, complete, progress, vTok: Number(vTok) / 1e6, vSol: Number(vSol) / 1e9, realSol: Number(realSol) / 1e9, need: needOf(Number(vTok) / 1e6, Number(vSol) / 1e9, Number(realTok) / 1e6, Number(realSol) / 1e9), get solQuoted() { return solLike(this.need); }, fee: await pumpFee(env), creator: creator && creator !== SYSTEM ? creator : null };
 }
 // Pump.fun's fee, from its global account: the protocol's basis points and the creator's, read once an hour
 let feeHit = { v: 0.01, t: 0 };
@@ -111,7 +124,7 @@ export async function solScan(env, mint, { goplus, codex, serial } = {}) {
   const pPairs = getJ('https://api.dexscreener.com/tokens/v1/solana/' + mint).catch(() => null);
   const pGp = (goplus ? goplus(mint) : Promise.resolve(null)).catch(() => null);
   const pLaunch = (codex ? codex(mint) : Promise.resolve(null)).catch(() => null);
-  const pCurve = (/pump$/.test(mint) ? pumpCurve(env, mint) : Promise.resolve(null)).catch(() => null);
+  const pCurve = pumpCurve(env, mint).catch(() => null);
   const pLargest = rpc(env, 'getTokenLargestAccounts', [mint]).then(r => r?.value || []).catch(() => null);
 
   const acct = await pMint;
@@ -140,10 +153,10 @@ export async function solScan(env, mint, { goplus, codex, serial } = {}) {
     return Object.assign(res, { sym: short(mint), verdict: 'NO POOL', platform: 'depot', score: 0, zone: 3, maxLev: 0 });
   }
   const solUsd = pair && Number(pair.priceNative) && pair.quoteToken?.symbol === 'SOL' ? Number(pair.priceUsd) / Number(pair.priceNative) : await solPrice(env);
-  const live = curve && !curve.complete, liq = pair?.liquidity?.usd ?? (live && solUsd ? curve.realSol * solUsd * 2 : null);
+  const live = curve && !curve.complete, liq = pair?.liquidity?.usd ?? (live && solUsd && curve.solQuoted ? curve.realSol * solUsd * 2 : null);
   const created = pair?.pairCreatedAt || (await pLaunch)?.created || null, ageMin = created ? (Date.now() - created) / 60000 : null;
   const dexName = { pumpfun: 'the Pump.fun curve', pumpswap: 'PumpSwap', raydium: 'Raydium', meteora: 'Meteora', orca: 'Orca' }[pair?.dexId] || pair?.dexId || 'the Pump.fun curve';
-  Object.assign(res, { sym: pair?.baseToken?.symbol || meta.symbol || short(mint), name: pair?.baseToken?.name || meta.name || '', price: Number(pair?.priceUsd) || (curve && solUsd ? curve.vSol / curve.vTok * solUsd : null), liq, pool: pair?.pairAddress || curve?.curve, ageMin, url: pair?.url || null, fdv: pair?.fdv || (Number(pair?.priceUsd) || (curve && solUsd ? curve.vSol / curve.vTok * solUsd : 0)) * Number(supply) / 10 ** dec || null,
+  Object.assign(res, { sym: pair?.baseToken?.symbol || meta.symbol || short(mint), name: pair?.baseToken?.name || meta.name || '', price: Number(pair?.priceUsd) || (curve?.solQuoted && solUsd ? curve.vSol / curve.vTok * solUsd : null), liq, pool: pair?.pairAddress || curve?.curve, ageMin, url: pair?.url || null, fdv: pair?.fdv || (Number(pair?.priceUsd) || (curve && solUsd ? curve.vSol / curve.vTok * solUsd : 0)) * Number(supply) / 10 ** dec || null,
     links: [...(pair?.info?.websites || []).map(w => w.url), ...(pair?.info?.socials || []).map(s => s.url)].filter(Boolean).slice(0, 6) });
   push({ key: 'sources', name: 'Sources', status: 'ok', tag: 'FOUND', detail: `${res.sym} trades on ${dexName}${pairs.length > 1 ? ` and ${pairs.length - 1} other pool${pairs.length > 2 ? 's' : ''}` : ''}, ${ageMin == null ? 'age unknown' : fmtAge(ageMin) + ' old'}.`,
     facts: [['Price', res.price ? '$' + sig(res.price) : 'unknown'], ['24h trades', pair ? (pair.txns?.h24?.buys || 0) + (pair.txns?.h24?.sells || 0) : 'unknown'], ['24h volume', '$' + compact(pair?.volume?.h24 || 0)], ['Chain', 'Solana'], ['Read from', from]] });
@@ -225,15 +238,15 @@ export async function solScan(env, mint, { goplus, codex, serial } = {}) {
     if (curve || L?.launchpad) lf.push(['Launchpad', curve ? `Pump.fun${curve.complete ? ', graduated' : `, ${Math.round(curve.progress)}% to graduation`}` : L.launchpad]);
     if (L?.ok) {
       const p = v => v == null ? null : Number(v), sn = p(L.sniperPct), bu = p(L.bundlerPct), ins = p(L.insiderPct);
-      res.launch = { pad: curve ? 'pumpfun' : L.launchpad, graduated: curve ? curve.complete : L.graduated, progress: curve ? curve.progress : L.progress, raised: curve?.realSol ?? null, sn, bu, ins, dev: devShare };
+      res.launch = { pad: curve ? 'pumpfun' : L.launchpad, graduated: curve ? curve.complete : L.graduated, progress: curve ? curve.progress : L.progress, raised: curve?.solQuoted ? curve.realSol : null, need: curve?.solQuoted ? curve.need : null, sn, bu, ins, dev: devShare };
       for (const [k, v] of [['Snipers hold', sn], ['Bundles hold', bu], ['Insiders hold', ins]]) if (v != null) lf.push([k, v.toFixed(1) + '%']);
       const worse = s => { if (s === 'bad' || (s === 'warn' && st === 'ok')) st = s; };
       if (bu != null && bu > 25) { cost += 18; worse('bad'); said.push(`bundles still hold ${bu.toFixed(1)}%`); } else if (bu != null && bu > 10) { cost += 7; worse('warn'); said.push(`bundles hold ${bu.toFixed(1)}%`); }
       if (sn != null && sn > 15) { cost += 10; worse('warn'); said.push(`snipers hold ${sn.toFixed(1)}%`); }
       if (ins != null && ins > 15) { cost += 8; worse('warn'); said.push(`insiders hold ${ins.toFixed(1)}%`); }
-    } else if (curve) res.launch = { pad: 'pumpfun', graduated: curve.complete, progress: curve.progress, raised: curve.realSol, dev: devShare };
+    } else if (curve) res.launch = { pad: 'pumpfun', graduated: curve.complete, progress: curve.progress, raised: curve.solQuoted ? curve.realSol : null, need: curve.solQuoted ? curve.need : null, dev: devShare };
     // the open curve as Exit Door works it: virtual reserves, the fee off the SOL out, never more out than it raised
-    if (res.launch && curve && !curve.complete && solUsd) res.launch.pool = { quoteUsd: curve.vSol * solUsd, tokens: curve.vTok, realUsd: curve.realSol * solUsd, fee: curve.fee };
+    if (res.launch && curve && !curve.complete && solUsd && curve.solQuoted) res.launch.pool = { quoteUsd: curve.vSol * solUsd, tokens: curve.vTok, realUsd: curve.realSol * solUsd, fee: curve.fee };
     const linked = funders.length > 0 || lf.length > 0;
     push({ key: 'linker', name: 'Linker', status: linked ? st : 'skip', tag: !linked ? 'NOTHING TO LINK' : st === 'bad' ? 'BUNDLED' : st === 'warn' ? 'NOTE' : 'NO GROUP', cost,
       detail: (big ? `${big.n} top wallets were funded by ${short(big.funder)} and keep ${big.share.toFixed(1)}% between them.` : devShare > 10 ? `No shared funder, but the creator still keeps ${devShare.toFixed(1)}%.` : funders.length ? 'No two top wallets share a funder.' : 'No top wallets to trace.') + (said.length ? ` At launch: ${said.join(', ')}.` : lf.length > 1 ? ' No heavy sniping or bundling at launch.' : ''),

@@ -12,7 +12,7 @@
 // position per token, rate-limited per address.
 import { FEE, MAX_IMPACT, impact, fill, value } from '../site/assets/trade.js';
 import { sameHand } from '../site/assets/hand.js';
-import { solScan, isSol, solPrice, pumpCurve } from './solana.js';
+import { solScan, isSol, solPrice, pumpCurve, curveAt, curveFrom, rpc as solRpc, cache as solCache } from './solana.js';
 import { solHolders, solShared, solLedger, solWallet, solSim } from './soltools.js';
 import { solFirst, solSerial } from './solfirst.js';
 
@@ -417,6 +417,42 @@ async function solRoute(st, env, p, a, b = '', extra = []) {
   if (p === 'twins') return { ok: false, why: 'every SPL token runs the same token program, so there is no code of its own to compare. Twin Finder reads Robinhood Chain contracts' };
   return { ok: false, why: 'not on Solana yet' };
 }
+// Graduation Watch: the Pump.fun curves closest to graduating. Codex lists the open curves past 50% every twenty
+// minutes; every curve on the list is then read from the chain, all in one call, at most every thirty seconds
+let grad = { t: 0, live: 0, list: [], hist: new Map(), why: null };
+async function solGrad(st, env) {
+  const now = Date.now();
+  if (now - grad.t > 20 * 60000 && codexOn(env) && await codexOk(env, 'gradsol')) {
+    grad.t = now;
+    try {
+      const q = `{ filterTokens(filters: { network: [1399811149], launchpadName: ["Pump.fun"], launchpadCompleted: false, launchpadGraduationPercent: { gte: 50 } }, rankings: { attribute: volume1, direction: DESC }, limit: 60) { results { createdAt marketCap holders volume1 token { address symbol name creatorAddress } } } }`;
+      const rows = (await (await codexPost(env, q)).json()).data?.filterTokens?.results || [];
+      if (rows.length) { const keep = new Map(grad.list.map(x => [x.token, x]));
+        grad.list = rows.map(x => ({ token: x.token.address, symbol: x.token.symbol || '?', name: x.token.name || '', creator: x.token.creatorAddress || null, launched: x.createdAt * 1000, mc: Number(x.marketCap) || 0, holders: x.holders ?? null, vol1: Number(x.volume1) || 0, at: keep.get(x.token.address)?.at || null }));
+        grad.why = null; } else grad.why = 'the launch index gave no list';
+    } catch (e) { grad.why = 'the launch index did not answer'; }
+  }
+  if (grad.list.length && now - grad.live > 30000) {
+    grad.live = now;
+    try {
+      const ats = await Promise.all(grad.list.map(x => x.at || curveAt(x.token))); grad.list.forEach((x, i) => { x.at = ats[i]; });
+      const vals = (await solRpc(env, 'getMultipleAccounts', [ats, { encoding: 'base64' }]))?.value || [];
+      const done = st.gradSol = st.gradSol || [];
+      grad.list.forEach((x, i) => { const c = curveFrom(vals[i]); if (!c) return; Object.assign(x, { progress: c.progress, raised: c.realSol, need: c.need, sq: c.solQuoted, complete: c.complete });
+        const h = grad.hist.get(x.token) || []; h.push([now, c.progress]); while (h.length > 1 && now - h[0][0] > 3 * 3600000) h.shift(); grad.hist.set(x.token, h);
+        if (c.complete && !done.some(d => d.token === x.token)) { done.unshift({ token: x.token, symbol: x.symbol, at: now, hours: Math.round((now - x.launched) / 360000) / 10 }); done.splice(30); } });
+      st.gradSol = done.filter(d => now - d.at < 2 * 86400000);
+    } catch (e) {}
+  }
+  const rows = grad.list.filter(x => x.progress != null && !x.complete).map(x => {
+    const h = grad.hist.get(x.token) || [], old = h.find(p => now - p[0] <= 3600000 && now - p[0] >= 600000) || (h.length > 1 ? h[0] : null);
+    const perHour = old && now - old[0] >= 600000 ? Math.round((x.progress - old[1]) / ((now - old[0]) / 3600000) * 10) / 10 : null;
+    return { token: x.token, symbol: x.symbol, name: x.name, creator: x.creator, progress: Math.round(x.progress * 10) / 10, raised: x.sq ? Math.round(x.raised * 100) / 100 : null, need: x.sq ? x.need : null, unit: x.sq ? 'SOL' : 'another token', marketCap: x.mc, holders: x.holders, vol1: x.vol1,
+      perHour, etaHours: perHour > 0 ? Math.round((100 - x.progress) / perHour * 10) / 10 : null, launched: new Date(x.launched).toISOString(), verdict: solCache.get(x.token) ? { verdict: solCache.get(x.token).verdict, score: solCache.get(x.token).score } : null };
+  }).sort((p, q) => q.progress - p.progress);
+  return { ok: rows.length > 0 || !grad.why, chain: 'solana', why: grad.why, rows, graduated: (st.gradSol || []).map(d => ({ ...d, at: new Date(d.at).toISOString() })), listed: grad.t ? new Date(grad.t).toISOString() : null, read: grad.live ? new Date(grad.live).toISOString() : null,
+    note: 'Pump.fun curves past 50%, listed by Codex every twenty minutes and ranked by their last hour of trading; each one read from its own curve account on Solana (Helius) at most every thirty seconds. Progress is tokens sold, as Pump.fun counts it; raised is the SOL in the curve, of what graduates it (85 on a standard curve, worked out from the reserves of each curve). The pace is the change since about an hour ago, and only carries on what it was. Graduations are the ones this page saw happen. Not advice.' };
+}
 // Replay on Solana: Codex's price bars since the pool opened, its peak, the steepest fall, where it is now
 async function solReplay(st, env, mint) {
   const hit = replays.get(mint), now = Date.now(); if (hit && now - hit.t < 30 * 60000) return hit.v;
@@ -483,9 +519,9 @@ async function solCard(st, env, a) {
   if (r?.serial?.created >= 3) add(r.serial.created >= 10 ? 'r' : 'y', `the deployer created ${r.serial.created} tokens in its latest ${r.serial.read} transactions`);
   if ((r?.steps || []).find(x => x.key === 'auditor')?.status === 'ok') add('g', 'mint and freeze authority both revoked');
   F.sort((p, q) => 'ryg'.indexOf(p.lvl) - 'ryg'.indexOf(q.lvl));
-  const L = r?.launch, curve = L?.pad === 'pumpfun' && !L.graduated && L.progress != null;
+  const L = r?.launch, curve = L?.pad === 'pumpfun' && !L.graduated && L.progress != null && L.raised != null;
   const v = { token: a, chain: 'solana', unit: 'SOL', padName: 'PUMP.FUN', chainLabel: 'SOLANA', symbol: r?.sym || null, name: r?.name || null, verdict: r && r.verdict !== 'NO POOL' ? { verdict: r.verdict, score: r.score } : null,
-    launch: r ? { launchpad: L?.pad || null, graduated: !!L?.graduated, holders: r.holders, liquidity: r.liq } : null, curve: curve ? { progress: L.progress, raised: L.raised ?? 0, need: 85 } : null,
+    launch: r ? { launchpad: L?.pad || null, graduated: !!L?.graduated, holders: r.holders, liquidity: r.liq } : null, curve: curve ? { progress: L.progress, raised: L.raised ?? 0, need: L.need ?? 85 } : null,
     findings: F, unread: [!r && 'token', r && !led?.ok && 'deployer'].filter(Boolean), read: new Date().toISOString() };
   cards.set('s:' + a, { t: Date.now(), v }); if (cards.size > 150) cards.delete(cards.keys().next().value);
   return v;
@@ -943,6 +979,7 @@ async function telegram(st, env, request, body) {
 // the agent interface's reads, shared by /api/v1/* and the MCP tools
 async function agentData(st, env, p, a, b = '') {
   const need = 'pass ?a=0x… a token address on Robinhood Chain';
+  if (p === 'graduation' || p === 'gradsol') return [200, await solGrad(st, env)];
   if (p === 'sol') { if (!isSol(a)) return [400, { error: 'pass ?a= a Solana mint address' }]; try { return [200, await solRead(env, a)]; } catch (e) { return [502, { error: e.message }]; } }
   if (p === 'token') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a token address on Robinhood Chain' }]; const r = await agentToken(st, env, a); await save(env, st); return [200, r]; }
   if (p === 'verdicts') return [200, { verdicts: st.verdicts.slice(0, 50).map(v => ({ token: v.addr, symbol: v.sym, verdict: v.verdict, score: v.score, desk: v.platform, at: new Date(v.t).toISOString(), priceAtVerdict: v.p0, after1h: v.p1h || null, after24h: v.p24h || null })), record: record(st).after1h }];
@@ -1040,7 +1077,7 @@ async function codexPost(env, q) {
   }
   return new Response('{"errors":[{"message":"no Codex key with calls left"}]}', { status: 503, headers: { 'Content-Type': 'application/json' } });
 }
-const CODEX_SHARE = { looks: 120, launch: 260, candles: 80, replay: 60, push: 80, devsol: 40 };   // launch facts feed every ticket, so they get the largest share
+const CODEX_SHARE = { looks: 120, launch: 230, candles: 80, replay: 60, push: 80, devsol: 40, gradsol: 75 };   // launch facts feed every ticket, so they get the largest share
 async function codexOk(env, kind) {
   if (!codexOn(env)) return false;
   const st = await load(env), day = new Date().toISOString().slice(0, 10);
@@ -2118,11 +2155,31 @@ async function watchTick(st, env) {
   // Solana: a Pump.fun curve read from its account (passing 80%, half the SOL leaving, graduating), the rest priced below
   const solT = tokens.filter(isSol), solPooled = [];
   for (const a of solT.slice(0, 40)) {
-    const c = /pump$/.test(a) ? await pumpCurve(env, a).catch(() => null) : null, s = S.tok[a] = S.tok[a] || {};
+    const c = await pumpCurve(env, a).catch(() => null), s = S.tok[a] = S.tok[a] || {};
     if (!c || c.complete) { if (c?.complete && !s.bonded) { if (s.progress != null) add(a, 'bonded', `${sym[a]}: it graduated from the Pump.fun curve`); s.bonded = true; } solPooled.push(a); continue; }
-    if (s.progress != null && s.progress < 80 && c.progress >= 80) add(a, 'curve80', `${sym[a]}: its Pump.fun curve passed 80%, now ${c.progress.toFixed(1)}% (${c.realSol.toFixed(1)} of 85 SOL)`);
+    if (s.progress != null && s.progress < 80 && c.progress >= 80) add(a, 'curve80', `${sym[a]}: its Pump.fun curve passed 80%, now ${c.progress.toFixed(1)}% (${c.realSol.toFixed(1)} of ${c.need ?? 85} SOL)`);
     s.peak = Math.max(s.peak || 0, c.realSol); if (s.peak >= 5 && c.realSol <= s.peak / 2) { add(a, 'curvehalf', `${sym[a]}: half the SOL has left its curve, ${c.realSol.toFixed(1)} SOL from a peak of ${s.peak.toFixed(1)}`); s.peak = c.realSol; }
     s.progress = c.progress;
+  }
+  // the deployer behind each watched Solana token: a new Pump.fun launch by it is an event. Each deployer is looked at
+  // every half hour: its newest signatures since the last look, and the newest ten of them read for a create
+  let devLooks = 0;
+  for (const a of solT) {
+    if (devLooks >= 8) break; const s = S.tok[a] = S.tok[a] || {};
+    if (s.dev === undefined) { const r = solCache.get(a) || await solRead(env, a).catch(() => null); s.dev = r?.creator || null; devLooks++; continue; }
+    if (!s.dev || (s.devAt && now - s.devAt < 30 * 60000)) continue; s.devAt = now; devLooks++;
+    try {
+      const sigs = await solRpc(env, 'getSignaturesForAddress', [s.dev, { limit: 25, ...(s.devSig ? { until: s.devSig } : {}) }]);
+      if (!s.devSig) { s.devSig = sigs[0]?.signature || ''; continue; }   // the first look only marks where to start
+      if (!sigs.length) continue; s.devSig = sigs[0].signature;
+      for (const g of sigs.filter(x => !x.err).slice(0, 10)) {
+        const tx = await solRpc(env, 'getTransaction', [g.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }]).catch(() => null);
+        if (!(tx?.meta?.logMessages || []).some(l => /Instruction: Create(V2)?$/.test(l))) continue;
+        const ix = (tx.transaction?.message?.instructions || []).find(i => i.programId === '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P' && Array.isArray(i.accounts));
+        const m = ix?.accounts?.[0]; if (!m || m === a) continue;
+        add(a, 'relaunch', `${sym[a]}: its deployer just launched another Pump.fun token, ${m.slice(0, 4)}…${m.slice(-4)}`);
+      }
+    } catch (e) {}
   }
   // the pooled tokens' prices: DexScreener, thirty a call, each chain on its own
   const pooled = tokens.filter(a => !rows.has(a) && !isSol(a));
@@ -3142,6 +3199,7 @@ const api = {
       if (url.pathname === '/api/holder' && body) { if (!allow(st, ip, 'holder', 20)) return json({ ok: false, why: 'slow down' }, 429); const [code, out] = await holderVerify(st, env, body); await save(env, st); return json(out, code); }
       if (url.pathname === '/api/holder') return json({ ok: true, message: holderMessage(String(url.searchParams.get('c') || '')), min: HOLD_MIN, pro: HOLD_PRO, boost: BOOST_MIN, trip: HOLD_TRIP });
       if (url.pathname === '/api/caught') return json(await caughtView(env));
+      if (url.pathname === '/api/gradsol') { const r = await solGrad(st, env); await save(env, st); return json(r); }
       if (url.pathname === '/api/sol') { const a = (url.searchParams.get('a') || '').trim(); if (!isSol(a)) return json({ ok: false, why: 'not a Solana mint address' }, 400); if (!allow(st, ip, 'sol', 60)) return json({ ok: false, why: 'slow down: 60 Solana checks an hour' }, 429); try { return json({ ok: true, ...(await solRead(env, a)) }); } catch (e) { return json({ ok: false, why: e.message }, 502); } }
       if (url.pathname === '/api/sim') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); return json(await curveSim(a)); }
       if (url.pathname === '/api/twins') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); return json(await twins(env, a)); }
@@ -3263,6 +3321,7 @@ const api = {
     try { await gradScan(st, env); } catch (e) { st.grads = { ...(st.grads || { rows: [] }), err: String(e.message || e).slice(0, 120) }; }   // the graduation feed is extra: a failed read never stops the desk
     try { await looksTick(env); } catch (e) {}
     try { await watchTick(st, env); } catch (e) {}
+    try { await solGrad(st, env); } catch (e) {}   // Graduation Watch keeps reading its curves, so a graduation is caught with nobody on the page
     try { await raceTick(st, env); } catch (e) {}
     try { await bingoTick(st, env); } catch (e) {}
     try { await fantasyTick(st, env); } catch (e) {}
