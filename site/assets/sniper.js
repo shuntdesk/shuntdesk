@@ -17,8 +17,8 @@ async function symbolOf(a) { try { const h = (await rpc('eth_call', [{ to: a, da
 // the factory's launch log, read here every fifteen seconds: a launch shows up within a block or two
 async function scan() {
   try {
-    const head = parseInt(await rpc('eth_blockNumber'), 16); if (from === null) from = head - 1500;
-    if (head > from) { const logs = await rpc('eth_getLogs', [{ address: PONS, topics: [T_LAUNCH], fromBlock: '0x' + (from + 1).toString(16), toBlock: '0x' + head.toString(16) }]);
+    const head = parseInt(await rpc('eth_blockNumber'), 16); if (from === null) from = head - 600;
+    if (head > from) { const lo = Math.max(from + 1, head - 2000), logs = await rpc('eth_getLogs', [{ address: PONS, topics: [T_LAUNCH], fromBlock: '0x' + lo.toString(16), toBlock: '0x' + head.toString(16) }]);
       for (const l of logs) { const t = '0x' + l.topics[1].slice(26); if (!feed.has(t)) feed.set(t, { token: t, symbol: await symbolOf(t), launched: new Date().toISOString(), progress: null, chain: true }); }
       from = head; }
     $('#sn-state').textContent = `watching the Pons factory · block ${head.toLocaleString('en-US')}`;

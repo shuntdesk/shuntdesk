@@ -975,3 +975,9 @@ html.simple.light ::selection { background: #2ed3a0; color: #060708; }
   .rc-lane { grid-template-columns: 12px 1fr auto; } .rc-lane > span:nth-of-type(3) { display: none; }
   .bn-card { grid-template-columns: repeat(2, 1fr); } .bn-sq { min-height: 92px; font-size: 14px; }
 }
+/* lists with an action in the last column (Paper Sniper, Fantasy Launcher): on a phone the second column goes, the button stays */
+.simlist.act .r { display: grid; grid-template-columns: minmax(120px, 1.4fr) 1fr 1fr auto !important; gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--hair); font-family: var(--mono); font-size: 13px; }
+.simlist.act .r.h { font-size: 10px; letter-spacing: .18em; color: var(--dim); border-top: 0; padding: 4px 0 8px; }
+.simlist.act .r .sy { font-weight: 700; color: var(--ink); } .simlist.act .r .sy small { display: block; color: var(--dim); font-weight: 400; font-size: 11px; }
+.simlist.act .r .btn { padding: 8px 12px; font-size: 11px; }
+@media (max-width: 760px) { .simlist.act .r { grid-template-columns: 1fr auto auto !important; } .simlist.act .r > :nth-child(2) { display: none; } .simlist.act .r > :nth-child(4) { display: block; } }
