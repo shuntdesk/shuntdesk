@@ -4,7 +4,7 @@
 import { simulate, breakEven, curveExit, poolExit } from '../lib/curve.mjs';
 import { createInterface } from 'node:readline';
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const BASE = (process.env.SHUNTDESK_API || 'https://shuntdesk.com').replace(/\/$/, '');
 const RPC = process.env.SHUNTDESK_RPC || 'https://rpc.mainnet.chain.robinhood.com';
 const argv = process.argv.slice(2), flags = new Set(argv.filter(a => a.startsWith('--'))), args = argv.filter(a => !a.startsWith('--'));
@@ -18,6 +18,7 @@ const bold = paint('1'), dim = paint('2'), red = paint('31'), green = paint('32'
 const plain = s => String(s).replace(/\x1b\[[0-9;]*m/g, '');
 const pad = (s, n) => s + ' '.repeat(Math.max(0, n - plain(s).length));
 const isAddr = a => /^0x[0-9a-fA-F]{40}$/.test(a || '');
+const isSol = a => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a || '');   // a Solana mint: base58, case matters
 const short = a => a ? a.slice(0, 6) + '…' + a.slice(-4) : '—';
 const n0 = v => v == null ? '—' : v >= 1e9 ? (v / 1e9).toFixed(2) + 'B' : v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? Math.round(v).toLocaleString('en-US') : (+(+v).toFixed(2)).toString();
 const eth = v => v == null ? '—' : v.toFixed(v < 0.01 ? 5 : 4) + ' ETH';
@@ -104,7 +105,25 @@ const dot = { red: red('●'), yellow: yellow('●'), green: green('●') };
 
 // ---------- commands ----------
 const COMMANDS = {
+  // a Solana token: the same seven stops, read on the server
+  async sol([a]) {
+    if (!isSol(a)) die('pass a Solana mint address');
+    const v = await get('sol?a=' + a, 'reading the token on Solana');
+    out(v, r => {
+      const col = r.verdict === 'CLEAN' ? green : r.verdict === 'RISKY' ? yellow : red;
+      head((r.sym || short(a)) + (r.name ? ' · ' + r.name : ''), 'Solana');
+      console.log('  ' + dim(r.addr) + '\n\n  ' + bold(col(r.verdict === 'NO POOL' ? 'NO POOL' : r.verdict + ' ' + r.score)) + dim(r.verdict === 'NO POOL' ? '' : ' / 100') + '\n');
+      for (const st of r.steps.filter(x => x.key !== 'judge')) {
+        const c = st.status === 'ok' ? green : st.status === 'bad' ? red : st.status === 'warn' ? yellow : dim;
+        console.log('  ' + pad(bold(st.name), 10) + c(st.tag)); console.log(dim(wrap(st.detail, 84).replace(/^/gm, '    ')));
+        if (st.facts?.length) console.log('    ' + st.facts.map(f => dim(f[0] + ' ') + f[1]).join(dim('  ·  ')));
+        console.log();
+      }
+      foot('A rule-based reading of public Solana data. It can be wrong. Not advice.', BASE + '/ticket/?a=' + r.addr);
+    });
+  },
   async check([a]) {
+    if (isSol(a)) return COMMANDS.sol([a]);
     a = need(a);
     const [t, x, d, w, k] = await spin('reading the token, its contract, its launcher and its website', Promise.all([soft('token?a=' + a), soft('scan?a=' + a), soft('ledger?a=' + a), soft('site?a=' + a), soft('lookalikes?a=' + a)]));
     const tok = t.v, onCurve = tok?.launch?.ok && /pons/i.test(tok.launch.launchpad || '') && !tok.launch.graduated;
@@ -146,6 +165,7 @@ const COMMANDS = {
     });
   },
   async token([a]) {
+    if (isSol(a)) return COMMANDS.sol([a]);
     a = need(a); const v = await get('token?a=' + a, 'reading the token');
     out(v, v => {
       head(v.symbol ? '$' + v.symbol : short(v.token), (v.name || '') + ' · ' + v.token);
@@ -566,7 +586,7 @@ async function auto(a) {
 function help() {
   banner();
   const c = (cmd, what) => console.log('  ' + pad(bold(cmd), 34) + dim(what));
-  console.log('\n  ' + dim('paste any address:') + '\n'); c('shuntdesk <0x…>', 'a token gets the full check, a wallet its X-ray');
+  console.log('\n  ' + dim('paste any address:') + '\n'); c('shuntdesk <0x…>', 'a token gets the full check, a wallet its X-ray'); c('shuntdesk <solana mint>', 'a Solana token through the seven checks');
   console.log('\n  ' + dim('tokens:') + '\n'); c('shuntdesk check <token>', 'everything at once, and what the chain shows'); c('shuntdesk scan <token>', 'the contract: powers, owner, proxy, source'); c('shuntdesk token <token>', 'the verdict, flags, holders, launch facts'); c('shuntdesk ledger <token>', 'where the launcher sent its tokens'); c('shuntdesk twins <token>', 'contracts running exactly the same code'); c('shuntdesk shared <token> <token>', 'top wallets holding both'); c('shuntdesk site <token>', 'its website: domain age, urlscan, links'); c('shuntdesk alike <token>', 'tokens that looked like it, and how they ended'); c('shuntdesk exit <token> [size]', 'what a buy gets back if the dev or snipers sell first'); c('shuntdesk replay <token>', 'its chart in your terminal: launch, peak, drop, now');
   console.log('\n  ' + dim('pons curves:') + '\n'); c('shuntdesk live [--clean]', 'every Pons launch and bond as it lands, read on arrival'); c('shuntdesk watchlist [code]', 'your watchlist, the same one as the site, extension and bot'); c('shuntdesk sim <token> [eth]', 'run a buy before you make it, and its break even'); c('shuntdesk watch <token> [seconds]', 'the curve live in your terminal'); c('shuntdesk bonds [n]', 'the curves closest to bonding'); c('shuntdesk grads', 'curves that just bonded');
   console.log('\n  ' + dim('wallets and the radar:') + '\n'); c('shuntdesk wallet <wallet>', 'every token in it, flags and copies'); c('shuntdesk dev <wallet>', 'a launcher\'s record on Pons'); c('shuntdesk radar [n]', 'the newest tokens the radar read');
@@ -592,6 +612,7 @@ async function prompt() {
 }
 async function run([cmd, ...rest]) {
   if (isAddr(cmd)) return auto(cmd.toLowerCase());
+  if (isSol(cmd)) return COMMANDS.sol([cmd]);
   if (cmd === 'help') return help();
   const f = COMMANDS[ALIAS[cmd] || cmd];
   if (!f) { console.error('  ' + red('✖ ') + `no command "${cmd}"`); if (!INTERACTIVE) { help(); process.exit(1); } return; }

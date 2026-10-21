@@ -12,6 +12,7 @@
 // position per token, rate-limited per address.
 import { FEE, MAX_IMPACT, impact, fill, value } from '../site/assets/trade.js';
 import { sameHand } from '../site/assets/hand.js';
+import { solScan, isSol } from './solana.js';
 
 const DS = 'https://api.dexscreener.com';
 // some data services turn away requests that do not say who is asking
@@ -125,18 +126,26 @@ async function poolMeta(addr, pool, quote, gp) {
   return { m: { pool, q, base0, d0: base0 ? dBase : dQuote, d1: base0 ? dQuote : dBase, ...(pool.length === 66 ? { mgr } : {}) }, liq: Number(hit.liquidity) || 0 };
 }// The server's own security reading (GoPlus), so the crew never trades on the browser's word alone.
 let gpToken = { v: '', until: 0 };
-async function goplus(env, addr) {
+async function gpHeaders(env) {
   const headers = { Accept: 'application/json' };
-  try {
-    if (env.GOPLUS_APP_KEY && env.GOPLUS_APP_SECRET) {   // a key raises the rate limit; without one the call still works
-      if (Date.now() > gpToken.until) {
-        const time = Math.floor(Date.now() / 1000), raw = new TextEncoder().encode(env.GOPLUS_APP_KEY + time + env.GOPLUS_APP_SECRET);
-        const sign = [...new Uint8Array(await crypto.subtle.digest('SHA-1', raw))].map(b => b.toString(16).padStart(2, '0')).join('');
-        const t = await (await fetch('https://api.gopluslabs.io/api/v1/token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ app_key: env.GOPLUS_APP_KEY, time, sign }) })).json();
-        if (t.result?.access_token) gpToken = { v: t.result.access_token, until: Date.now() + (t.result.expires_in - 300) * 1000 };
-      }
-      if (gpToken.v) headers.Authorization = gpToken.v;
+  if (env.GOPLUS_APP_KEY && env.GOPLUS_APP_SECRET) {   // a key raises the rate limit; without one the call still works
+    if (Date.now() > gpToken.until) {
+      const time = Math.floor(Date.now() / 1000), raw = new TextEncoder().encode(env.GOPLUS_APP_KEY + time + env.GOPLUS_APP_SECRET);
+      const sign = [...new Uint8Array(await crypto.subtle.digest('SHA-1', raw))].map(b => b.toString(16).padStart(2, '0')).join('');
+      const t = await (await fetch('https://api.gopluslabs.io/api/v1/token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ app_key: env.GOPLUS_APP_KEY, time, sign }) })).json();
+      if (t.result?.access_token) gpToken = { v: t.result.access_token, until: Date.now() + (t.result.expires_in - 300) * 1000 };
     }
+    if (gpToken.v) headers.Authorization = gpToken.v;
+  }
+  return headers;
+}
+// GoPlus's Solana reading: the mint's authorities, metadata, creators, holders and pools
+async function goplusSol(env, mint) {
+  try { const r = await fetch(`https://api.gopluslabs.io/api/v1/solana/token_security?contract_addresses=${mint}`, { headers: await gpHeaders(env), signal: AbortSignal.timeout(7000) }); return (await r.json()).result?.[mint] || null; } catch (e) { return null; }
+}
+async function goplus(env, addr) {
+  try {
+    const headers = await gpHeaders(env);
     const r = await fetch(`https://api.gopluslabs.io/api/v1/token_security/4663?contract_addresses=${addr}`, { headers });
     const gp = (await r.json()).result?.[addr] || null;
     if (gp?.holders) await walletsNotContracts(gp.holders.slice(0, 20).filter(h => h.is_contract == 1 && h.is_locked != 1), h => h.address, h => { h.is_contract = 0; h.delegated = 1; });
@@ -386,7 +395,9 @@ async function secondRead(st, env, b, ip) {
 // Add it to a client as a remote server at https://shuntdesk.com/mcp. Read-only, no key, 120 calls an hour per caller.
 const MCP_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 const ADDR = { type: 'string', pattern: '^0x[0-9a-fA-F]{40}$', description: 'A token address on Robinhood Chain (chain id 4663)' };
-const AGENT_LIMIT = { shared: 20, devscore: 30, wallet: 30, holders: 30 };
+const AGENT_LIMIT = { shared: 20, devscore: 30, wallet: 30, holders: 30, sol: 30 };
+// a Solana token through the seven stops, on the server (the Helius key stays here)
+const solRead = (env, mint) => solScan(env, mint, { goplus: m => goplusSol(env, m), codex: m => launchCodex(env, m, 1399811149) });
 const TOOLS = [
   { name: 'token', title: 'What Shuntdesk knows about one token', p: 'token', description: 'The latest Shuntdesk verdict on a Robinhood Chain token (CLEAN, RISKY or DANGER, scored out of 100) and how its price moved an hour and a day later, a fresh server-side security read (red flags, holders), launch facts for Pons tokens (snipers, bundles, insiders, developer share, curve progress) and the crew desk position. verdict is null when nobody has run the checks yet; the reply carries the link that runs them. A verdict is a rule-based reading and can be wrong. Not advice.', inputSchema: { type: 'object', properties: { address: ADDR }, required: ['address'], additionalProperties: false } },
   { name: 'verdicts', title: 'Latest verdicts', p: 'verdicts', description: 'The 50 latest verdicts Shuntdesk filed, each with its price at the call and an hour and a day later, and how many CLEAN and DANGER calls held an hour later.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
@@ -398,6 +409,7 @@ const TOOLS = [
   { name: 'twins', title: 'Twin Finder', p: 'twins', description: 'Contracts in the Shuntdesk radar log that run exactly the same code as this token (through a proxy or a clone, the same implementation), and how many lost half their price. Pons tokens all share the factory code, so for them it points to the launcher instead.', inputSchema: { type: 'object', properties: { address: ADDR }, required: ['address'], additionalProperties: false } },
   { name: 'dev_score', title: 'Dev Score', p: 'devscore', description: 'The record of a launcher wallet on Pons: every token it launched, how many bonded, how many lost half, and how much the wallet sold. Pass the launcher wallet, not the token.', inputSchema: { type: 'object', properties: { address: { ...ADDR, description: 'A launcher wallet on Robinhood Chain' } }, required: ['address'], additionalProperties: false } },
   { name: 'shared_bags', title: 'Shared Bags', p: 'shared', description: 'The wallets among the largest holders of two tokens that hold both, with the share each one holds of each token. Pools, curves and contracts left out. Holding both is a link, not proof of a group.', inputSchema: { type: 'object', properties: { address: ADDR, other: { ...ADDR, description: 'The second token address' } }, required: ['address', 'other'], additionalProperties: false } },
+  { name: 'solana_token', title: 'Solana token check', p: 'sol', description: 'The seven checks for a Solana token (pass the mint address): pool and liquidity, the Pump.fun curve if it is on one, the largest wallets, who funded them, the share the creator keeps, snipers and bundles at launch, and the powers of the mint (mint and freeze authority, Token-2022 extensions). A verdict CLEAN, RISKY or DANGER with every lost point explained.', inputSchema: { type: 'object', properties: { address: { type: 'string', description: 'Solana token mint address (base58)' } }, required: ['address'] } },
   { name: 'daily_report', title: 'Daily report', p: 'report', description: 'The crew desk over the last 24 hours: balance and change, verdict counts, how many calls held, best and worst trade, with a one-paragraph summary.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
 ];
 async function mcp(st, env, request, body, ip) {
@@ -417,9 +429,10 @@ async function mcp(st, env, request, body, ip) {
     if (m.method === 'tools/call') {
       const tool = TOOLS.find(t => t.name === m.params?.name); if (!tool) return fail(-32602, 'Unknown tool: ' + String(m.params?.name).slice(0, 40));
       if (!allow(st, ip, 'agent', 120)) return ok({ isError: true, content: [{ type: 'text', text: 'Rate limited: 120 calls an hour.' }] });
-      const a = String(m.params?.arguments?.address || '').toLowerCase(), b = String(m.params?.arguments?.other || '').toLowerCase();
+      const raw = String(m.params?.arguments?.address || '').trim(), a = tool.p === 'sol' ? raw : raw.toLowerCase(), b = String(m.params?.arguments?.other || '').toLowerCase();
       if (AGENT_LIMIT[tool.p] && !allow(st, ip, 'agent-' + tool.p, AGENT_LIMIT[tool.p])) return ok({ isError: true, content: [{ type: 'text', text: `Rate limited: ${AGENT_LIMIT[tool.p]} calls an hour for this tool.` }] });
-      if (tool.inputSchema.required?.includes('address') && !isAddr(a)) return ok({ isError: true, content: [{ type: 'text', text: 'address must be 0x followed by 40 hex characters' }] });
+      if (tool.p === 'sol' && !isSol(a)) return ok({ isError: true, content: [{ type: 'text', text: 'address must be a Solana mint address (base58)' }] });
+      if (tool.p !== 'sol' && tool.inputSchema.required?.includes('address') && !isAddr(a)) return ok({ isError: true, content: [{ type: 'text', text: 'address must be 0x followed by 40 hex characters' }] });
       const [code, out] = await agentData(st, env, tool.p, a, b);
       return ok({ isError: code !== 200, content: [{ type: 'text', text: JSON.stringify(out, null, 1) }], structuredContent: out });
     }
@@ -663,9 +676,17 @@ async function telegram(st, env, request, body) {
   if (cmd === 'id') return reply(`This chat: <code>${chat}</code> (${tgEsc(msg.chat.type)}${msg.chat.title ? ', ' + tgEsc(msg.chat.title) : ''})`);
   if (!allow(st, 'tg:' + chat, 'tg', 40)) return reply('Slow down a little: 40 questions an hour per chat.');
   const site = 'https://shuntdesk.com', footer = '\n\n<i>A rule-based reading of public data. It can be wrong. Not advice.</i>';
-  if (cmd === 'start' || cmd === 'help') return reply(`<b>Shuntdesk</b> · every token rides the line\n\nAsk anything about Shuntdesk, a token, the crew desk or what just launched. Or use:\n\n/check <code>0x…</code> what Shuntdesk knows about a Robinhood Chain token\n/watchlist <code>wl-…</code> alerts in this chat for the watchlist you keep on the site, the CLI or the extension\n/scan <code>0x…</code> Agent Scan: what the contract lets its owner do\n/ledger <code>0x…</code> Dev Ledger: what the launcher did with it\n/devscore <code>0x…</code> Dev Score: every launch by that dev\n/report <code>0x…</code> report a token; the bot reads it\n/spotters who reported what lost half\n/bondgame today's Will it bond?\n/proof everything about $SHUNT you can check\n/alarms on launch alarms in your group (admins)\n
+  if (cmd === 'start' || cmd === 'help') return reply(`<b>Shuntdesk</b> · every token rides the line\n\nAsk anything about Shuntdesk, a token, the crew desk or what just launched. Or use:\n\n/check <code>0x…</code> what Shuntdesk knows about a Robinhood Chain token\nPaste a Solana mint: the seven checks on a Solana token\n/watchlist <code>wl-…</code> alerts in this chat for the watchlist you keep on the site, the CLI or the extension\n/scan <code>0x…</code> Agent Scan: what the contract lets its owner do\n/ledger <code>0x…</code> Dev Ledger: what the launcher did with it\n/devscore <code>0x…</code> Dev Score: every launch by that dev\n/report <code>0x…</code> report a token; the bot reads it\n/spotters who reported what lost half\n/bondgame today's Will it bond?\n/proof everything about $SHUNT you can check\n/alarms on launch alarms in your group (admins)\n
 <b>For $SHUNT holders</b>\n/link connect your wallet\n/alarm your own alarms\n/follow <code>0x…</code> hear when a wallet buys a Pons token\n/handle your name on the holder league\n/boost burn $SHUNT to boost a full scan\n/watch <code>0x…</code> Tripwire: a private alarm when the owner or the big wallets move\n/daily today's daily shift in the Yard\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
   // anything that is not a command, or a token address with a question around it, goes to the conductor
+  // a Solana mint pasted on its own, or after /check: the seven checks, read on the server
+  const solFound = !found && clean.match(/(?<![1-9A-HJ-NP-Za-km-z])[1-9A-HJ-NP-Za-km-z]{32,44}(?![1-9A-HJ-NP-Za-km-z])/);
+  if (solFound && (!cmd || cmd === 'check') && clean.replace(/^\/\w+\s*/, '').replace(solFound[0], '').trim().length <= 3) {
+    if (!allow(st, 'tgsol:' + chat, 'tgsol', 20)) return reply('Slow down a little: 20 Solana checks an hour per chat.');
+    let r = null; try { r = await solRead(env, solFound[0]); } catch (e) { return reply('The Solana node did not answer. Try again in a minute.'); }
+    const rows = r.steps.filter(x => x.key !== 'judge').map(x => `<b>${tgEsc(x.name)}</b> · ${tgEsc(x.tag)}\n${tgEsc(x.detail)}`);
+    return reply([`<b>${tgEsc(r.sym || '')}</b>${r.name ? ' · ' + tgEsc(r.name) : ''} · Solana`, `<code>${r.addr}</code>`, '', r.verdict === 'NO POOL' ? '<b>NO POOL</b>' : `<b>${r.verdict} ${r.score}</b>`, '', ...rows.flatMap(x => [x, '']), `Full ticket: ${site}/ticket/?a=${r.addr}`].join('\n') + footer);
+  }
   const question = clean.replace(/^\/\w+\s*/, '').replace(/0x[0-9a-fA-F]{40}/, '').trim();
   if (!cmd && (!found || question.length > 3)) return reply(await tgAsk(st, env, chat, clean, found ? found[0].toLowerCase() : null));
   if (cmd === 'watch' || cmd === 'unwatch' || cmd === 'watching') {
@@ -822,6 +843,7 @@ async function telegram(st, env, request, body) {
 // the agent interface's reads, shared by /api/v1/* and the MCP tools
 async function agentData(st, env, p, a, b = '') {
   const need = 'pass ?a=0x… a token address on Robinhood Chain';
+  if (p === 'sol') { if (!isSol(a)) return [400, { error: 'pass ?a= a Solana mint address' }]; try { return [200, await solRead(env, a)]; } catch (e) { return [502, { error: e.message }]; } }
   if (p === 'token') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a token address on Robinhood Chain' }]; const r = await agentToken(st, env, a); await save(env, st); return [200, r]; }
   if (p === 'verdicts') return [200, { verdicts: st.verdicts.slice(0, 50).map(v => ({ token: v.addr, symbol: v.sym, verdict: v.verdict, score: v.score, desk: v.platform, at: new Date(v.t).toISOString(), priceAtVerdict: v.p0, after1h: v.p1h || null, after24h: v.p24h || null })), record: record(st).after1h }];
   if (p === 'desk') return [200, { paper: true, start: START, equity: Math.round(equity(st) * 100) / 100, cash: Math.round(st.cash * 100) / 100, open: st.pos.map(x => ({ token: x.addr, symbol: x.sym, side: x.side, leverage: x.lev, entry: x.entry, mark: x.mark || x.entry, net: Math.round(worth(x).net * 100) / 100 })), closed: st.hist.slice(0, 20).map(h => ({ token: h.addr, symbol: h.sym, side: h.side, leverage: h.lev, entry: h.entry, exit: h.exit, pnl: Math.round(h.pnl * 100) / 100, why: h.why, postMortem: h.note?.text || null, at: new Date(h.t).toISOString() })) }];
@@ -1032,13 +1054,13 @@ async function launch(env, addr) {
   if (!c) return v.launchpad === 'pons' ? { ...v, progress: null } : v;   // a Pons token whose curve could not be read shows no figure rather than Codex's
   return { ...v, ok: true, launchpad: 'pons', progress: c.progress, graduated: c.graduated, raised: c.raised, need: c.need, curve: c.curve, pool: c.pool || null };
 }
-async function launchCodex(env, addr) {
+async function launchCodex(env, addr, net = 4663) {
   const hit = launches.get(addr), now = Date.now();
   if (hit && now - hit.t < 30 * 60000) return hit.v;
   if (!(await codexOk(env, 'launch'))) return hit ? hit.v : { ok: false, why: 'not available right now' };
   let v = { ok: false, why: 'no answer' };
   try {
-    const q = `{ filterTokens(tokens: ["${addr}:4663"], limit: 1) { results { priceUSD liquidity holders top10HoldersPercent createdAt sniperCount sniperHeldPercentage bundlerCount bundlerHeldPercentage insiderCount insiderHeldPercentage devHeldPercentage token { symbol launchpad { launchpadName graduationPercent completed completedAt } } } } }`;
+    const q = `{ filterTokens(tokens: ["${addr}:${net}"], limit: 1) { results { priceUSD liquidity holders top10HoldersPercent createdAt sniperCount sniperHeldPercentage bundlerCount bundlerHeldPercentage insiderCount insiderHeldPercentage devHeldPercentage token { symbol launchpad { launchpadName graduationPercent completed completedAt } } } } }`;
     const r = await fetch('https://graph.codex.io/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: env.CODEX_API_KEY }, body: JSON.stringify({ query: q }) });
     const x = (await r.json()).data?.filterTokens?.results?.[0];
     if (x) { const lp = x.token?.launchpad; v = { ok: true, launchpad: lp?.launchpadName || null, progress: lp?.graduationPercent ?? null, graduated: lp ? !!lp.completed : null,
@@ -2968,7 +2990,9 @@ const api = {
       if (url.pathname.startsWith('/api/v1/')) {
         if (!allow(st, ip, 'agent', 120)) return json({ error: 'rate limited: 120 calls an hour' }, 429);
         const ep = url.pathname.slice(8); if (AGENT_LIMIT[ep] && !allow(st, ip, 'agent-' + ep, AGENT_LIMIT[ep])) return json({ error: `rate limited: ${AGENT_LIMIT[ep]} calls an hour for ${ep}` }, 429);
-        const [code, out] = await agentData(st, env, ep, (url.searchParams.get('a') || '').toLowerCase(), (url.searchParams.get('b') || '').toLowerCase());
+        const rawA = (url.searchParams.get('a') || '').trim(), solEp = ep === 'sol' || (isSol(rawA) && ['token', 'scan', 'check'].includes(ep));
+        if (solEp && AGENT_LIMIT.sol && ep !== 'sol' && !allow(st, ip, 'agent-sol', AGENT_LIMIT.sol)) return json({ error: `rate limited: ${AGENT_LIMIT.sol} calls an hour for Solana tokens` }, 429);
+        const [code, out] = await agentData(st, env, solEp ? 'sol' : ep, solEp ? rawA : rawA.toLowerCase(), (url.searchParams.get('b') || '').toLowerCase());
         return json(out, code);
       }
       if (url.pathname === '/mcp' || url.pathname === '/api/mcp') return mcp(st, env, request, body, ip);
@@ -2988,6 +3012,7 @@ const api = {
       if (url.pathname === '/api/holder' && body) { if (!allow(st, ip, 'holder', 20)) return json({ ok: false, why: 'slow down' }, 429); const [code, out] = await holderVerify(st, env, body); await save(env, st); return json(out, code); }
       if (url.pathname === '/api/holder') return json({ ok: true, message: holderMessage(String(url.searchParams.get('c') || '')), min: HOLD_MIN, pro: HOLD_PRO, boost: BOOST_MIN, trip: HOLD_TRIP });
       if (url.pathname === '/api/caught') return json(await caughtView(env));
+      if (url.pathname === '/api/sol') { const a = (url.searchParams.get('a') || '').trim(); if (!isSol(a)) return json({ ok: false, why: 'not a Solana mint address' }, 400); if (!allow(st, ip, 'sol', 60)) return json({ ok: false, why: 'slow down: 60 Solana checks an hour' }, 429); try { return json({ ok: true, ...(await solRead(env, a)) }); } catch (e) { return json({ ok: false, why: e.message }, 502); } }
       if (url.pathname === '/api/sim') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); return json(await curveSim(a)); }
       if (url.pathname === '/api/twins') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); return json(await twins(env, a)); }
       if (url.pathname === '/api/shared') { const a = (url.searchParams.get('a') || '').toLowerCase(), b = (url.searchParams.get('b') || '').toLowerCase(); if (!isAddr(a) || !isAddr(b) || a === b) return json({ ok: false, why: 'two different token addresses, please' }, 400); if (!bagsCache.has([a, b].sort().join(':')) && !allow(st, ip, 'shared', 20)) return json({ ok: false, why: 'slow down: 20 an hour' }, 429); return json(await sharedBags(env, a, b)); }

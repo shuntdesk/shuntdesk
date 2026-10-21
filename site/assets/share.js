@@ -20,7 +20,7 @@ export async function drawCard(res) {
   c.strokeStyle = 'rgba(237,235,230,.22)'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(42, 22); c.lineTo(W - 22, 22); c.lineTo(W - 22, H - 42); c.lineTo(W - 42, H - 22); c.lineTo(22, H - 22); c.lineTo(22, 42); c.closePath(); c.stroke();
   c.fillStyle = '#edebe6'; c.save(); c.translate(64, 63); c.scale(0.0725, 0.0725); c.translate(-136, -56); c.fill(new Path2D('M136 456V297.7L292 173.7V90L326 56H376V214.3L220 338.3V422L186 456Z')); c.restore();
   c.font = disp(40); c.textBaseline = 'alphabetic'; c.fillText('SHUNTDESK', 94, 92);
-  c.fillStyle = '#ffffff'; c.font = mono(15, 700); c.fillText('TICKET ' + res.addr.slice(2, 6).toUpperCase() + '   ·   ROBINHOOD CHAIN', 64, 122);
+  c.fillStyle = '#ffffff'; c.font = mono(15, 700); c.fillText('TICKET ' + (res.chain === 'solana' ? res.addr.slice(0, 4) + '   ·   SOLANA' : res.addr.slice(2, 6).toUpperCase() + '   ·   ROBINHOOD CHAIN'), 64, 122);
   // token
   const sym = (res.sym || '').toUpperCase().slice(0, 10); let px = 230; c.font = disp(px);
   while (c.measureText(sym).width > 560 && px > 80) { px -= 10; c.font = disp(px); }
@@ -65,6 +65,7 @@ export async function saveCard(res) {
 }
 export function postText(res) {
   const where = res.platform === 'long' ? 'sent to the long desk' : res.platform === 'short' ? 'sent to the short desk' : 'sent to the depot, no trade';
+  if (res.chain === 'solana') return `${res.sym} rode the line at Shuntdesk: ${res.verdict} ${res.score}/100. Seven fixed-rule checks on public Solana data.`;
   return `${res.sym} rode the line at Shuntdesk: ${res.verdict} ${res.score}/100, ${where}. Seven fixed-rule checks on public Robinhood Chain data.`;
 }
 export const postUrl = (res, link) => 'https://x.com/intent/post?text=' + encodeURIComponent(postText(res)) + '&url=' + encodeURIComponent(link);

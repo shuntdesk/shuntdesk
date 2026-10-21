@@ -32,6 +32,7 @@ Run `shuntdesk` alone for a prompt that takes addresses and commands until you q
 | Command | What it reads |
 | --- | --- |
 | `shuntdesk check <token>` | Everything at once: verdict, contract, launcher, curve, and a box of what the chain shows |
+| `shuntdesk <solana mint>` | A Solana token through the seven checks: pool or Pump.fun curve, largest wallets and their funders, the creator's share, snipers and bundles, mint and freeze authority, Token-2022 extensions |
 | `shuntdesk scan <token>` | The contract: functions that mint, pause, block wallets, change the tax or swap the code; owner, proxy, source |
 | `shuntdesk token <token>` | Shuntdesk's verdict and how the price moved after it, red flags, holders, snipers, bundles, dev share |
 | `shuntdesk ledger <token>` | Where the launcher sent its tokens: sold, sent to wallets, sent to contracts, burned, still held |

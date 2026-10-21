@@ -19,6 +19,7 @@ npx -y shuntdesk <command> <args> --json
 | Question | Command |
 | --- | --- |
 | Everything at once about one token, with the findings sorted | `check <token>` |
+| The same seven checks for a Solana token (pass the mint) | `sol <mint>` (or just the mint) |
 | What can this contract do? Mint, pause, block wallets, change the tax, swap the code? Who owns it? | `scan <token>` |
 | What does Shuntdesk's verdict say, red flags, holders, snipers, bundles, dev share, curve progress? | `token <token>` |
 | What would a buy of N ETH on its Pons curve get, and what comes back on a straight sell? | `sim <token> <eth>` |

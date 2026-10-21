@@ -49,6 +49,10 @@ export const blockscout = path => getJSON(BS + path, 300, 8000);
 
 const ZERO = '0x0000000000000000000000000000000000000000', DEAD = '0x000000000000000000000000000000000000dead';
 export const isAddr = a => /^0x[0-9a-fA-F]{40}$/.test((a || '').trim());
+// a Solana mint: base58, case matters, so it is never lower-cased
+export const isSol = a => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test((a || '').trim());
+export const isToken = a => isAddr(a) || isSol(a);
+export const normAddr = a => isSol(a) ? a.trim() : (a || '').trim().toLowerCase();
 
 function fromGtPool(d, inc) {
   const a = d.attributes, id = d.relationships?.base_token?.data?.id || '', tok = (inc || []).find(i => i.id === id);
@@ -209,7 +213,7 @@ async function pool3(items, fn) {
 }
 
 export function cachedScan(addr) {
-  try { const c = JSON.parse(localStorage.getItem('sd.scan.' + addr.toLowerCase())); if (c && Date.now() - c.at < 15 * 60000) return c; } catch (e) {}
+  try { const c = JSON.parse(localStorage.getItem('sd.scan.' + normAddr(addr))); if (c && Date.now() - c.at < 15 * 60000) return c; } catch (e) {}
   return null;
 }
 export function recentScans() {
@@ -227,6 +231,7 @@ function saveScan(res) {
 
 // Runs the line for one token. onStep(step, index) fires as each stop reports.
 export async function scan(address, onStep = () => {}) {
+  if (isSol(address)) return solScan(address.trim(), onStep);
   const addr = address.trim().toLowerCase();
   const res = { addr, steps: [], score: 100, at: Date.now() };
   const push = s => { res.steps.push(s); res.score -= s.cost || 0; onStep(s, res.steps.length - 1, res); return s; };
@@ -396,6 +401,16 @@ export async function scan(address, onStep = () => {}) {
   // hand the ticket to the shared crew desk; the page works the same if the desk does not answer
   res.crew = await Promise.race([api('verdict', { addr, verdict: res.verdict, score: res.score, tags: res.steps.map(s => s.tag), pool: pair.pool, quote: pair.quote || '', sym: pair.sym, created: pair.created || 0, liq: pair.liq || 0 }).then(r => r.why || 'filed'), new Promise(r => setTimeout(() => r('no answer'), 3500))]).catch(() => 'offline');
   saveScan(res);
+  return res;
+}
+
+// a Solana token runs the same seven stops on the server, where the node key is; the stops are then handed out one by one
+async function solScan(mint, onStep) {
+  const r = await fetch('/api/sol?a=' + encodeURIComponent(mint), { signal: AbortSignal.timeout(30000) }).then(x => x.json()).catch(() => null);
+  if (!r || !r.ok) throw new Error(r?.why || 'the Solana reading did not answer');
+  const res = { ...r, steps: [] };
+  for (const s of r.steps) { res.steps.push(s); onStep(s, res.steps.length - 1, res); }
+  res.at = Date.now(); saveScan(res);
   return res;
 }
 

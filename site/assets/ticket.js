@@ -1,6 +1,6 @@
 import { createYard, STOPS, progressAtStop } from './yard.js';
 import { mountChrome, $, $$, flap, esc, feedYard } from './ui.js';
-import { scan, cachedScan, recentScans, newPools, isAddr, compact, sig, fmtAge, ageShort, EXPLORER, api } from './data.js';
+import { scan, cachedScan, recentScans, newPools, isToken, isSol, normAddr, compact, sig, fmtAge, ageShort, EXPLORER, api } from './data.js';
 import { saveCard, postUrl } from './share.js';
 import { mountWatch, watch, unwatch, watching } from './watch.js';
 import { exitDoor } from './door.js';
@@ -32,7 +32,9 @@ function paintStop(i, s) {
   $('.fx', n).innerHTML = (s.facts || []).map(f => `<span>${esc(f[0])}<b>${esc(f[1])}</b></span>`).join('');
 }
 function paintCard(res, done) {
-  $('#t-no').textContent = 'TICKET ' + res.addr.slice(2, 6).toUpperCase();
+  const sol = isSol(res.addr);
+  $('#t-no').textContent = 'TICKET ' + (sol ? 'SOL ' + res.addr.slice(0, 4) : res.addr.slice(2, 6)).toUpperCase();
+  $('#t-chain').textContent = sol ? 'SOLANA' : 'ROBINHOOD CHAIN';
   flap($('#t-sym'), (res.sym || '······').toUpperCase().slice(0, 9));
   $('#t-ad').textContent = res.addr;
   const rows = [['Price', res.price != null ? '$' + sig(res.price) : '…'], ['Liquidity', res.liq != null ? '$' + compact(res.liq) : '…'], ['Pool age', res.ageMin != null ? fmtAge(res.ageMin) : '…'], ['Holders', res.holders != null ? res.holders.toLocaleString('en-US') : '…']];
@@ -42,11 +44,17 @@ function paintCard(res, done) {
   const st = $('#t-stamp'); st.textContent = res.verdict === 'NO POOL' ? 'NO POOL' : `${res.verdict} ${res.score}`; st.style.color = col; st.classList.remove('in'); void st.offsetWidth; st.classList.add('in');
   const card = $('#card'); card.className = 'stub tkstub ' + (res.verdict === 'CLEAN' ? 'g' : res.verdict === 'RISKY' ? 'n' : 'r');
   const pl = $('#t-plat'); pl.className = 'plat ' + (res.platform === 'depot' ? '' : res.platform);
-  pl.firstElementChild.textContent = res.verdict === 'NO POOL' ? 'Never left the station' : res.platform === 'long' ? 'Sent to the long desk' : res.platform === 'short' ? 'Sent to the short desk' : 'Sent to the depot';
+  pl.firstElementChild.textContent = res.verdict === 'NO POOL' ? 'Never left the station' : sol ? 'Read on Solana' : res.platform === 'long' ? 'Sent to the long desk' : res.platform === 'short' ? 'Sent to the short desk' : 'Sent to the depot';
   $('#t-zone').textContent = res.maxLev ? `Zone ${res.zone} · max ${res.maxLev}x` : '';
   shown = res;
   const live = res.verdict !== 'NO POOL';
   $('#t-crew').textContent = !live || !res.crew ? '' : 'CREW DESK: ' + ({ offline: 'NOT ANSWERING', 'no answer': 'NO ANSWER YET' }[res.crew] || res.crew.toUpperCase());
+  if (sol) {   // a Solana ticket: read, not traded; the Robinhood Chain tools below do not apply
+    $('#tkx').hidden = true; $('#second').hidden = true;
+    $('#t-acts').innerHTML = `<button class="btn ghost" data-do="ask">Ask the conductor</button><button class="btn ghost" data-do="card">Save the card</button><button class="btn ghost" data-do="x">Post on X</button><button class="btn ghost" data-do="link">Copy link</button><a class="btn ghost" href="https://solscan.io/token/${res.addr}" target="_blank" rel="noopener">Solscan ↗</a>` + (res.url ? `<a class="btn ghost" href="${esc(res.url)}" target="_blank" rel="noopener">DexScreener ↗</a>` : '');
+    $('#t-crew').textContent = live ? 'SOLANA · READ ONLY, THE CREW DOES NOT TRADE IT' : '';
+    return;
+  }
   second(res); extras(res); devCard(res);
   $('#t-acts').innerHTML = (live ? `<a class="btn ${res.platform === 'short' ? 'r' : res.platform === 'long' ? 'g' : ''}" href="/desk/?a=${res.addr}">Trade it on paper →</a><button class="btn ghost" data-do="ask">Ask the conductor</button>` : '')
     + `<button class="btn ghost" data-do="card">Save the card</button><button class="btn ghost" data-do="x">Post on X</button><button class="btn ghost" data-do="link">Copy link</button><a class="btn ghost" href="${EXPLORER}/token/${res.addr}" target="_blank" rel="noopener">Explorer ↗</a>`
@@ -67,17 +75,17 @@ async function ask(q = '') {
 $('#cond-form').addEventListener('submit', e => { e.preventDefault(); const q = $('#cond-q').value.trim(); if (q && shown) ask(q); });
 $('#t-acts').addEventListener('click', async e => {
   const b = e.target.closest('[data-do]'); if (!b || !shown) return;
-  const link = location.origin + '/card/' + shown.addr;   // the card page: a preview image on X and Telegram, then straight to this ticket
+  const link = isSol(shown.addr) ? location.origin + '/ticket/?a=' + shown.addr : location.origin + '/card/' + shown.addr;   // the card page: a preview image on X and Telegram, then straight to this ticket
   if (b.dataset.do === 'ask') ask();
   if (b.dataset.do === 'card') { b.textContent = 'Drawing…'; const how = await saveCard(shown).catch(() => 'failed'); b.textContent = how === 'saved' ? 'Saved' : how === 'shared' ? 'Shared' : 'Save the card'; }
   if (b.dataset.do === 'x') window.open(postUrl(shown, link), '_blank', 'noopener');
-  if (b.dataset.do === 'watch') { if (watching(shown.addr)) { unwatch(shown.addr); b.textContent = 'Watch'; } else { watch(shown); b.textContent = 'Watching'; } paintWatch(); }
+  if (b.dataset.do === 'watch' && !isSol(shown.addr)) { if (watching(shown.addr)) { unwatch(shown.addr); b.textContent = 'Watch'; } else { watch(shown); b.textContent = 'Watching'; } paintWatch(); }
   if (b.dataset.do === 'link') { try { await navigator.clipboard.writeText(link); b.textContent = 'Copied'; } catch (x) { b.textContent = link; } }
 });
 
 async function ride(addr, fresh) {
   const id = ++run;
-  addr = addr.toLowerCase();
+  addr = normAddr(addr);
   history.replaceState(null, '', '?a=' + addr);
   $('#a').value = addr; $('#tk').hidden = false;
   stops.forEach(n => { n.dataset.s = 'pending'; $('.tag', n).textContent = ''; $('.tag', n).className = 'tag'; $('p', n).textContent = ''; $('.fx', n).innerHTML = ''; });
@@ -115,8 +123,8 @@ let last = '';
 $('#f').addEventListener('submit', e => {
   e.preventDefault();
   const a = $('#a').value.trim();
-  if (!isAddr(a)) { msg.textContent = 'THAT IS NOT A TOKEN ADDRESS. IT SHOULD BE 0x FOLLOWED BY 40 HEX CHARACTERS.'; return; }
-  ride(a, a.toLowerCase() === last); last = a.toLowerCase();
+  if (!isToken(a)) { msg.textContent = 'THAT IS NOT A TOKEN ADDRESS. PASTE 0x… FOR ROBINHOOD CHAIN OR A SOLANA MINT.'; return; }
+  ride(a, normAddr(a) === last); last = normAddr(a);
 });
 
 async function recent() {
@@ -134,7 +142,7 @@ $('#sugg').addEventListener('click', e => { const c = e.target.closest('.chip');
 
 const q = new URLSearchParams(location.search).get('a');
 recent();
-if (isAddr(q)) { last = q.toLowerCase(); ride(q, false); }
+if (isToken(q)) { last = normAddr(q); ride(q, false); }
 
 // ChargeAI's read for Pons launches: asked once per ticket, shown beside the verdict, never mixed into it
 let secondFor = '';

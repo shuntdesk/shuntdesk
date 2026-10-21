@@ -1,10 +1,10 @@
 // The landing: one field to check a token, the site's own numbers, the latest calls and how they held, the tools.
 import { mountChrome, $, esc } from './ui.js';
-import { api, newPools, isAddr, ageShort } from './data.js';
+import { api, newPools, isToken as isAddr, ageShort } from './data.js';
 
 mountChrome('Yard');
-const go = a => { location.href = '/ticket/?a=' + a.trim().toLowerCase(); };
-$('#hf').addEventListener('submit', e => { e.preventDefault(); const a = $('#ha').value.trim(); if (isAddr(a)) go(a); else { $('#ha').value = ''; $('#ha').placeholder = 'That is not an address. It is 0x and 40 characters.'; } });
+const go = a => { a = a.trim(); location.href = '/ticket/?a=' + (/^0x/i.test(a) ? a.toLowerCase() : a); };
+$('#hf').addEventListener('submit', e => { e.preventDefault(); const a = $('#ha').value.trim(); if (isAddr(a)) go(a); else { $('#ha').value = ''; $('#ha').placeholder = 'That is not an address: 0x… on Robinhood Chain, or a Solana mint.'; } });
 
 const pct = v => (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%';
 // the numbers on the desk page, as they are now

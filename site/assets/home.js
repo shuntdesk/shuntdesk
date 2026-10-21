@@ -1,6 +1,6 @@
 import { createYard, STOPS, GZ } from './yard.js';
 import { mountChrome, $, $$, flap, band, clamp, esc, feedYard } from './ui.js';
-import { newPools, graduates, compact, ageShort, isAddr } from './data.js';
+import { newPools, graduates, compact, ageShort, isToken as isAddr } from './data.js';
 import { crewLines } from './crew.js';
 
 mountChrome('Yard');
