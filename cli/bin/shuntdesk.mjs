@@ -232,7 +232,7 @@ const COMMANDS = {
       line('dumped', (v.dumped ? red : green)(String(v.dumped)) + dim(` · ${v.dumpedFirstHour} in the first hour`)); line('burned most', String(v.burnedMost));
       if (v.partial) console.log('  ' + yellow(`○ ${v.unread} launch${v.unread === 1 ? '' : 'es'} could not be read: the record is partial`));
       if (v.launches?.length) { console.log(); for (const l of v.launches.slice(0, 12)) console.log('  ' + pad(bold(l.symbol || '?'), 14) + pad(dim(short(l.token)), 14) + (l.unread ? yellow('not read') : `${l.bonded ? green('bonded  ') : dim('on curve')}  ${l.dumped ? red('dumped') : ''}${l.burnedMost ? green(' burned most') : ''}`)); }
-      foot(v.note, `${BASE}/dev/?w=${v.wallet}`);
+      foot(v.note, `${BASE}/dev/?w=${v.wallet}`); console.log(dim('  share it: ') + cyan(`${BASE}/card/dev/${v.wallet}`) + '\n');
     });
   },
   async twins([a]) {
@@ -269,7 +269,7 @@ const COMMANDS = {
         console.log('  ' + pad(bold((t.symbol || '?').slice(0, 12)), 14) + pad(n0(amt), 12) + pad(dim(short(t.token)), 14) + tags);
       }
       if (T.length > 25) console.log('  ' + dim(`and ${T.length - 25} more`));
-      foot((v.note || '') + ' What each would fetch if sold now is worked on the site.', `${BASE}/wallet/?w=${v.wallet}`);
+      foot((v.note || '') + ' What each would fetch if sold now is worked on the site.', `${BASE}/wallet/?w=${v.wallet}`); console.log(dim('  share it: ') + cyan(`${BASE}/card/wallet/${v.wallet}`) + '\n');
     });
   },
   async bonds([k]) {

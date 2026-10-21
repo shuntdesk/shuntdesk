@@ -3,6 +3,10 @@
 import { createYard } from './yard.js';
 import { mountChrome, $, esc, feedYard } from './ui.js';
 import { api, prices, isAddr, compact } from './data.js';
+// a line under the result: this read as a card, a preview image wherever the link is posted
+const shareLine = (host, url) => { let p = host.querySelector('.share-card'); if (!p) { p = document.createElement('p'); p.className = 'note share-card'; p.style.marginTop = '10px'; host.appendChild(p); }
+  p.innerHTML = `SHARE AS A CARD: <a class="acc" href="${url}" target="_blank" rel="noopener">${url.replace('https://', '')}</a> <button class="btn ghost" type="button" style="margin-left:8px">Copy</button>`;
+  p.querySelector('button').onclick = async e => { try { await navigator.clipboard.writeText(url); e.target.textContent = 'Copied'; } catch (x) { e.target.textContent = url; } }; };
 
 mountChrome('');
 feedYard(createYard($('#yard'), { ambient: true }));
@@ -29,6 +33,7 @@ async function run(w) {
     return { ...t, qty, p, mark: p ? qty * p.price : null, out: p ? exitOut(qty, p) : null }; })
     .sort((a, b) => (b.mark || 0) - (a.mark || 0));
   const mark = rows.reduce((s, r) => s + (r.mark || 0), 0), out = rows.reduce((s, r) => s + (r.out || 0), 0), fakes = rows.filter(r => r.impostor).length;
+  shareLine($('#out'), location.origin + '/card/wallet/' + w);
   $('#out').hidden = false;
   $('#wx-mark').textContent = usd(mark); $('#wx-out').textContent = usd(out); $('#wx-out').className = 'v ' + (mark && out < mark * 0.8 ? 'short' : '');
   $('#wx-out2').textContent = mark ? `${Math.round((out / mark - 1) * 100)}% against the marked value` : 'through each pool’s depth';

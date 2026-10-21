@@ -2,6 +2,10 @@
 import { createYard } from './yard.js';
 import { mountChrome, $, esc, feedYard } from './ui.js';
 import { api, isAddr, rpc } from './data.js';
+// a line under the result: this read as a card, a preview image wherever the link is posted
+const shareLine = (host, url) => { let p = host.querySelector('.share-card'); if (!p) { p = document.createElement('p'); p.className = 'note share-card'; p.style.marginTop = '10px'; host.appendChild(p); }
+  p.innerHTML = `SHARE AS A CARD: <a class="acc" href="${url}" target="_blank" rel="noopener">${url.replace('https://', '')}</a> <button class="btn ghost" type="button" style="margin-left:8px">Copy</button>`;
+  p.querySelector('button').onclick = async e => { try { await navigator.clipboard.writeText(url); e.target.textContent = 'Copied'; } catch (x) { e.target.textContent = url; } }; };
 
 mountChrome('');
 feedYard(createYard($('#yard'), { ambient: true }));
@@ -28,6 +32,7 @@ async function run(a) {
   $('#dv-b').textContent = v.burnedMost; $('#dv-by').textContent = `${v.bonded} bonded · newest first`;
   const l = $('#dv-list'); l.querySelectorAll('.r:not(.h)').forEach(n => n.remove());
   l.insertAdjacentHTML('beforeend', v.launches.map(x => `<a class="r" href="/ticket/?a=${x.token}"><span class="sy">${esc(x.symbol)}<small>${x.token.slice(0, 6)}…${x.token.slice(-4)}</small></span><span>${when(x.launched)}</span><span>${n0(x.got)}</span><span class="${x.dumped ? 'short' : ''}">${n0(x.sold + x.sentAway)}</span><span class="${x.burnedMost ? 'long' : ''}">${n0(x.burned)}</span><span>${x.dumpedFirstHour ? '<b class="short">dumped in the first hour</b>' : x.dumped ? '<b class="short">dumped</b>' : x.burnedMost ? '<b class="long">burned</b>' : x.got ? 'held' : 'never held it'}${x.bonded ? ' · bonded' : ''}</span></a>`).join(''));
+  shareLine($('#dv-out'), location.origin + '/card/dev/' + a);
   $('#dv-note').textContent = (v.partial ? `Shuntdesk's launch index is still filling: it holds every Pons launch since ${v.indexFrom ? new Date(v.indexFrom).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : 'recently'}, and reaches back to the factory's first launch within hours. An older launch may not show yet. ` : '') + v.note;
 }
 $('#dv-form').addEventListener('submit', e => { e.preventDefault(); const a = $('#dv-a').value.trim(); if (isAddr(a)) run(a); else $('#dv-msg').textContent = 'PASTE A 0x… ADDRESS.'; });

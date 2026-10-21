@@ -2095,6 +2095,59 @@ function cardSvg(c) {
   <text x="1136" y="600" text-anchor="end" font-family="JetBrains Mono" font-weight="700" font-size="18" fill="#2ed3a0">shuntdesk.com</text>
 </svg>`;
 }
+const cardX = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const cardCut = (s, n) => (s = String(s || '')).length > n ? s.slice(0, n - 1) + '…' : s;
+function cardFrame({ pill, pillCol = '#edebe6', big, meta, body, read, kind }) {
+  const vw = pill.length * 15.6 + 40;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs><radialGradient id="gl" cx="85%" cy="20%" r="70%"><stop offset="0" stop-color="#1b1d21"/><stop offset="1" stop-color="#060708"/></radialGradient>
+  <pattern id="gr" width="48" height="48" patternUnits="userSpaceOnUse"><path d="M48 0H0V48" fill="none" stroke="#ffffff" stroke-opacity=".035"/></pattern></defs>
+  <rect width="1200" height="630" fill="url(#gl)"/><rect width="1200" height="630" fill="url(#gr)"/>
+  <g transform="translate(870 70) scale(1.25)" opacity=".06"><path fill="#edebe6" d="M0 400V241.7L156 117.7V34L190 0H240V158.3L84 282.3V366L50 400Z"/></g>
+  <g transform="translate(64 52) scale(.11)"><path fill="#edebe6" d="M0 400V241.7L156 117.7V34L190 0H240V158.3L84 282.3V366L50 400Z"/></g>
+  <text x="102" y="88" font-family="JetBrains Mono" font-weight="700" font-size="21" letter-spacing="7" fill="#edebe6">SHUNTDESK</text>
+  <text x="102" y="114" font-family="JetBrains Mono" font-weight="700" font-size="15" letter-spacing="4" fill="#6f6d68">${cardX(kind)}</text>
+  <rect x="${1136 - vw}" y="58" width="${vw}" height="46" rx="6" fill="none" stroke="${pillCol}" stroke-width="2"/><text x="${1136 - vw / 2}" y="89" text-anchor="middle" font-family="JetBrains Mono" font-weight="700" font-size="24" fill="${pillCol}">${cardX(pill)}</text>
+  <text x="60" y="236" font-family="Big Shoulders Display" font-weight="900" font-size="120" fill="#edebe6">${cardX(big)}</text>
+  <text x="64" y="276" font-family="Barlow" font-weight="500" font-size="24" fill="#8d8b86">${cardX(meta)}</text>
+  ${body}
+  <line x1="64" y1="566" x2="1136" y2="566" stroke="#ffffff" stroke-opacity=".1"/>
+  <text x="64" y="600" font-family="JetBrains Mono" font-weight="700" font-size="16" letter-spacing="2" fill="#6f6d68">READ FROM THE CHAIN ${cardX(read.slice(0, 16).replace('T', ' '))} UTC  ·  FINDINGS, NOT ADVICE</text>
+  <text x="1136" y="600" text-anchor="end" font-family="JetBrains Mono" font-weight="700" font-size="18" fill="#2ed3a0">shuntdesk.com</text>
+</svg>`;
+}
+const cardRows = (rows, y = 340) => rows.map((r, i) => `<circle cx="72" cy="${y + i * 44 - 9}" r="8" fill="${{ r: '#ff6b6b', y: '#f0c75e', g: '#2ed3a0', n: '#8d8b86' }[r.lvl]}"/><text x="94" y="${y + i * 44}" font-family="Barlow" font-weight="500" font-size="28" fill="#edebe6">${cardX(cardCut(r.text, 74))}</text>`).join('');
+const cardStats = (stats, y = 356) => stats.map((s, i) => `<text x="${64 + i * 268}" y="${y}" font-family="Big Shoulders Display" font-weight="900" font-size="64" fill="${s.col || '#edebe6'}">${cardX(s.v)}</text><text x="${66 + i * 268}" y="${y + 30}" font-family="JetBrains Mono" font-weight="700" font-size="15" letter-spacing="3" fill="#8d8b86">${cardX(s.k)}</text>`).join('');
+async function walletCard(st, env, w) {
+  const k = 'w:' + w, hit = cards.get(k); if (hit && Date.now() - hit.t < 30 * 60000) return hit.v;
+  const v0 = await walletView(st, env, w).catch(e => ({ ok: false, why: String(e.message || e) }));
+  const T = v0?.tokens || [], copies = T.filter(x => x.impostor), danger = T.filter(x => x.verdict?.verdict === 'DANGER'), curve = T.filter(x => x.curve), powered = T.filter(x => x.powers?.length);
+  const rows = [...copies.map(x => ({ lvl: 'r', text: `${x.symbol || 'a token'} (${x.token.slice(0, 6)}…) is a copy: the real one is ${x.impostor.slice(0, 6)}…` })), ...danger.map(x => ({ lvl: 'r', text: `${x.symbol}: a DANGER verdict on file` })),
+    ...powered.map(x => ({ lvl: 'y', text: `${x.symbol}: its contract can ${x.powers[0]}` })), ...curve.map(x => ({ lvl: 'g', text: `${x.symbol}: still on its Pons curve${x.curve.progress != null ? ', ' + Number(x.curve.progress).toFixed(0) + '%' : ''}` }))];
+  const v = { ok: v0?.ok !== false, why: v0?.why, wallet: w, tokens: T.length, copies: copies.length, danger: danger.length, onCurve: curve.length, rows: rows.slice(0, 5), more: Math.max(0, rows.length - 5), read: new Date().toISOString() };
+  cards.set(k, { t: Date.now(), v }); return v;
+}
+function walletSvg(c) {
+  const body = !c.ok ? cardRows([{ lvl: 'n', text: 'not read right now: ' + (c.why || 'the explorer did not answer') }], 360)
+    : cardStats([{ k: 'TOKENS', v: String(c.tokens) }, { k: 'COPIES OF REAL TOKENS', v: String(c.copies), col: c.copies ? '#ff6b6b' : '#2ed3a0' }, { k: 'DANGER VERDICTS', v: String(c.danger), col: c.danger ? '#ff6b6b' : '#edebe6' }, { k: 'ON A PONS CURVE', v: String(c.onCurve) }])
+      + cardRows(c.rows.length ? c.rows.slice(0, 3) : [{ lvl: 'g', text: 'no copy of a real token and no DANGER verdict among them' }], 458)
+      + (c.more ? `<text x="94" y="${458 + Math.min(3, c.rows.length) * 44}" font-family="Barlow" font-weight="500" font-size="22" fill="#8d8b86">and ${c.more} more on the X-ray</text>` : '');
+  return cardFrame({ kind: 'WALLET X-RAY', pill: c.copies ? `${c.copies} COP${c.copies === 1 ? 'Y' : 'IES'}` : 'NO COPIES', pillCol: c.copies ? '#ff6b6b' : '#2ed3a0', big: c.wallet.slice(0, 6) + '…' + c.wallet.slice(-4), meta: c.wallet, body, read: c.read });
+}
+async function devCard(st, env, w) {
+  const k = 'd:' + w, hit = cards.get(k); if (hit && Date.now() - hit.t < 30 * 60000) return hit.v;
+  const s = await devScore(st, env, w).catch(e => ({ ok: false, why: String(e.message || e) }));
+  const v = { ...s, wallet: w, read: new Date().toISOString() };
+  if (s?.ok) cards.set(k, { t: Date.now(), v });
+  return v;
+}
+function devSvg(c) {
+  if (!c.ok) return cardFrame({ kind: 'DEV SCORE', pill: 'NOT READ', pillCol: '#8d8b86', big: c.wallet.slice(0, 6) + '…' + c.wallet.slice(-4), meta: c.wallet, body: cardRows([{ lvl: 'n', text: 'not read right now: ' + cardCut(c.why || 'the chain index did not answer', 60) }], 360), read: c.read });
+  const sc = c.score, col = sc == null ? '#8d8b86' : sc >= 80 ? '#2ed3a0' : sc >= 50 ? '#f0c75e' : '#ff6b6b';
+  const rows = (c.launches || []).slice(0, 4).map(l => ({ lvl: l.unread ? 'n' : l.dumped ? 'r' : l.bonded ? 'g' : l.burnedMost ? 'g' : 'y', text: `${l.symbol}: ${l.unread ? 'not read' : [l.bonded ? 'bonded' : 'not bonded yet', l.dumped ? 'dumped by the launcher' : null, l.burnedMost ? 'the launcher burned most' : null].filter(Boolean).join(' · ')}` }));
+  const body = cardStats([{ k: 'LAUNCHES', v: String(c.launched) }, { k: 'BONDED', v: String(c.bonded), col: '#2ed3a0' }, { k: 'DUMPED', v: String(c.dumped), col: c.dumped ? '#ff6b6b' : '#edebe6' }, { k: 'BURNED MOST', v: String(c.burnedMost) }]) + cardRows(rows.slice(0, 3), 458);
+  return cardFrame({ kind: 'DEV SCORE · PONS LAUNCHER', pill: sc == null ? 'NO SCORE' : `SCORE ${sc}/100`, pillCol: col, big: c.wallet.slice(0, 6) + '…' + c.wallet.slice(-4), meta: c.wallet + (c.partial ? '  ·  part of the record not read' : ''), body, read: c.read });
+}
 async function badgeSvg(st, env, a) {
   const v = st.verdicts.find(x => x.addr === a), dl = await devLedger(env, a).catch(() => null), c = await ponsCurve(a).catch(() => null);
   const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
@@ -2651,12 +2704,24 @@ const api = {
         await save(env, st); return json(bondGameView(st, String(url.searchParams.get('me') || '').toLowerCase(), await bondsLoad(env), String(url.searchParams.get('vs') || '').toLowerCase()));
       }
       if (url.pathname.startsWith('/card/')) {
-        const png = url.pathname.endsWith('.png'), a = url.pathname.slice(6).replace(/\.png$/, '').toLowerCase();
-        if (!isAddr(a)) return new Response('not found', { status: 404 });
-        if (!cards.has(a) && !allow(st, ip, 'card', 60)) return new Response('slow down', { status: 429 });
-        const c = await cardData(st, env, a); await save(env, st);
-        if (png) { const { svgToPng } = await import('./card.js'); return new Response(await svgToPng(cardSvg(c)), { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=1800' } }); }
-        if (url.searchParams.has('svg')) return new Response(cardSvg(c), { headers: { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'no-store' } });
+        const png = url.pathname.endsWith('.png'), parts = url.pathname.slice(6).replace(/\.png$/, '').toLowerCase().split('/'), kind = parts.length === 2 ? parts[0] : 'token', a = parts[parts.length - 1];
+        if (!isAddr(a) || !['token', 'wallet', 'dev'].includes(kind)) return new Response('not found', { status: 404 });
+        const ck = kind === 'token' ? a : (kind === 'wallet' ? 'w:' : 'd:') + a;
+        if (!cards.has(ck) && !allow(st, ip, 'card', 60)) return new Response('slow down', { status: 429 });
+        const c = kind === 'wallet' ? await walletCard(st, env, a) : kind === 'dev' ? await devCard(st, env, a) : await cardData(st, env, a); await save(env, st);
+        const svg = () => kind === 'wallet' ? walletSvg(c) : kind === 'dev' ? devSvg(c) : cardSvg(c);
+        if (png) { const { svgToPng } = await import('./card.js'); return new Response(await svgToPng(svg()), { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=1800' } }); }
+        if (url.searchParams.has('svg')) return new Response(svg(), { headers: { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'no-store' } });
+        if (kind !== 'token') {
+          const E = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), short = a.slice(0, 6) + '…' + a.slice(-4);
+          const name = kind === 'wallet' ? `Wallet ${short} on Shuntdesk` : `Launcher ${short} on Shuntdesk`, go = kind === 'wallet' ? `/wallet/?w=${a}` : `/dev/?w=${a}`;
+          const desc = kind === 'wallet' ? (c.ok ? `${c.tokens} tokens, ${c.copies} copies of real tokens, ${c.danger} with a DANGER verdict.` : 'Wallet X-ray.') : (c.ok ? `${c.launched} Pons launches, ${c.bonded} bonded, ${c.dumped} dumped${c.score != null ? ', score ' + c.score + '/100' : ''}.` : 'Dev Score.');
+          const img = `${url.origin}/card/${kind}/${a}.png?h=${Math.floor(Date.now() / 1800000)}`;
+          return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${E(name)}</title><meta name="description" content="${E(desc)} Findings, not advice.">
+<meta property="og:type" content="website"><meta property="og:site_name" content="Shuntdesk"><meta property="og:title" content="${E(name)}"><meta property="og:description" content="${E(desc)} Findings, not advice."><meta property="og:url" content="${url.origin}/card/${kind}/${a}">
+<meta property="og:image" content="${img}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${img}">
+<meta http-equiv="refresh" content="0;url=${go}"><link rel="icon" href="/favicon.svg?v=2"></head><body style="margin:0;background:#060708"><a href="${go}"><img src="${img}" alt="${E(name)}: ${E(desc)}" style="display:block;max-width:100%;margin:0 auto"></a></body></html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=600' } });
+        }
         const E = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), name = c.symbol ? '$' + c.symbol : a.slice(0, 10);
         const desc = (c.verdict ? `${c.verdict.verdict} ${c.verdict.score}/100. ` : '') + (c.findings.slice(0, 3).map(f => f.text).join('. ') || 'Read from the chain') + '. Findings, not advice.';
         const img = `${url.origin}/card/${a}.png?h=${Math.floor(Date.now() / 1800000)}`, go = `/ticket/?a=${a}`;
