@@ -1,6 +1,6 @@
 // The Robinhood Chain tools, for Solana: largest holders, Shared Bags, Dev Ledger, Wallet X-ray and the Pump.fun
 // curve for the simulator. Each answers in the shape the Robinhood Chain version already has, so the pages draw both.
-import { rpc, getJ, pumpCurve, solPrice, cache, SYSTEM, INCIN, PUMP_NEED } from './solana.js';
+import { rpc, getJ, pumpCurve, solPrice, cache, SYSTEM, INCIN, PUMP_NEED, pda, b58decode } from './solana.js';
 
 const RAY_AUTH = new Set(['5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1', 'GpMZbSM2GgvTKHJirzeGfMFoaZ8UR2X7F4v8vHTvxFbL', 'WLHv2UAZm6z4KyaaELi5pjdbJh6RESMva1Rnn8pJVVh']);   // Raydium AMM, CPMM and LaunchLab authorities
 const keep = (m, k, v, n = 200) => { m.set(k, { t: Date.now(), v }); if (m.size > n) m.delete(m.keys().next().value); return v; };
@@ -45,7 +45,13 @@ export async function solShared(env, a, b) {
 }
 
 // Dev Ledger on Solana: the creator's own transactions, parsed by Helius, and every move of this token in them
-async function parsed(env, w, pages = 2) {
+const parsedHit = new Map();
+export async function parsed(env, w, pages = 2) {
+  const h = parsedHit.get(w); if (h && Date.now() - h.t < 10 * 60000 && (h.pages >= pages || h.v.length < h.pages * 100)) return h.v;
+  const v = await parsedRead(env, w, pages); parsedHit.set(w, { t: Date.now(), pages, v }); if (parsedHit.size > 200) parsedHit.delete(parsedHit.keys().next().value);
+  return v;
+}
+async function parsedRead(env, w, pages) {
   const out = []; let before = '';
   for (let i = 0; i < pages; i++) {
     const j = await getJ(`https://api.helius.xyz/v0/addresses/${w}/transactions?api-key=${env.HELIUS_API_KEY}&limit=100${before ? '&before=' + before : ''}`);

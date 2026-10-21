@@ -14,6 +14,7 @@ import { FEE, MAX_IMPACT, impact, fill, value } from '../site/assets/trade.js';
 import { sameHand } from '../site/assets/hand.js';
 import { solScan, isSol, solPrice, pumpCurve } from './solana.js';
 import { solHolders, solShared, solLedger, solWallet, solSim } from './soltools.js';
+import { solFirst, solSerial } from './solfirst.js';
 
 const DS = 'https://api.dexscreener.com';
 // some data services turn away requests that do not say who is asking
@@ -398,11 +399,12 @@ const MCP_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 const ADDR = { type: 'string', pattern: '^0x[0-9a-fA-F]{40}$', description: 'A token address on Robinhood Chain (chain id 4663)' };
 const AGENT_LIMIT = { shared: 20, devscore: 30, wallet: 30, holders: 30, sol: 30 };
 // a Solana token through the seven stops, on the server (the Helius key stays here)
-const solRead = (env, mint) => solScan(env, mint, { goplus: m => goplusSol(env, m), codex: m => launchCodex(env, m, 1399811149) });
+const solRead = (env, mint) => solScan(env, mint, { goplus: m => goplusSol(env, m), codex: m => launchCodex(env, m, 1399811149), serial: w => solSerial(env, w) });
 // the Robinhood Chain tools answered for a Solana mint or wallet: the same shapes, read from Solana
-const SOL_TOOLS = ['ledger', 'devledger', 'wallet', 'sim', 'shared', 'replay', 'site', 'looks', 'lookalikes', 'xray', 'scan', 'twins', 'devscore', 'holders'];
+const SOL_TOOLS = ['first', 'ledger', 'devledger', 'wallet', 'sim', 'shared', 'replay', 'site', 'looks', 'lookalikes', 'xray', 'scan', 'twins', 'devscore', 'holders'];
 async function solRoute(st, env, p, a, b = '', extra = []) {
   if (p === 'ledger' || p === 'devledger') return solLedger(env, a, await solRead(env, a));
+  if (p === 'first') return solFirst(env, a, await solRead(env, a).catch(() => null));
   if (p === 'wallet') return solWallet(env, a);
   if (p === 'sim') return solSim(env, a);
   if (p === 'holders') return solHolders(env, a);
@@ -422,9 +424,9 @@ async function solReplay(st, env, mint) {
   const to = Math.floor(now / 1000), from = Math.max(to - 30 * 86400, born ? Math.floor(born / 1000) - 600 : r?.launch?.pad === 'pumpfun' && !r.launch.graduated ? to - 2 * 86400 : to - 30 * 86400), span = to - from;
   const res = span <= 2 * 86400 ? '5' : span <= 7 * 86400 ? '15' : span <= 20 * 86400 ? '60' : '240';
   let bars = [];
-  if (env.CODEX_API_KEY && await codexOk(env, 'replay')) try {
+  if (codexOn(env) && await codexOk(env, 'replay')) try {
     const q = `{ getBars(symbol: "${mint}:1399811149", from: ${from}, to: ${to}, resolution: "${res}", removeLeadingNullValues: true) { t o h l c v } }`;
-    const b = (await (await fetch('https://graph.codex.io/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: env.CODEX_API_KEY }, body: JSON.stringify({ query: q }) })).json()).data?.getBars;
+    const b = (await (await codexPost(env, q)).json()).data?.getBars;
     if (b) bars = b.t.map((t, i) => ({ t: t * 1000, o: b.o[i], h: b.h[i], l: b.l[i], c: b.c[i] })).filter(x => x.c != null && x.o != null);
   } catch (e) {}
   // when Codex has spent its day, GeckoTerminal's candles for the pool (free, no key)
@@ -452,10 +454,10 @@ async function solDevScore(st, env, a) {
   const isMint = await solRead(env, a).then(r => r.verdict !== 'NO POOL' ? r : null).catch(() => null);
   if (isMint) { w = isMint.creator; if (!w) return { ok: false, why: 'the wallet that launched this token could not be found' }; }
   const hit = solDevs.get(w); if (hit && Date.now() - hit.t < 30 * 60000) return hit.v;
-  if (!env.CODEX_API_KEY || !(await codexOk(env, 'devsol'))) return { ok: false, why: 'busy, try again later' };
+  if (!codexOn(env) || !(await codexOk(env, 'devsol'))) return { ok: false, why: 'busy, try again later' };
   let j = null; try {
     const q = `{ filterTokens(filters: { network: [1399811149], creatorAddress: "${w}" }, limit: 50, rankings: { attribute: createdAt, direction: DESC }) { count results { createdAt marketCap liquidity holders devHeldPercentage token { address symbol launchpad { completed graduationPercent launchpadName } } } } }`;
-    j = (await (await fetch('https://graph.codex.io/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: env.CODEX_API_KEY }, body: JSON.stringify({ query: q }) })).json()).data?.filterTokens;
+    j = (await (await codexPost(env, q)).json()).data?.filterTokens;
   } catch (e) {}
   if (!j) return { ok: false, why: 'the launch index did not answer' };
   const now = Date.now(), launches = (j.results || []).map(x => { const lp = x.token?.launchpad, mc = Number(x.marketCap) || 0, age = now - x.createdAt * 1000;
@@ -476,6 +478,9 @@ async function solCard(st, env, a) {
   for (const x of r?.steps || []) { if (['sources', 'judge'].includes(x.key)) continue; if (x.status === 'bad') add('r', first(x.detail)); else if (x.status === 'warn') add('y', first(x.detail)); }
   if (led?.ok) { const L = led.ledger, got = L.bought + L.received; if (got) { const sold = L.sold / got; if (sold >= 0.5) add('r', `the deployer sold ${pc(sold * 100)} of what it got`); else if (sold > 0) add('y', `the deployer sold ${pc(sold * 100)} of what it got`); else add('g', 'the deployer has not sold'); }
     if (led.sideBuys?.length) add('y', `the deployer paid for buys that landed in ${led.sideBuys.length} other wallet${led.sideBuys.length > 1 ? 's' : ''}`); }
+  const fb = r?.launch?.pad === 'pumpfun' ? await solFirst(env, a, r).catch(() => null) : null;
+  if (fb?.ok && fb.sameSlot) add(fb.sameSlotPct >= 20 ? 'r' : 'y', `${fb.sameSlot} wallets bought ${pc(fb.sameSlotPct)} in the launch slot beside the deployer`);
+  if (r?.serial?.created >= 3) add(r.serial.created >= 10 ? 'r' : 'y', `the deployer created ${r.serial.created} tokens in its latest ${r.serial.read} transactions`);
   if ((r?.steps || []).find(x => x.key === 'auditor')?.status === 'ok') add('g', 'mint and freeze authority both revoked');
   F.sort((p, q) => 'ryg'.indexOf(p.lvl) - 'ryg'.indexOf(q.lvl));
   const L = r?.launch, curve = L?.pad === 'pumpfun' && !L.graduated && L.progress != null;
@@ -497,6 +502,7 @@ const TOOLS = [
   { name: 'dev_score', title: 'Dev Score', p: 'devscore', description: 'The record of a launcher wallet on Pons: every token it launched, how many bonded, how many lost half, and how much the wallet sold. Pass the launcher wallet, not the token.', inputSchema: { type: 'object', properties: { address: { ...ADDR, description: 'A launcher wallet on Robinhood Chain' } }, required: ['address'], additionalProperties: false } },
   { name: 'shared_bags', title: 'Shared Bags', p: 'shared', description: 'The wallets among the largest holders of two tokens that hold both, with the share each one holds of each token. Pools, curves and contracts left out. Holding both is a link, not proof of a group.', inputSchema: { type: 'object', properties: { address: ADDR, other: { ...ADDR, description: 'The second token address' } }, required: ['address', 'other'], additionalProperties: false } },
   { name: 'solana_token', title: 'Solana token check', p: 'sol', description: 'The seven checks for a Solana token (pass the mint address): pool and liquidity, the Pump.fun curve if it is on one, the largest wallets, who funded them, the share the creator keeps, snipers and bundles at launch, and the powers of the mint (mint and freeze authority, Token-2022 extensions). A verdict CLEAN, RISKY or DANGER with every lost point explained.', inputSchema: { type: 'object', properties: { address: { type: 'string', description: 'Solana token mint address (base58)' } }, required: ['address'] } },
+  { name: 'first_buyers', title: 'First Buyers (Solana)', p: 'first', description: 'For a Pump.fun token on Solana: the first buyers from its curve history, who bought in the same slot as the launch beside the deployer, what share each bought and still holds, how many sold everything, and who funded the first twelve (the deployer, or one shared wallet). Pass the mint.', inputSchema: { type: 'object', properties: { address: { type: 'string', description: 'Solana token mint address (base58)' } }, required: ['address'] } },
   { name: 'daily_report', title: 'Daily report', p: 'report', description: 'The crew desk over the last 24 hours: balance and change, verdict counts, how many calls held, best and worst trade, with a one-paragraph summary.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
 ];
 async function mcp(st, env, request, body, ip) {
@@ -516,8 +522,9 @@ async function mcp(st, env, request, body, ip) {
     if (m.method === 'tools/call') {
       const tool = TOOLS.find(t => t.name === m.params?.name); if (!tool) return fail(-32602, 'Unknown tool: ' + String(m.params?.name).slice(0, 40));
       if (!allow(st, ip, 'agent', 120)) return ok({ isError: true, content: [{ type: 'text', text: 'Rate limited: 120 calls an hour.' }] });
-      const raw = String(m.params?.arguments?.address || '').trim(), a = tool.p === 'sol' ? raw : raw.toLowerCase(), b = String(m.params?.arguments?.other || '').toLowerCase();
+      const raw = String(m.params?.arguments?.address || '').trim(), a = tool.p === 'sol' || tool.p === 'first' || isSol(raw) ? raw : raw.toLowerCase(), b = String(m.params?.arguments?.other || '').toLowerCase();
       if (AGENT_LIMIT[tool.p] && !allow(st, ip, 'agent-' + tool.p, AGENT_LIMIT[tool.p])) return ok({ isError: true, content: [{ type: 'text', text: `Rate limited: ${AGENT_LIMIT[tool.p]} calls an hour for this tool.` }] });
+      if (tool.p === 'first' && isSol(a)) { const [code, out] = [200, await solRoute(st, env, 'first', a)]; return ok({ isError: out.ok === false, content: [{ type: 'text', text: JSON.stringify(out, null, 1) }], structuredContent: out }); }
       if (tool.p === 'sol' && !isSol(a)) return ok({ isError: true, content: [{ type: 'text', text: 'address must be a Solana mint address (base58)' }] });
       if (tool.p !== 'sol' && tool.inputSchema.required?.includes('address') && !isAddr(a)) return ok({ isError: true, content: [{ type: 'text', text: 'address must be 0x followed by 40 hex characters' }] });
       const [code, out] = await agentData(st, env, tool.p, a, b);
@@ -551,7 +558,7 @@ async function ponsEvents(env, addr) {
 async function replay(st, env, addr) {
   const hit = replays.get(addr), now = Date.now(); if (hit && now - hit.t < 30 * 60000) return hit.v;
   const day = new Date().toISOString().slice(0, 10); if (replayDay.day !== day) replayDay = { day, n: 0 };
-  if (!env.CODEX_API_KEY || replayDay.n >= 120) return { ok: false, why: 'busy, try again later' };
+  if (!codexOn(env) || replayDay.n >= 120) return { ok: false, why: 'busy, try again later' };
   replayDay.n++;
   const [ev, L] = await Promise.all([ponsEvents(env, addr), launch(env, addr).catch(() => null)]);
   // the price line from launch (or 30 days back) to now, at a resolution that keeps it under ~600 bars
@@ -560,7 +567,7 @@ async function replay(st, env, addr) {
   let bars = [];
   if (await codexOk(env, 'replay')) try {
     const q = `{ getBars(symbol: "${addr}:4663", from: ${from}, to: ${to}, resolution: "${res}", removeLeadingNullValues: true) { t o h l c v } }`;
-    const r = await fetch('https://graph.codex.io/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: env.CODEX_API_KEY }, body: JSON.stringify({ query: q }) });
+    const r = await codexPost(env, q);
     const b = (await r.json()).data?.getBars;
     if (b) bars = b.t.map((t, i) => ({ t: t * 1000, o: b.o[i], h: b.h[i], l: b.l[i], c: b.c[i], v: b.v?.[i] || 0 })).filter(x => x.c != null && x.o != null);
   } catch (e) {}
@@ -706,14 +713,14 @@ function pushSubscribe(st, b) {
   return [200, { ok: true, id, watching: tokens.length }];
 }
 async function pushTick(st, env) {
-  const P = st.push; if (!P || !env.VAPID_PRIVATE || !env.CODEX_API_KEY) return;
+  const P = st.push; if (!P || !env.VAPID_PRIVATE || !codexOn(env)) return;
   const now = Date.now(); if (now - (st.pushT || 0) < 30 * 60000) return; st.pushT = now;
   const all = [...new Set(Object.values(P).flatMap(s => s.tokens.map(t => t.addr)))].slice(0, 200); if (!all.length) return;
   const px = {};
   for (let i = 0; i < all.length; i += 25) {
     if (!(await codexOk(env, 'push'))) break;
     const q = `{ filterTokens(tokens: [${all.slice(i, i + 25).map(a => `"${a}:4663"`).join(',')}], limit: 25) { results { priceUSD liquidity token { address } } } }`;
-    try { const r = await fetch('https://graph.codex.io/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: env.CODEX_API_KEY }, body: JSON.stringify({ query: q }) }); for (const x of (await r.json()).data?.filterTokens?.results || []) px[x.token.address.toLowerCase()] = { p: Number(x.priceUSD) || 0, l: Number(x.liquidity) || 0 }; } catch (e) {}
+    try { const r = await codexPost(env, q); for (const x of (await r.json()).data?.filterTokens?.results || []) px[x.token.address.toLowerCase()] = { p: Number(x.priceUSD) || 0, l: Number(x.liquidity) || 0 }; } catch (e) {}
   }
   let sent = 0;
   for (const [id, s] of Object.entries(P)) {
@@ -775,6 +782,8 @@ async function telegram(st, env, request, body) {
     // the deployer's own record of this token: what it bought and what it sold
     const led = r.verdict !== 'NO POOL' ? await solLedger(env, r.addr, r).catch(() => null) : null;
     if (led?.ok) { const L = led.ledger, got = L.bought + L.received, pc = x => got ? Math.round(x / got * 100) + '%' : '0%';
+      const fb = r.launch?.pad === 'pumpfun' ? await solFirst(env, r.addr, r).catch(() => null) : null;
+      if (fb?.ok) rows.push(`<b>First buyers</b>\n${fb.sameSlot} wallets bought in the launch slot beside the deployer, ${fb.sameSlotPct.toFixed(1)}% of supply; they hold ${fb.sameSlotHoldsPct.toFixed(1)}% now. ${fb.soldAll} of the first ${fb.first} sold everything${fb.fundedByDev ? `, ${fb.fundedByDev} were funded by the deployer` : ''}.`);
       rows.push(`<b>Deployer</b> · <code>${led.dev.slice(0, 4)}…${led.dev.slice(-4)}</code>\n${got ? `sold ${pc(L.sold)} of what it got, sent ${pc(L.toWallets)} to other wallets` : 'bought none of it in its last 200 transactions'}${led.sideBuys?.length ? `, and paid for buys that landed in ${led.sideBuys.length} other wallet${led.sideBuys.length > 1 ? 's' : ''}` : ''}. Every launch by it: ${site}/dev/?w=${led.dev}`); }
     return reply([`<b>${tgEsc(r.sym || '')}</b>${r.name ? ' · ' + tgEsc(r.name) : ''} · Solana`, `<code>${r.addr}</code>`, '', r.verdict === 'NO POOL' ? '<b>NO POOL</b>' : `<b>${r.verdict} ${r.score}</b>`, '', ...rows.flatMap(x => [x, '']), `Full ticket: ${site}/ticket/?a=${r.addr}`].join('\n') + footer);
   }
@@ -1018,9 +1027,22 @@ async function agentToken(st, env, addr) {
 // The free plan is 10,000 calls a month, about 330 a day. Each feature has its own share of a 320-call day, so a
 // busy page can never use up what the Lookalikes log and the alerts need. The counts live in the desk's state,
 // so a restart of the server does not hand the day out a second time.
-const CODEX_SHARE = { looks: 70, launch: 125, candles: 40, replay: 30, push: 40, devsol: 15 };   // launch facts feed every ticket, so they get the largest share
+// two free Codex keys: the newer one is spent first; a key that answers with a limit is set aside for six hours
+const codexOn = env => !!(env.CODEX_API_KEY2 || env.CODEX_API_KEY), codexOut = new Map();
+async function codexPost(env, q) {
+  const keys = [env.CODEX_API_KEY2, env.CODEX_API_KEY].filter(k => k && !(codexOut.get(k) > Date.now()));
+  for (const k of keys) {
+    const r = await fetch('https://graph.codex.io/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: k }, body: JSON.stringify({ query: q }) });
+    const txt = await r.text(); let j = null; try { j = JSON.parse(txt); } catch (e) {}
+    const spent = r.status === 402 || r.status === 429 || (!j?.data && (j?.errors || []).some(e => /limit|quota|exceed|usage|plan|credit|unauthor/i.test(e.message || '')));
+    if (spent) { codexOut.set(k, Date.now() + 6 * 3600000); continue; }
+    return new Response(txt, { status: r.status, headers: { 'Content-Type': 'application/json' } });
+  }
+  return new Response('{"errors":[{"message":"no Codex key with calls left"}]}', { status: 503, headers: { 'Content-Type': 'application/json' } });
+}
+const CODEX_SHARE = { looks: 120, launch: 260, candles: 80, replay: 60, push: 80, devsol: 40 };   // launch facts feed every ticket, so they get the largest share
 async function codexOk(env, kind) {
-  if (!env.CODEX_API_KEY) return false;
+  if (!codexOn(env)) return false;
   const st = await load(env), day = new Date().toISOString().slice(0, 10);
   if (st.codex?.day !== day) st.codex = { day, n: {} };
   const n = st.codex.n[kind] || 0; if (n >= CODEX_SHARE[kind]) return false;
@@ -1030,11 +1052,11 @@ const bars = new Map();
 async function candles(env, addr) {
   const hit = bars.get(addr), now = Date.now();
   if (hit && now - hit.t < 60000) return hit.v;
-  if (!env.CODEX_API_KEY) return { rows: [], res: 1 };
+  if (!codexOn(env)) return { rows: [], res: 1 };
   const ask = async (res, secs) => {
     if (!(await codexOk(env, 'candles'))) return [];
     const to = Math.floor(now / 1000), q = `{ getBars(symbol: "${addr}:4663", from: ${to - secs}, to: ${to}, resolution: "${res}", removeLeadingNullValues: true) { t o h l c } }`;
-    const r = await fetch('https://graph.codex.io/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: env.CODEX_API_KEY }, body: JSON.stringify({ query: q }) });
+    const r = await codexPost(env, q);
     const b = (await r.json()).data?.getBars; if (!b) return [];
     return b.t.map((t, i) => ({ t: t * 1000, o: b.o[i], h: b.h[i], l: b.l[i], c: b.c[i] })).filter(x => x.c != null && x.o != null);
   };
@@ -1152,7 +1174,7 @@ async function launchCodex(env, addr, net = 4663) {
   let v = { ok: false, why: 'no answer' };
   try {
     const q = `{ filterTokens(tokens: ["${addr}:${net}"], limit: 1) { results { priceUSD liquidity holders top10HoldersPercent createdAt sniperCount sniperHeldPercentage bundlerCount bundlerHeldPercentage insiderCount insiderHeldPercentage devHeldPercentage token { symbol creatorAddress launchpad { launchpadName graduationPercent completed completedAt } } } } }`;
-    const r = await fetch('https://graph.codex.io/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: env.CODEX_API_KEY }, body: JSON.stringify({ query: q }) });
+    const r = await codexPost(env, q);
     const x = (await r.json()).data?.filterTokens?.results?.[0];
     if (x) { const lp = x.token?.launchpad; v = { ok: true, launchpad: lp?.launchpadName || null, progress: lp?.graduationPercent ?? null, graduated: lp ? !!lp.completed : null,
       snipers: x.sniperCount, sniperPct: x.sniperHeldPercentage, bundlers: x.bundlerCount, bundlerPct: x.bundlerHeldPercentage, insiders: x.insiderCount, insiderPct: x.insiderHeldPercentage, devPct: x.devHeldPercentage,
@@ -1175,7 +1197,7 @@ let looksMem = null;
 const looksLoad = async env => looksMem || (looksMem = await env.KV.get(LOOKS).then(s => s ? JSON.parse(s) : { rows: [], cur: 0, t: 0, day: '', n: 0 }));
 async function codexAsk(env, L, q) {
   if (!(await codexOk(env, 'looks'))) throw new Error('daily Codex share used up');
-  const r = await fetch(CODEX, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: env.CODEX_API_KEY }, body: JSON.stringify({ query: q }) });
+  const r = await codexPost(env, q);
   const j = await r.json(); if (j.errors?.length) throw new Error(String(j.errors[0].message).slice(0, 100));
   return j.data?.filterTokens?.results || [];
 }
@@ -1183,7 +1205,7 @@ const lookFeat = x => [Number(x.liquidity) || 0, x.holders | 0, Number(x.top10Ho
 // Three reads an hour whatever the traffic: the tokens born in one window, read as they are now, then the same
 // window an hour later and a day later. A window is one hour of launches; at most 200 come back per read.
 async function looksTick(env) {
-  if (!env.CODEX_API_KEY) return;
+  if (!codexOn(env)) return;
   const L = await looksLoad(env), now = Date.now(); if (now - L.t < 60 * 60000) return; L.t = now;
   const win = (lo, hi, holders) => codexAsk(env, L, `{ filterTokens(filters: { network: [4663], createdAt: { gt: ${lo}, lte: ${hi} }, holders: { gt: ${holders} } }, rankings: [{ attribute: holders, direction: DESC }], limit: 200) { results { ${LOOK_FIELDS} } } }`);
   try {
@@ -3061,7 +3083,7 @@ const api = {
         const st0 = await load(env).catch(() => null);
         const T = '0x39dbed3a2bd333467115de45665cc57f813c4571', probe = async (u, h) => { try { const r = await fetch(u, { headers: { Accept: 'application/json', ...UA, ...h } }); return r.status; } catch (e) { return 'unreachable'; } };
         const sizes = {}; for (const k of [STATE, BONDS, LINDEX, LOOKS]) { const v = await env.KV.get(k).catch(() => null); sizes[k] = v ? v.length : 0; }   // a stored value may not pass 2 MB
-        return json({ storage: sizes, blockscoutCredits: { ...bsCredits, low: bsLow(), spare: bsSpare() }, tripTokens: Object.keys(st0?.trip || {}).length, blockscoutUse: { day: bsUse.day, by: Object.fromEntries(Object.entries(bsUse.by).sort((a, b) => b[1].credits - a[1].credits || b[1].calls - a[1].calls)) }, dexscreener: await probe(DS + '/tokens/v1/robinhood/' + T), dexscreenerNoAgent: await (async () => { try { return (await fetch(DS + '/tokens/v1/robinhood/' + T)).status; } catch (e) { return 'unreachable'; } })(), goplus: await probe('https://api.gopluslabs.io/api/v1/token_security/4663?contract_addresses=' + T), geckoterminal: await probe('https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/' + T), yahoo: await probe('https://query1.finance.yahoo.com/v8/finance/chart/TSLA?interval=1m&range=1d'), looks: await looksLoad(env).then(L => ({ logged: L.rows.length, judged: L.rows.filter(r => r.p1 !== undefined).length, err: L.err || null })).catch(e => String(e.message || e)), handLast: st0?.handLast || null, codexToday: st0?.codex || null, rpc: await (async () => { try { return (await fetch('https://rpc.mainnet.chain.robinhood.com', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' })).status; } catch (e) { return 'unreachable'; } })(), chain: await (async () => { const o = { nodes: RPCS.length }; for (const [k, fn] of [['ethUsd', () => poolRatio(ETH_REF)], ['decimals', () => rpc('eth_call', [{ to: T, data: '0x313ce567' }, 'latest'])]]) { try { o[k] = String(await fn()).slice(0, 12); } catch (e) { o[k] = 'ERR ' + String(e.message || e).slice(0, 60); } } return o; })(), keys: { openrouter: !!env.OPENROUTER_API_KEY, goplus: !!env.GOPLUS_APP_KEY, codex: !!env.CODEX_API_KEY, coingecko: !!env.COINGECKO_API_KEY } });
+        return json({ storage: sizes, blockscoutCredits: { ...bsCredits, low: bsLow(), spare: bsSpare() }, tripTokens: Object.keys(st0?.trip || {}).length, blockscoutUse: { day: bsUse.day, by: Object.fromEntries(Object.entries(bsUse.by).sort((a, b) => b[1].credits - a[1].credits || b[1].calls - a[1].calls)) }, dexscreener: await probe(DS + '/tokens/v1/robinhood/' + T), dexscreenerNoAgent: await (async () => { try { return (await fetch(DS + '/tokens/v1/robinhood/' + T)).status; } catch (e) { return 'unreachable'; } })(), goplus: await probe('https://api.gopluslabs.io/api/v1/token_security/4663?contract_addresses=' + T), geckoterminal: await probe('https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/' + T), yahoo: await probe('https://query1.finance.yahoo.com/v8/finance/chart/TSLA?interval=1m&range=1d'), looks: await looksLoad(env).then(L => ({ logged: L.rows.length, judged: L.rows.filter(r => r.p1 !== undefined).length, err: L.err || null })).catch(e => String(e.message || e)), handLast: st0?.handLast || null, codexToday: st0?.codex || null, rpc: await (async () => { try { return (await fetch('https://rpc.mainnet.chain.robinhood.com', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' })).status; } catch (e) { return 'unreachable'; } })(), chain: await (async () => { const o = { nodes: RPCS.length }; for (const [k, fn] of [['ethUsd', () => poolRatio(ETH_REF)], ['decimals', () => rpc('eth_call', [{ to: T, data: '0x313ce567' }, 'latest'])]]) { try { o[k] = String(await fn()).slice(0, 12); } catch (e) { o[k] = 'ERR ' + String(e.message || e).slice(0, 60); } } return o; })(), keys: { openrouter: !!env.OPENROUTER_API_KEY, goplus: !!env.GOPLUS_APP_KEY, codex: !!codexOn(env), coingecko: !!env.COINGECKO_API_KEY } });
       }
       if (url.pathname === '/api/candles') { const a = (url.searchParams.get('a') || '').toLowerCase(); return isAddr(a) ? json(await candles(env, a)) : json({ rows: [], res: 1 }, 400); }
       if (url.pathname === '/api/pools') return json(await pools(env, url.searchParams.get('kind') === 'new' ? 'new' : 'trending'));

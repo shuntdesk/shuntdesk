@@ -122,6 +122,21 @@ const COMMANDS = {
       foot('A rule-based reading of public Solana data. It can be wrong. Not advice.', BASE + '/ticket/?a=' + r.addr);
     });
   },
+  // First Buyers: a Pump.fun launch's first seconds
+  async first([a]) {
+    if (!isSol(a)) die('pass a Pump.fun mint on Solana');
+    const v = await get('first?a=' + a, 'reading the first trades on its curve');
+    out(v, v => {
+      head('First Buyers', short(v.token) + dim(' · Pump.fun'));
+      if (v.devBoughtPct != null) line('the deployer', `bought ${pct(v.devBoughtPct)} at launch, holds ${pct(v.devHoldsPct)} now`);
+      line('same slot', `${(v.sameSlotPct >= 20 ? red : v.sameSlot ? yellow : green)(bold(v.sameSlot + ' wallets'))} bought ${pct(v.sameSlotPct)} beside the launch ${dim('· hold ' + pct(v.sameSlotHoldsPct) + ' now')}`);
+      line('first buyers', `${v.first} · ${v.soldAll} sold everything ${dim('· hold ' + pct(v.firstHoldsPct) + ' of the ' + pct(v.firstPct) + ' they bought')}`);
+      if (v.fundedByDev) line('funded by the dev', red(String(v.fundedByDev)));
+      for (const g of v.sharedFunders || []) line('one funder', yellow(`${g.n} wallets from ${short(g.funder)}, ${pct(g.boughtPct)} bought`));
+      console.log(); for (const b of v.buyers.slice(0, 12)) console.log('  ' + pad(short(b.wallet), 14) + pad(b.isDev ? red('deployer') : b.byDev ? red('dev-funded') : b.sameSlot ? yellow('same slot') : dim('+' + b.secondsAfter + 's'), 14) + pad('bought ' + pct(b.boughtPct, 2), 18) + 'holds ' + pct(b.holdsPct, 2));
+      foot(v.note, `${BASE}/ticket/?a=${v.token}`);
+    });
+  },
   async check([a]) {
     if (isSol(a)) return COMMANDS.sol([a]);
     a = need(a);
@@ -599,7 +614,7 @@ async function auto(a) {
 function help() {
   banner();
   const c = (cmd, what) => console.log('  ' + pad(bold(cmd), 34) + dim(what));
-  console.log('\n  ' + dim('paste any address:') + '\n'); c('shuntdesk <0x…>', 'a token gets the full check, a wallet its X-ray'); c('shuntdesk <solana mint>', 'a Solana token through the seven checks');
+  console.log('\n  ' + dim('paste any address:') + '\n'); c('shuntdesk <0x…>', 'a token gets the full check, a wallet its X-ray'); c('shuntdesk <solana mint>', 'a Solana token through the seven checks'); c('shuntdesk first <mint>', 'a Pump.fun launch: who bought first, who still holds');
   console.log('\n  ' + dim('tokens:') + '\n'); c('shuntdesk check <token>', 'everything at once, and what the chain shows'); c('shuntdesk scan <token>', 'the contract: powers, owner, proxy, source'); c('shuntdesk token <token>', 'the verdict, flags, holders, launch facts'); c('shuntdesk ledger <token>', 'where the launcher sent its tokens'); c('shuntdesk twins <token>', 'contracts running exactly the same code'); c('shuntdesk shared <token> <token>', 'top wallets holding both'); c('shuntdesk site <token>', 'its website: domain age, urlscan, links'); c('shuntdesk alike <token>', 'tokens that looked like it, and how they ended'); c('shuntdesk exit <token> [size]', 'what a buy gets back if the dev or snipers sell first'); c('shuntdesk replay <token>', 'its chart in your terminal: launch, peak, drop, now');
   console.log('\n  ' + dim('pons curves:') + '\n'); c('shuntdesk live [--clean]', 'every Pons launch and bond as it lands, read on arrival'); c('shuntdesk watchlist [code]', 'your watchlist, the same one as the site, extension and bot'); c('shuntdesk sim <token> [eth]', 'run a buy before you make it, and its break even'); c('shuntdesk watch <token> [seconds]', 'the curve live in your terminal'); c('shuntdesk bonds [n]', 'the curves closest to bonding'); c('shuntdesk grads', 'curves that just bonded');
   console.log('\n  ' + dim('wallets and the radar:') + '\n'); c('shuntdesk wallet <wallet>', 'every token in it, flags and copies'); c('shuntdesk dev <wallet>', 'a launcher\'s record on Pons'); c('shuntdesk radar [n]', 'the newest tokens the radar read');

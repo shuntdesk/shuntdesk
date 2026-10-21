@@ -13,7 +13,7 @@ const compact = n => { n = Number(n) || 0; return n >= 1e9 ? (n / 1e9).toFixed(2
 const sig = n => { n = Number(n) || 0; if (n === 0) return '0'; if (n >= 1) return n.toLocaleString('en-US', { maximumFractionDigits: 4 }); return n.toPrecision(3); };
 const fmtAge = min => min < 1 ? 'under a minute' : min < 60 ? Math.round(min) + ' min' : min < 1440 ? (min / 60).toFixed(1) + ' h' : Math.round(min / 1440) + ' days';
 
-function b58decode(s) {
+export function b58decode(s) {
   let n = 0n; for (const c of s) { const i = B58.indexOf(c); if (i < 0) throw new Error('bad base58'); n = n * 58n + BigInt(i); }
   const out = []; while (n > 0n) { out.unshift(Number(n & 255n)); n >>= 8n; }
   for (const c of s) { if (c !== '1') break; out.unshift(0); }
@@ -34,7 +34,7 @@ function onCurve(k) {
   const y2 = y * y % P, u = (y2 - 1n + P) % P, v = (D * y2 + 1n) % P, x2 = u * modpow(v, P - 2n) % P;
   return x2 === 0n || modpow(x2, (P - 1n) / 2n) === 1n;
 }
-async function pda(seeds, program) {
+export async function pda(seeds, program) {
   const prog = b58decode(program), tail = new TextEncoder().encode('ProgramDerivedAddress');
   for (let bump = 255; bump >= 0; bump--) {
     const parts = [...seeds, Uint8Array.of(bump), prog, tail], len = parts.reduce((s, p) => s + p.length, 0), buf = new Uint8Array(len); let o = 0;
@@ -100,7 +100,7 @@ export async function solPrice(env) {
 }
 
 export const cache = new Map();
-export async function solScan(env, mint, { goplus, codex } = {}) {
+export async function solScan(env, mint, { goplus, codex, serial } = {}) {
   const hit = cache.get(mint); if (hit && Date.now() - hit.at < 10 * 60000) return hit;
   const res = { addr: mint, chain: 'solana', steps: [], score: 100, at: Date.now() };
   const push = s => { res.steps.push(s); res.score -= s.cost || 0; return s; };
@@ -201,11 +201,15 @@ export async function solScan(env, mint, { goplus, codex } = {}) {
     funders = got.filter(Boolean);
     const fresh = funders.filter(f => !f.old && f.txs <= 3).length, byCreator = funders.filter(f => creator && (f.funder === creator || f.a === creator)).length;
     const flagged = (gp?.creators || []).some(c => c.malicious_address == 1);
-    const st = byCreator >= 2 || flagged ? 'bad' : fresh >= 5 ? 'warn' : 'ok', traced = funders.length > 0;
+    // Serial Launcher: a deployer that creates token after token is a factory, not a team
+    const ser = serial && creator ? await serial(creator).catch(() => null) : null, many = ser && ser.created >= 10, some = ser && ser.created >= 3;
+    res.serial = ser;
+    const st = byCreator >= 2 || flagged || many ? 'bad' : fresh >= 5 || some ? 'warn' : 'ok', traced = funders.length > 0 || !!ser?.created;
     res.creator = creator;
-    push({ key: 'tracer', name: 'Tracer', status: traced || flagged ? st : 'skip', tag: flagged ? 'DEPLOYER FLAGGED' : !traced ? 'NOTHING TO TRACE' : st === 'bad' ? 'DEPLOYER PAID' : st === 'warn' ? 'FRESH WALLETS' : 'TRACED', cost: (byCreator >= 2 ? 15 : fresh >= 5 ? 8 : 0) + (flagged ? 20 : 0),
-      detail: (flagged ? `GoPlus marks the creator ${short(creator)} as malicious. ` : '') + (!traced ? 'No ordinary wallets among the top holders yet.' : `Traced ${funders.length} top wallets. ${fresh} are brand new, ${byCreator} tie back to the creator.`),
-      facts: [['Deployer', creator ? short(creator) : 'unknown'], ...(res.feeCreator ? [['Fee goes to', short(res.feeCreator)]] : []), ['Wallets traced', funders.length], ['Brand new', fresh]] });
+    const serText = !ser?.created ? '' : ` The deployer created ${ser.created} token${ser.created > 1 ? 's' : ''} in its latest ${ser.read} transactions${ser.hours != null && ser.created > 1 ? `, over ${ser.hours < 1 ? Math.max(1, Math.round(ser.hours * 60)) + ' minutes' : ser.hours.toFixed(ser.hours < 10 ? 1 : 0) + ' hours'}` : ''}.`;
+    push({ key: 'tracer', name: 'Tracer', status: traced || flagged ? st : 'skip', tag: flagged ? 'DEPLOYER FLAGGED' : many ? 'SERIAL LAUNCHER' : !traced ? 'NOTHING TO TRACE' : st === 'bad' ? 'DEPLOYER PAID' : some ? 'REPEAT LAUNCHER' : st === 'warn' ? 'FRESH WALLETS' : 'TRACED', cost: (byCreator >= 2 ? 15 : fresh >= 5 ? 8 : 0) + (flagged ? 20 : 0) + (many ? 15 : some ? 6 : 0),
+      detail: (flagged ? `GoPlus marks the creator ${short(creator)} as malicious. ` : '') + (!funders.length ? 'No ordinary wallets among the top holders yet.' : `Traced ${funders.length} top wallets. ${fresh} are brand new, ${byCreator} tie back to the creator.`) + serText,
+      facts: [['Deployer', creator ? short(creator) : 'unknown'], ...(res.feeCreator ? [['Fee goes to', short(res.feeCreator)]] : []), ['Wallets traced', funders.length], ['Brand new', fresh], ...(ser ? [['Tokens it created lately', ser.created + (ser.full ? ' in its last 100 transactions' : '')]] : [])] });
   } catch (e) { unread('tracer', 'Tracer', e.message); }
 
   // 5. Linker: wallets that share a funder, the creator's own share, and who bought at launch

@@ -51,14 +51,13 @@ function paintCard(res, done) {
   $('#t-crew').textContent = !live || !res.crew ? '' : 'CREW DESK: ' + ({ offline: 'NOT ANSWERING', 'no answer': 'NO ANSWER YET' }[res.crew] || res.crew.toUpperCase());
   if (sol) {   // a Solana ticket: read, not traded by the crew; the Robinhood Chain-only boxes stay hidden
     $('#second').hidden = true;
-    for (const id of ['#lk', '#xs-sum']) $(id).closest('.stub').hidden = true;
-    extras(res); devCard(res);
+    titles(true); extras(res); devCard(res); firstCard(res); nameCard(res);
     $('#t-acts').innerHTML = `<button class="btn ghost" data-do="ask">Ask the conductor</button><button class="btn ghost" data-do="card">Save the card</button><button class="btn ghost" data-do="x">Post on X</button><button class="btn ghost" data-do="link">Copy link</button><a class="btn ghost" href="https://solscan.io/token/${res.addr}" target="_blank" rel="noopener">Solscan ↗</a>` + (res.url ? `<a class="btn ghost" href="${esc(res.url)}" target="_blank" rel="noopener">DexScreener ↗</a>` : '')
       + (live ? `<button class="btn ghost" data-do="watch">${watching(res.addr) ? 'Watching' : 'Watch'}</button><a class="btn ghost" href="/exit/?a=${res.addr}">Exit Door</a><a class="btn ghost" href="/dev/?w=${res.addr}">Dev Score</a><a class="btn ghost" href="/replay/?a=${res.addr}">Replay</a>` + (res.launch?.pad === 'pumpfun' && !res.launch.graduated ? `<a class="btn ghost" href="/sim/?a=${res.addr}">Curve sim</a>` : '') : '');
     $('#t-crew').textContent = live ? 'SOLANA · READ ONLY, THE CREW DOES NOT TRADE IT' : '';
     return;
   }
-  second(res); extras(res); devCard(res);
+  titles(false); second(res); extras(res); devCard(res);
   $('#t-acts').innerHTML = (live ? `<a class="btn ${res.platform === 'short' ? 'r' : res.platform === 'long' ? 'g' : ''}" href="/desk/?a=${res.addr}">Trade it on paper →</a><button class="btn ghost" data-do="ask">Ask the conductor</button>` : '')
     + `<button class="btn ghost" data-do="card">Save the card</button><button class="btn ghost" data-do="x">Post on X</button><button class="btn ghost" data-do="link">Copy link</button><a class="btn ghost" href="${EXPLORER}/token/${res.addr}" target="_blank" rel="noopener">Explorer ↗</a>`
     + (live ? `<button class="btn ghost" data-do="watch">${watching(res.addr) ? 'Watching' : 'Watch'}</button><a class="btn ghost" href="/scan/?a=${res.addr}">Agent Scan</a><a class="btn ghost" href="/hand/?a=${res.addr}">Same Hand</a><a class="btn ghost" href="/deployer/?t=${res.addr}">Deployer record</a><a class="btn ghost" href="/replay/?a=${res.addr}">Replay</a>` : '');
@@ -203,7 +202,52 @@ async function devCard(res) {
   $('#dv-by').innerHTML = `launcher ${v.dev.slice(0, 6)}…${v.dev.slice(-4)}, found from the ${esc(v.devFound)} · <a href="/dev/?w=${v.dev}">every launch by this dev →</a>`;
   if (v.chain === 'solana') { $('#dv-n').textContent = (v.sideBuys?.length ? `The deployer also paid for buys that landed in ${v.sideBuys.length} other wallet${v.sideBuys.length > 1 ? 's' : ''}: ${v.sideBuys.slice(0, 3).map(x => x.wallet.slice(0, 4) + '…' + x.wallet.slice(-4) + ' ' + n0(x.amount)).join(', ')}. ` : '') + (v.partial ? 'Read from the deployer\'s latest 200 transactions. ' : '') + 'Parsed by Helius from the deployer\'s own transactions.'; return; }
   $('#dv-n').textContent = (v.partial ? 'The launcher has over 1,000 transfers of it; the first 1,000 are counted. ' : '') + '"Into other contracts" can be a sale through a router or a deposit: the chain index cannot tell which.';
-}// Site Check alone, for a Solana ticket
+}// the two boxes that read differently on Solana: Lookalikes becomes Same Name, Agent Scan becomes First Buyers
+function titles(sol) {
+  const lk = $('#lk').closest('.stub'), xs = $('#xs-sum').closest('.stub'); lk.hidden = false; xs.hidden = false;
+  lk.querySelector('.cap b').textContent = sol ? 'Same Name' : 'Lookalikes'; $('#lk-by').textContent = sol ? 'other Solana tokens with this ticker' : 'tokens that looked like this one, and what happened to them';
+  xs.querySelector('.cap b').textContent = sol ? 'First Buyers' : 'Agent Scan'; $('#xs-by').textContent = sol ? 'who bought in the first seconds, and who still holds' : 'the contract, read down to its functions';
+  $('#xs-a').hidden = sol;
+}
+const p2 = v => v == null ? '—' : v < 0.1 && v > 0 ? '<0.1%' : v.toFixed(1) + '%', w4 = a => a.slice(0, 4) + '…' + a.slice(-4);
+let firstFor = '';
+async function firstCard(res) {
+  if (firstFor === res.addr) return; firstFor = res.addr;
+  $('#xs-sum').textContent = res.launch?.pad === 'pumpfun' ? 'Reading the first trades on its curve…' : 'First Buyers reads Pump.fun launches.'; $('#xs-pw').innerHTML = '';
+  if (res.launch?.pad !== 'pumpfun') return;
+  let v = null; try { v = await api('first?a=' + res.addr); } catch (e) {}
+  if (firstFor !== res.addr) return;
+  if (!v?.ok) { $('#xs-sum').textContent = (v?.why || 'not answering right now').replace(/^./, c => c.toUpperCase()) + '.'; return; }
+  const dev = v.devBoughtPct != null ? `The deployer bought ${p2(v.devBoughtPct)} at launch and holds ${p2(v.devHoldsPct)} now. ` : '';
+  $('#xs-sum').textContent = dev + `${v.sameSlot} other wallet${v.sameSlot === 1 ? '' : 's'} bought in the same slot as the launch, ${p2(v.sameSlotPct)} of the supply; they hold ${p2(v.sameSlotHoldsPct)} now. Of the first ${v.first} buyers, ${v.soldAll} sold everything${v.fundedByDev ? `, and ${v.fundedByDev} were funded by the deployer` : ''}${v.sharedFunders.length ? `; ${v.sharedFunders[0].n} were funded by the same wallet` : ''}.`;
+  $('#xs-pw').innerHTML = v.buyers.slice(0, 8).map(b => `<div class="xr-r ${b.isDev || b.byDev ? 'high' : b.sameSlot ? 'medium' : 'low'}"><em>${b.isDev ? 'DEPLOYER' : b.byDev ? 'DEV-FUNDED' : b.sameSlot ? 'SAME SLOT' : '+' + b.secondsAfter + 'S'}</em><code>${w4(b.wallet)} · bought ${p2(b.boughtPct)} · holds ${p2(b.holdsPct)}</code></div>`).join('');
+  $('#xs-by').textContent = `launch slot ${v.launchSlot.toLocaleString('en-US')} · the curve's own history, Helius`;
+}
+// Same Name: DexScreener's search, from this browser, for Solana tokens with the same ticker; which is oldest, which is biggest
+let nameFor = '';
+async function nameCard(res) {
+  if (nameFor === res.addr) return; nameFor = res.addr;
+  const box = $('#lk'), sym = String(res.sym || '').trim();
+  if (!sym || sym.includes('…')) { box.innerHTML = '<p class="note">NO TICKER TO SEARCH FOR.</p>'; return; }
+  box.innerHTML = '<p class="note">SEARCHING FOR THE SAME TICKER…</p>';
+  let j = null; try { j = await (await fetch('https://api.dexscreener.com/latest/dex/search?q=' + encodeURIComponent(sym))).json(); } catch (e) {}
+  if (nameFor !== res.addr) return;
+  if (!j) { box.innerHTML = '<p class="note">THE SEARCH DID NOT ANSWER.</p>'; return; }
+  const by = new Map();
+  for (const p of j.pairs || []) { if (p.chainId !== 'solana' || String(p.baseToken?.symbol || '').toLowerCase() !== sym.toLowerCase()) continue;
+    const a = p.baseToken.address, o = by.get(a), liq = p.liquidity?.usd || 0; if (!o || liq > o.liq) by.set(a, { a, liq, mc: p.marketCap || p.fdv || 0, born: Math.min(p.pairCreatedAt || Infinity, o?.born || Infinity), name: p.baseToken.name }); }
+  if (!by.has(res.addr)) by.set(res.addr, { a: res.addr, liq: res.liq || 0, mc: res.fdv || 0, born: res.ageMin != null ? Date.now() - res.ageMin * 60000 : Infinity, name: res.name });
+  const all = [...by.values()], n = all.length - 1;
+  if (!n) { box.innerHTML = `<div class="lk-big"><b class="long">Only one</b><span>NO OTHER ${esc(sym.toUpperCase())} ON SOLANA IN DEXSCREENER'S SEARCH</span></div>`; return; }
+  const oldest = [...all].filter(x => x.born !== Infinity).sort((p, q) => p.born - q.born)[0], biggest = [...all].sort((p, q) => q.mc - p.mc)[0];
+  const isOld = oldest?.a === res.addr, isBig = biggest.a === res.addr;
+  const usd = v => '$' + (v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e3 ? (v / 1e3).toFixed(1) + 'K' : Math.round(v));
+  box.innerHTML = `<div class="lk-big"><b class="${isOld || isBig ? '' : 'short'}">${n} other${n > 1 ? 's' : ''}</b><span>${n > 1 ? 'TOKENS' : 'TOKEN'} ON SOLANA ALSO CALLED ${esc(sym.toUpperCase())}</span></div>
+    <div class="lk-row"><span>This one<b class="${isOld ? 'long' : isBig ? '' : 'short'}">${isOld ? 'the oldest' : isBig ? 'the biggest' : 'not the oldest or the biggest'}</b></span>${!isOld && oldest ? `<span>Oldest<b>${w4(oldest.a)}</b></span>` : ''}${!isBig ? `<span>Biggest<b>${w4(biggest.a)} · ${usd(biggest.mc)}</b></span>` : ''}</div>
+    <div class="lk-list">${all.filter(x => x.a !== res.addr).sort((p, q) => q.mc - p.mc).slice(0, 4).map(x => `<a href="/ticket/?a=${x.a}">${w4(x.a)}<b>${usd(x.mc)}</b></a>`).join('')}</div>
+    <p class="note" style="margin:8px 0 0">A NAME IS FREE TO COPY ON PUMP.FUN. CHECK THE ADDRESS, NOT THE TICKER. FROM DEXSCREENER'S SEARCH, WHICH SHOWS ITS TOP MATCHES ONLY.</p>`;
+}
+// Site Check alone, for a Solana ticket
 let siteAt = '';
 function siteFor(res) { if (siteAt === res.addr) return; siteAt = res.addr; siteCheck($('#sc'), res.addr, res.links || [], v => { $('#sc-by').textContent = `${v.links.length} link${v.links.length === 1 ? '' : 's'} · ${v.flags.filter(f => f.level === 'high').length} high · Safe Browsing, urlscan.io, RDAP, the page itself`; }); }
 // Agent Scan, under the verdict: what the contract lets its controller do
