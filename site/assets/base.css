@@ -981,3 +981,7 @@ html.simple.light ::selection { background: #2ed3a0; color: #060708; }
 .simlist.act .r .sy { font-weight: 700; color: var(--ink); } .simlist.act .r .sy small { display: block; color: var(--dim); font-weight: 400; font-size: 11px; }
 .simlist.act .r .btn { padding: 8px 12px; font-size: 11px; }
 @media (max-width: 760px) { .simlist.act .r { grid-template-columns: 1fr auto auto !important; } .simlist.act .r > :nth-child(2) { display: none; } .simlist.act .r > :nth-child(4) { display: block; } }
+/* How to play, on every game page */
+.howto { margin-bottom: 14px; } .howto summary { list-style: none; cursor: pointer; } .howto summary::-webkit-details-marker { display: none; }
+.howto summary .cap b::after { content: " ▾"; color: var(--dim); } .howto:not([open]) summary .cap b::after { content: " ▸"; }
+.howto-l { margin: 4px 0 0; padding-left: 22px; font: 500 16px/1.6 var(--sans, "Barlow", sans-serif); color: var(--ink); } .howto-l li { margin: 4px 0; } .howto-l li::marker { color: var(--long); font-family: var(--mono); font-weight: 700; }
