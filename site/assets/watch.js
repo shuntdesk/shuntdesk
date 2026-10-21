@@ -6,9 +6,31 @@
 import { prices, pairFor, scan, compact, sig, ageShort, api } from './data.js';
 import { $, esc } from './ui.js';
 
-const KEY = 'sd.watch', MAX = 12, MOVE = 0.3;
+const KEY = 'sd.watch', MAX = 25, MOVE = 0.3;
 const read = () => { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch (e) { return []; } };
 const write = l => { try { localStorage.setItem(KEY, JSON.stringify(l.slice(0, MAX))); } catch (e) {} };
+
+// ---- one watchlist everywhere: the list lives on the server under a code the CLI, the extension and the bot share ----
+const CKEY = 'sd.wl';
+export const watchCode = () => { try { return localStorage.getItem(CKEY) || ''; } catch (e) { return ''; } };
+const setCode = c => { try { localStorage.setItem(CKEY, c); } catch (e) {} };
+async function syncUp() {
+  try { const r = await api('watch', { c: watchCode() || undefined, tokens: read().map(w => ({ a: w.addr, sym: w.sym })) }); if (r?.ok) setCode(r.code); return r; } catch (e) { return null; }
+}
+// what the server has that this browser does not: tokens added from the CLI or the extension, and the events it saw
+async function syncDown() {
+  const c = watchCode(); if (!c) return;
+  let r; try { r = await api('watch?c=' + c); } catch (e) { return; } if (!r?.ok) return;
+  const l = read();
+  for (const x of r.tokens) if (!l.some(w => w.addr === x.a)) l.push({ addr: x.a, sym: x.sym || x.a.slice(0, 8), verdict: 'WATCH', score: '', p0: 0, l0: 0, t: x.t || Date.now(), checked: 0, alerts: [] });
+  for (const e of r.events || []) { const w = l.find(w => w.addr === e.token); if (w && !w.alerts.some(a => a.text === e.text)) { w.alerts.unshift({ t: e.t, text: e.text }); w.alerts = w.alerts.sort((a, b) => b.t - a.t).slice(0, 5); } }
+  write(l);
+}
+export async function useCode(c) {
+  c = String(c || '').trim().toLowerCase(); if (!/^wl-[a-z0-9]{6}$/.test(c)) throw new Error('A code looks like wl-xxxxxx.');
+  const r = await api('watch?c=' + c).catch(() => null); if (!r?.ok) throw new Error('No watchlist with that code.');
+  setCode(c); await syncDown(); await syncUp();
+}
 
 export const watching = addr => read().some(w => w.addr === addr);
 export function watch(res) {
@@ -16,10 +38,10 @@ export function watch(res) {
   l.unshift({ addr: res.addr, sym: res.sym, verdict: res.verdict, score: res.score, p0: res.price || 0, l0: res.liq || 0, t: Date.now(), checked: Date.now(), alerts: [] });
   write(l);
   try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); } catch (e) {}
-  pushSync();
+  pushSync(); syncUp();
   return l.length;
 }
-export function unwatch(addr) { write(read().filter(w => w.addr !== addr)); pushSync(); }
+export function unwatch(addr) { write(read().filter(w => w.addr !== addr)); pushSync(); syncUp(); }
 
 // ---- phone alerts (Web Push) ----
 const PKEY = 'sd.push', pushId = () => { try { return localStorage.getItem(PKEY) || ''; } catch (e) { return ''; } };
@@ -94,18 +116,28 @@ export function mountWatch(box) {
       <button class="btn ghost" data-un="${w.addr}" type="button">Stop</button></div>`).join('')
       : '<p class="note" style="margin:0">Run a ticket and press Watch. This browser looks at the token again every minute while a Shuntdesk page is open, and tells you when its price or liquidity moves 30% or its verdict changes.</p>';
     const pb = $('#w-push', box); if (pb) { pb.hidden = !pushSupported() && !/iPhone|iPad/.test(navigator.userAgent); pb.textContent = pushOn() ? 'Phone alerts on · turn off' : 'Turn on phone alerts'; }
+    // the code that carries this list to the CLI, the extension and the bot
+    let cb = box.querySelector('.w-code'); if (!cb) { cb = document.createElement('div'); cb.className = 'w-code note'; cb.style.cssText = 'margin-top:12px;line-height:1.8'; box.querySelector('.in')?.appendChild(cb) || box.appendChild(cb); }
+    const code = watchCode();
+    cb.innerHTML = code ? `YOUR WATCHLIST CODE <b class="mono" style="color:var(--ink, #edebe6)">${code}</b> <button class="btn ghost" type="button" data-copy="${code}">Copy</button><br>
+      THE SAME LIST, EVERYWHERE: <span class="mono">npx shuntdesk watchlist ${code}</span> · THE EXTENSION · THE BOT: <span class="mono">/watchlist ${code}</span> ON <a class="acc" href="https://t.me/shuntdesk_bot" target="_blank" rel="noopener">@shuntdesk_bot</a><br>
+      <a class="acc" href="#" data-use="1">Use another code</a>`
+      : `WATCH A TOKEN AND IT GETS A CODE THAT CARRIES THIS LIST TO THE CLI, THE EXTENSION AND THE BOT. <a class="acc" href="#" data-use="1">Have a code already?</a>`;
     const perm = 'Notification' in window ? Notification.permission : 'unsupported';
     $('#w-perm', box).textContent = pushOn() ? 'PHONE ALERTS ON · THE SERVER CHECKS EVERY 15 MINUTES, EVEN WITH THIS TAB CLOSED' : perm === 'granted' ? 'BROWSER ALERTS ON' : perm === 'denied' ? 'BROWSER ALERTS BLOCKED · ALERTS SHOW HERE ONLY' : perm === 'unsupported' ? 'ALERTS SHOW HERE ONLY' : 'BROWSER ALERTS: ASKED WHEN YOU WATCH A TOKEN';
   }
   box.addEventListener('click', async e => {
     const b = e.target.closest('[data-un]'); if (b) { unwatch(b.dataset.un); paint(); return; }
+    const cp = e.target.closest('[data-copy]'); if (cp) { try { await navigator.clipboard.writeText(cp.dataset.copy); cp.textContent = 'Copied'; } catch (x) {} return; }
+    const u = e.target.closest('[data-use]'); if (u) { e.preventDefault(); const c = prompt('Your watchlist code (wl-xxxxxx):'); if (!c) return; try { await useCode(c); paint(); check().then(paint); } catch (x) { $('#w-perm', box).textContent = String(x.message || x).toUpperCase(); } return; }
     const p = e.target.closest('#w-push'); if (!p) return;
     p.disabled = true; const was = p.textContent; p.textContent = 'Working…';
     try { if (pushOn()) await pushDisable(); else await pushEnable(); paint(); } catch (x) { p.textContent = was; $('#w-perm', box).textContent = String(x.message || x).toUpperCase(); }
     p.disabled = false;
   });
   addEventListener('storage', e => { if (e.key === KEY) paint(); });
-  paint(); check().then(paint);
+  paint(); syncDown().then(() => { paint(); return check(); }).then(paint);
   setInterval(() => check().then(paint), 60000);
+  setInterval(() => syncDown().then(paint), 5 * 60000);   // what the CLI, the extension and the server added in the meantime
   return () => { paint(); check().then(paint); };   // a token just added is priced right away
 }

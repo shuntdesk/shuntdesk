@@ -4,7 +4,7 @@
 import { simulate, breakEven, curveExit, poolExit } from '../lib/curve.mjs';
 import { createInterface } from 'node:readline';
 
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 const BASE = (process.env.SHUNTDESK_API || 'https://shuntdesk.com').replace(/\/$/, '');
 const RPC = process.env.SHUNTDESK_RPC || 'https://rpc.mainnet.chain.robinhood.com';
 const argv = process.argv.slice(2), flags = new Set(argv.filter(a => a.startsWith('--'))), args = argv.filter(a => !a.startsWith('--'));
@@ -486,6 +486,30 @@ const COMMANDS = {
       foot(v.note, `${BASE}/lab/`);
     });
   },
+  async watchlist([sub, x, y]) {
+    // the same list as the site, the extension and the bot, under a code kept in ~/.shuntdesk.json
+    const { readFileSync, writeFileSync } = await import('node:fs'), { homedir } = await import('node:os'), { join } = await import('node:path');
+    const CFG = join(homedir(), '.shuntdesk.json'), cfg = (() => { try { return JSON.parse(readFileSync(CFG, 'utf8')); } catch (e) { return {}; } })();
+    const save = c => { try { writeFileSync(CFG, JSON.stringify({ ...cfg, watchlist: c }, null, 2)); } catch (e) {} };
+    if (/^wl-[a-z0-9]{6}$/i.test(sub || '')) { cfg.watchlist = sub.toLowerCase(); save(cfg.watchlist); sub = undefined; }
+    let code = cfg.watchlist;
+    if (sub === 'add' || sub === 'remove') {
+      const a = need(x); const r = await getApi('watch', sub === 'add' ? 'adding it to your watchlist' : 'taking it off your watchlist', sub === 'add' ? { c: code, add: { a, sym: y || '' } } : { c: code, remove: a });
+      code = r.code; save(code); console.log('\n  ' + green('● ') + (sub === 'add' ? `added ${short(a)}` : `removed ${short(a)}`) + dim(` · watchlist ${code}`));
+    }
+    if (!code) { console.log(`\n  ${dim('no watchlist yet.')} Add a token: ${bold('shuntdesk watchlist add 0x…')}\n  ${dim('or use the code from the site, the extension or the bot:')} ${bold('shuntdesk watchlist wl-xxxxxx')}\n`); return; }
+    const v = await getApi('watch?c=' + code, 'reading your watchlist');
+    out(v, v => {
+      head('Watchlist', `${v.code} · ${v.tokens.length} of ${v.max}${v.telegram ? ' · alerts on in Telegram' : ''}`); console.log();
+      for (const t of v.tokens) { const n = t.now;
+        const state = !n ? dim('not read yet: the server looks every five minutes') : n.bonded ? green('bonded') : n.progress != null ? `${bar(n.progress, 18, n.progress >= 80 ? green : n.progress >= 50 ? yellow : dim)} ${pct(n.progress)}` : n.price ? `$${n.price.toPrecision(4)}` : dim('no price read');
+        console.log('  ' + pad(bold('$' + (t.sym || '?').slice(0, 12)), 15) + pad(dim(short(t.a)), 14) + state); }
+      if (v.events?.length) { console.log('\n  ' + dim('what changed')); for (const e of v.events.slice(0, 10)) console.log('  ' + pad(dim(ago(new Date(e.t).toISOString())), 10) + (/half|launcher|fell/.test(e.kind + e.text) ? yellow('● ') : green('● ')) + e.text); }
+      else console.log('\n  ' + dim('nothing has changed since these were added.'));
+      console.log('\n  ' + dim('the same list everywhere: the site\'s watchlist panel, the extension, and ') + bold(`/watchlist ${v.code}`) + dim(' on @shuntdesk_bot'));
+      console.log('  ' + dim('shuntdesk watchlist add 0x… · shuntdesk watchlist remove 0x…') + '\n');
+    });
+  },
   async live() {
     // every Pons launch and bond as it happens, read from the chain's own log on the user's machine; each new token then
     // gets the contract read and its curve from Shuntdesk. Reads are queued so a burst never runs past the hourly limit.
@@ -530,7 +554,7 @@ const COMMANDS = {
     out(v.bonded || [], B => { head('Fresh bonds', 'Pons curves that reached the bond mark'); console.log(); for (const b of B.slice(0, 20)) console.log('  ' + pad(bold(b.symbol || '?'), 14) + pad(dim(ago(b.bonded)), 10) + pad(toBond(b.hoursToBond), 18) + dim(b.token)); foot('', `${BASE}/bonds/`); });
   },
 };
-const ALIAS = { xray: 'scan', verdict: 'token', simulate: 'sim', devledger: 'ledger', devscore: 'dev', score: 'dev', twin: 'twins', bags: 'shared', feed: 'live', launches: 'live', curves: 'bonds', new: 'radar', graduated: 'grads', bonded: 'grads', report: 'check', website: 'site', lookalikes: 'alike', looks: 'alike', verdicts: 'calls', record: 'calls', crew: 'desk', stock: 'stocks', shunt: 'proof', weekly: 'week', game: 'rugrun', 'rug-run': 'rugrun', door: 'exit', 'exit-door': 'exit', bond: 'bondgame', 'will-it-bond': 'bondgame', chart: 'replay', rules: 'lab' };
+const ALIAS = { xray: 'scan', verdict: 'token', simulate: 'sim', devledger: 'ledger', devscore: 'dev', score: 'dev', twin: 'twins', bags: 'shared', feed: 'live', launches: 'live', wl: 'watchlist', curves: 'bonds', new: 'radar', graduated: 'grads', bonded: 'grads', report: 'check', website: 'site', lookalikes: 'alike', looks: 'alike', verdicts: 'calls', record: 'calls', crew: 'desk', stock: 'stocks', shunt: 'proof', weekly: 'week', game: 'rugrun', 'rug-run': 'rugrun', door: 'exit', 'exit-door': 'exit', bond: 'bondgame', 'will-it-bond': 'bondgame', chart: 'replay', rules: 'lab' };
 
 // a bare address: a contract gets the full check, a wallet (or a smart wallet) its X-ray
 async function auto(a) {
@@ -544,7 +568,7 @@ function help() {
   const c = (cmd, what) => console.log('  ' + pad(bold(cmd), 34) + dim(what));
   console.log('\n  ' + dim('paste any address:') + '\n'); c('shuntdesk <0x…>', 'a token gets the full check, a wallet its X-ray');
   console.log('\n  ' + dim('tokens:') + '\n'); c('shuntdesk check <token>', 'everything at once, and what the chain shows'); c('shuntdesk scan <token>', 'the contract: powers, owner, proxy, source'); c('shuntdesk token <token>', 'the verdict, flags, holders, launch facts'); c('shuntdesk ledger <token>', 'where the launcher sent its tokens'); c('shuntdesk twins <token>', 'contracts running exactly the same code'); c('shuntdesk shared <token> <token>', 'top wallets holding both'); c('shuntdesk site <token>', 'its website: domain age, urlscan, links'); c('shuntdesk alike <token>', 'tokens that looked like it, and how they ended'); c('shuntdesk exit <token> [size]', 'what a buy gets back if the dev or snipers sell first'); c('shuntdesk replay <token>', 'its chart in your terminal: launch, peak, drop, now');
-  console.log('\n  ' + dim('pons curves:') + '\n'); c('shuntdesk live [--clean]', 'every Pons launch and bond as it lands, read on arrival'); c('shuntdesk sim <token> [eth]', 'run a buy before you make it, and its break even'); c('shuntdesk watch <token> [seconds]', 'the curve live in your terminal'); c('shuntdesk bonds [n]', 'the curves closest to bonding'); c('shuntdesk grads', 'curves that just bonded');
+  console.log('\n  ' + dim('pons curves:') + '\n'); c('shuntdesk live [--clean]', 'every Pons launch and bond as it lands, read on arrival'); c('shuntdesk watchlist [code]', 'your watchlist, the same one as the site, extension and bot'); c('shuntdesk sim <token> [eth]', 'run a buy before you make it, and its break even'); c('shuntdesk watch <token> [seconds]', 'the curve live in your terminal'); c('shuntdesk bonds [n]', 'the curves closest to bonding'); c('shuntdesk grads', 'curves that just bonded');
   console.log('\n  ' + dim('wallets and the radar:') + '\n'); c('shuntdesk wallet <wallet>', 'every token in it, flags and copies'); c('shuntdesk dev <wallet>', 'a launcher\'s record on Pons'); c('shuntdesk radar [n]', 'the newest tokens the radar read');
   console.log('\n  ' + dim('the record:') + '\n'); c('shuntdesk calls [n]', 'the latest verdicts and how they held'); c('shuntdesk caught', 'what the radar flagged, and what it missed'); c('shuntdesk week', 'the week on Robinhood Chain'); c('shuntdesk desk', 'the crew\'s paper desk'); c('shuntdesk stocks', 'the stocks behind the stock tokens'); c('shuntdesk proof', '$SHUNT, read from the chain'); c('shuntdesk lab', 'every flag rule against what happened');
   console.log('\n  ' + dim('play:') + '\n'); c('shuntdesk rugrun', 'ten real new tokens, names hidden: rug or ride?'); c('shuntdesk bondgame', 'five Pons curves a day: will they bond?');

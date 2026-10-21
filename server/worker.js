@@ -651,7 +651,7 @@ async function telegram(st, env, request, body) {
   if (cmd === 'id') return reply(`This chat: <code>${chat}</code> (${tgEsc(msg.chat.type)}${msg.chat.title ? ', ' + tgEsc(msg.chat.title) : ''})`);
   if (!allow(st, 'tg:' + chat, 'tg', 40)) return reply('Slow down a little: 40 questions an hour per chat.');
   const site = 'https://shuntdesk.com', footer = '\n\n<i>A rule-based reading of public data. It can be wrong. Not advice.</i>';
-  if (cmd === 'start' || cmd === 'help') return reply(`<b>Shuntdesk</b> · every token rides the line\n\nAsk anything about Shuntdesk, a token, the crew desk or what just launched. Or use:\n\n/check <code>0x…</code> what Shuntdesk knows about a Robinhood Chain token\n/scan <code>0x…</code> Agent Scan: what the contract lets its owner do\n/ledger <code>0x…</code> Dev Ledger: what the launcher did with it\n/devscore <code>0x…</code> Dev Score: every launch by that dev\n/report <code>0x…</code> report a token; the bot reads it\n/spotters who reported what lost half\n/bondgame today's Will it bond?\n/proof everything about $SHUNT you can check\n/alarms on launch alarms in your group (admins)\n
+  if (cmd === 'start' || cmd === 'help') return reply(`<b>Shuntdesk</b> · every token rides the line\n\nAsk anything about Shuntdesk, a token, the crew desk or what just launched. Or use:\n\n/check <code>0x…</code> what Shuntdesk knows about a Robinhood Chain token\n/watchlist <code>wl-…</code> alerts in this chat for the watchlist you keep on the site, the CLI or the extension\n/scan <code>0x…</code> Agent Scan: what the contract lets its owner do\n/ledger <code>0x…</code> Dev Ledger: what the launcher did with it\n/devscore <code>0x…</code> Dev Score: every launch by that dev\n/report <code>0x…</code> report a token; the bot reads it\n/spotters who reported what lost half\n/bondgame today's Will it bond?\n/proof everything about $SHUNT you can check\n/alarms on launch alarms in your group (admins)\n
 <b>For $SHUNT holders</b>\n/link connect your wallet\n/alarm your own alarms\n/follow <code>0x…</code> hear when a wallet buys a Pons token\n/handle your name on the holder league\n/boost burn $SHUNT to boost a full scan\n/watch <code>0x…</code> Tripwire: a private alarm when the owner or the big wallets move\n/daily today's daily shift in the Yard\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
   // anything that is not a command, or a token address with a question around it, goes to the conductor
   const question = clean.replace(/^\/\w+\s*/, '').replace(/0x[0-9a-fA-F]{40}/, '').trim();
@@ -693,6 +693,16 @@ async function telegram(st, env, request, body) {
     else if (/^dev\b/.test(arg)) f.dev = !/\boff\b/.test(arg);
     else if (/^off\b/.test(arg)) { f.clean = false; f.flags = false; f.curve = []; f.early = false; f.dev = false; }
     return reply(`<b>Your alarms</b>\n\n• clean reads of new tokens: <b>${f.clean ? 'on' : 'off'}</b>\n• new tokens with a red flag: <b>${f.flags ? 'on' : 'off'}</b>\n• Pons curves crossing: <b>${f.curve.length ? f.curve.map(v => v + '%').join(', ') : 'off'}</b>\n• trusted devs and known dumpers launching: <b>${f.dev !== false ? 'on' : 'off'}</b>\n• Early Radar, clean launches minutes old (Pro, ${HOLD_PRO.toLocaleString('en-US')} $SHUNT): <b>${h.bal >= HOLD_PRO ? (f.early !== false ? 'on' : 'off') : 'locked'}</b>\n\nChange: /alarm clean on|off · /alarm flags on|off · /alarm curve 70 · /alarm curve off · /alarm dev on|off · /alarm early on|off · /alarm off\nUp to 40 a day, in this chat.`);
+  }
+  if (cmd === 'watchlist') {
+    const W = await watchLoad(env), code = (clean.match(/wl-[a-z0-9]{6}/i) || [])[0]?.toLowerCase(), mine = Object.entries(W.lists).find(([, l]) => l.chat === String(chat));
+    if (/\boff\b/.test(arg)) { if (mine) { mine[1].chat = null; await env.KV.put(WATCH, JSON.stringify(W)); } return reply('Watchlist alerts are off in this chat.'); }
+    if (code) { if (!W.lists[code]) return reply('No watchlist with that code. Make one by pressing Watch on any ticket at shuntdesk.com.');
+      for (const l of Object.values(W.lists)) if (l.chat === String(chat)) l.chat = null;
+      W.lists[code].chat = String(chat); W.lists[code].t = Date.now(); await env.KV.put(WATCH, JSON.stringify(W));
+      const l = W.lists[code]; return reply(`<b>Watchlist linked</b> · <code>${code}</code>\n${l.tokens.length} token${l.tokens.length === 1 ? '' : 's'}${l.tokens.length ? ': ' + l.tokens.slice(0, 10).map(x => tgEsc(x.sym || x.a.slice(0, 8))).join(', ') : ''}\n\nThis chat hears when a curve passes 80% or bonds, half a curve's ETH leaves, a pooled price falls by half, or a launcher moves its tokens. Checked every five minutes.\n\n/watchlist off to stop`); }
+    if (mine) { const [c, l] = mine; return reply(`<b>Watchlist</b> · <code>${c}</code>\n\n${l.tokens.length ? l.tokens.map(x => `• ${tgEsc(x.sym || '')} <code>${x.a}</code>`).join('\n') : 'No tokens yet: press Watch on a ticket.'}\n\n/watchlist off to stop`); }
+    return reply('Send /watchlist with your code: /watchlist <code>wl-xxxxxx</code>\nYour code is in the watchlist panel at shuntdesk.com once you watch a token.');
   }
   if (cmd === 'follow' || cmd === 'unfollow' || cmd === 'following') {
     if (group) return reply('Follow works in a private chat with @shuntdesk_bot.');
@@ -1918,6 +1928,74 @@ function spotters(st) {
 // every five minutes it reads the newest launches, and three more windows of 400,000 blocks back, until the factory's first
 // block. Stored by launcher, compact: token, curve, block.
 const LINDEX = 'lindex-v1'; let lindexMem = null, lindexRead = null;
+// ---------- one watchlist everywhere: a code (wl-xxxxxx) the site, the CLI, the extension and the bot share ----------
+// No account and no wallet: whoever has the code reads and edits the list. Every five minutes the server looks at every
+// watched token with reads it already has (Bond Watch for curves, one DexScreener call per 30 pooled tokens, one batched
+// node call for the launchers' transfers) and keeps what changed as events, which the extension, the bot and the CLI read.
+const WATCH = 'watch-v1', WSTATE = 'watchstate-v1', WATCH_MAX = 25; let watchMem = null, wstateMem = null;
+const watchLoad = async env => watchMem || (watchMem = await env.KV.get(WATCH).then(s => { const v = s ? JSON.parse(s) : {}; v.lists = v.lists || {}; return v; }));
+const wstateLoad = async env => wstateMem || (wstateMem = await env.KV.get(WSTATE).then(s => { const v = s ? JSON.parse(s) : {}; return { t: v.t || 0, block: v.block || 0, tok: v.tok || {}, ev: v.ev || {} }; }));
+const watchCode = () => 'wl-' + [...crypto.getRandomValues(new Uint8Array(6))].map(b => 'abcdefghjkmnpqrstuvwxyz23456789'[b % 31]).join('');
+const watchView = (W, S, c) => { const l = W.lists[c]; if (!l) return null; const ev = l.tokens.flatMap(x => (S.ev[x.a] || []).map(e => ({ ...e, token: x.a, symbol: x.sym }))).sort((a, b) => b.t - a.t).slice(0, 30);
+  return { ok: true, code: c, tokens: l.tokens.map(x => ({ ...x, now: S.tok[x.a] ? { progress: S.tok[x.a].progress ?? null, bonded: !!S.tok[x.a].bonded, price: S.tok[x.a].price ?? null } : null })), telegram: !!l.chat, events: ev, max: WATCH_MAX }; };
+async function watchEdit(env, b) {
+  const W = await watchLoad(env); let c = String(b?.c || '').toLowerCase();
+  if (c && !W.lists[c]) return [404, { ok: false, why: 'no watchlist with that code' }];
+  if (!c) { c = watchCode(); W.lists[c] = { tokens: [], chat: null, t: Date.now() }; }
+  const l = W.lists[c], clean = x => ({ a: String(x?.a || x?.addr || '').toLowerCase(), sym: String(x?.sym || x?.symbol || '').slice(0, 16) });
+  if (Array.isArray(b?.tokens)) l.tokens = b.tokens.map(clean).filter(x => isAddr(x.a)).filter((x, i, A) => A.findIndex(y => y.a === x.a) === i).slice(0, WATCH_MAX).map(x => ({ ...x, t: l.tokens.find(y => y.a === x.a)?.t || Date.now() }));
+  if (b?.add) { const x = clean(b.add); if (!isAddr(x.a)) return [400, { ok: false, why: 'add needs a token address' }]; if (!l.tokens.some(y => y.a === x.a)) { if (l.tokens.length >= WATCH_MAX) return [400, { ok: false, why: `a watchlist holds ${WATCH_MAX} tokens` }]; l.tokens.unshift({ ...x, t: Date.now() }); } }
+  if (b?.remove) { const a = String(b.remove).toLowerCase(); l.tokens = l.tokens.filter(y => y.a !== a); }
+  l.t = Date.now();
+  for (const [k, v] of Object.entries(W.lists)) if (Date.now() - v.t > 60 * 86400000) delete W.lists[k];   // a list nobody touched for two months
+  await env.KV.put(WATCH, JSON.stringify(W));
+  return [200, watchView(W, await wstateLoad(env), c)];
+}
+let lindexInv = null;
+async function watchTick(st, env) {
+  const S = await wstateLoad(env), now = Date.now(); if (now - S.t < 5 * 60000 - 5000) return; S.t = now;
+  const W = await watchLoad(env), lists = Object.entries(W.lists).filter(([, l]) => l.tokens.length);
+  const tokens = [...new Set(lists.flatMap(([, l]) => l.tokens.map(x => x.a)))].slice(0, 250); if (!tokens.length) { await env.KV.put(WSTATE, JSON.stringify(S)); return; }
+  const sym = Object.fromEntries(lists.flatMap(([, l]) => l.tokens.map(x => [x.a, x.sym || x.a.slice(0, 8)])));
+  const add = (a, kind, text) => { const E = S.ev[a] = S.ev[a] || []; if (E.some(e => e.kind === kind && now - e.t < 6 * 3600000)) return; E.unshift({ t: now, kind, text }); S.ev[a] = E.slice(0, 12); };
+  // the curves, from Bond Watch's own read
+  const B = await bondsLoad(env), rows = new Map((B.rows || []).filter(r => !r.g && r.p != null).map(r => [r.t0, { progress: r.p, raised: r.q || 0, need: r.th || 4.2, curve: r.c }])), bonded = new Set((B.rows || []).filter(r => r.g).map(r => r.t0));
+  for (const a of tokens) {
+    const s = S.tok[a] = S.tok[a] || {}, r = rows.get(a);
+    if (r) { if (s.progress != null && s.progress < 80 && r.progress >= 80) add(a, 'curve80', `${sym[a]}: its curve passed 80%, now ${r.progress.toFixed(1)}% (${r.raised.toFixed(2)} of ${r.need} ETH)`);
+      s.peak = Math.max(s.peak || 0, r.raised); if (s.peak >= 0.3 && r.raised <= s.peak / 2) { add(a, 'curvehalf', `${sym[a]}: half the ETH has left its curve, ${r.raised.toFixed(2)} ETH from a peak of ${s.peak.toFixed(2)}`); s.peak = r.raised; }
+      s.progress = r.progress; }
+    if (bonded.has(a) && !s.bonded) { if (s.progress != null) add(a, 'bonded', `${sym[a]}: it reached the bond mark on Pons`); s.bonded = true; }
+  }
+  // the pooled tokens' prices: DexScreener, thirty a call
+  const pooled = tokens.filter(a => !rows.has(a));
+  for (let i = 0; i < pooled.length && i < 90; i += 30) {
+    try { const j = await (await fetch(`https://api.dexscreener.com/tokens/v1/robinhood/${pooled.slice(i, i + 30).join(',')}`, { headers: UA, signal: AbortSignal.timeout(10000) })).json();
+      const best = {}; for (const q of Array.isArray(j) ? j : []) { const a = String(q.baseToken?.address || '').toLowerCase(), liq = Number(q.liquidity?.usd) || 0; if (!best[a] || liq > best[a].liq) best[a] = { price: Number(q.priceUsd) || 0, liq }; }
+      for (const [a, q] of Object.entries(best)) { const s = S.tok[a] = S.tok[a] || {}; if (!q.price) continue; s.ref = s.ref || q.price;
+        if (q.price <= s.ref / 2) { add(a, 'price', `${sym[a]}: its price fell by half, to $${q.price.toPrecision(3)} from $${s.ref.toPrecision(3)}`); s.ref = q.price; } else if (q.price > s.ref) s.ref = q.price;
+        s.price = q.price; } } catch (e) {}
+  }
+  // the launchers' transfers out, one batched call to the free node
+  try {
+    const X = await lindexLoad(env); if (!lindexInv || lindexInv.n !== X.n) { const m = new Map(); for (const [by, ls] of Object.entries(X.by || {})) for (const l of ls) m.set('0x' + l[0], { l: '0x' + by, c: '0x' + l[1] }); lindexInv = { n: X.n, m }; }
+    const head = parseInt(await rpc('eth_blockNumber'), 16), from = S.block ? Math.max(S.block + 1, head - 30000) : head - 3000;
+    const withL = tokens.map(a => [a, lindexInv.m.get(a)]).filter(([, v]) => v).slice(0, 150);
+    if (withL.length && head >= from) {
+      // one batched call: rpcBatch keeps string answers only, and logs come back as arrays
+      const raw = await fetch(RPCS[0], { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(withL.map(([a, v], id) => ({ jsonrpc: '2.0', id, method: 'eth_getLogs', params: [{ address: a, topics: [T_TRANSFER, '0x' + v.l.slice(2).padStart(64, '0')], fromBlock: hex(from), toBlock: hex(head) }] }))), signal: AbortSignal.timeout(20000) }).then(r => r.json()).catch(() => null);
+      for (const x of Array.isArray(raw) ? raw : []) { if (!Array.isArray(x?.result) || !x.result.length) continue; const [a] = withL[x.id];
+        const out = x.result.reduce((s, l) => s + BigInt(l.data), 0n), share = Number(out * 1000000n / (10n ** 27n)) / 10000;   // Pons tokens: a billion, 18 decimals
+        const to = '0x' + x.result[x.result.length - 1].topics[2].slice(26), r = rows.get(a);
+        if (share >= 0.5) add(a, 'launcher', `${sym[a]}: the launcher moved ${share.toFixed(2)}% of the supply out${withL[x.id][1].c === to ? ', into its curve: a sale' : ` to ${to.slice(0, 6)}…${to.slice(-4)}`}`); }
+      S.block = head;
+    }
+  } catch (e) {}
+  for (const a of Object.keys(S.tok)) if (!tokens.includes(a)) { delete S.tok[a]; delete S.ev[a]; }
+  // the chats that asked hear their lists' new events
+  for (const [, l] of lists) if (l.chat) for (const x of l.tokens) for (const e of (S.ev[x.a] || []).filter(e => e.t === now)) tgQueue(st, [l.chat], `<b>Watchlist</b> · ${tgEsc(e.text)}\nhttps://shuntdesk.com/ticket/?a=${x.a}`);
+  await env.KV.put(WSTATE, JSON.stringify(S));
+}
 const lindexLoad = async env => lindexMem || (lindexMem = await env.KV.get(LINDEX).then(s => s ? JSON.parse(s) : { by: {}, n: 0, top: 0, floor: 0 }));
 export async function lindexTick(env) {
   const X = await lindexLoad(env), now = Date.now(); if (now - (X.t || 0) < 5 * 60000 - 5000) return; X.t = now;   // every five minutes: the index is a few megabytes to write
@@ -2703,6 +2781,14 @@ const api = {
         if (body) { if (!allow(st, ip, 'bondgame', 10)) return json({ ok: false, why: 'slow down' }, 429); const [code, out] = bondGamePlay(st, body); await save(env, st); return json({ ...out, ...bondGameView(st, String(body.handle || '').toLowerCase(), await bondsLoad(env)) }, code); }
         await save(env, st); return json(bondGameView(st, String(url.searchParams.get('me') || '').toLowerCase(), await bondsLoad(env), String(url.searchParams.get('vs') || '').toLowerCase()));
       }
+      if (url.pathname === '/api/watch' || url.pathname === '/api/watch/events') {
+        if (!allow(st, ip, 'watch', 240)) return json({ ok: false, why: 'slow down' }, 429);
+        if (body) { const [code, out] = await watchEdit(env, body); return json(out, code); }
+        const W = await watchLoad(env), S = await wstateLoad(env), c = String(url.searchParams.get('c') || '').toLowerCase(), v = watchView(W, S, c);
+        if (!v) return json({ ok: false, why: 'no watchlist with that code' }, 404);
+        if (url.pathname.endsWith('/events')) { const since = Number(url.searchParams.get('since')) || 0; return json({ ok: true, code: c, events: v.events.filter(e => e.t > since), checked: S.t }); }
+        return json({ ...v, checked: S.t });
+      }
       if (url.pathname.startsWith('/card/')) {
         const png = url.pathname.endsWith('.png'), parts = url.pathname.slice(6).replace(/\.png$/, '').toLowerCase().split('/'), kind = parts.length === 2 ? parts[0] : 'token', a = parts[parts.length - 1];
         if (!isAddr(a) || !['token', 'wallet', 'dev'].includes(kind)) return new Response('not found', { status: 404 });
@@ -2773,6 +2859,7 @@ const api = {
     try { await tgFlush(st, env); } catch (e) {}   // messages first, while the run still has requests to spend
     try { await gradScan(st, env); } catch (e) { st.grads = { ...(st.grads || { rows: [] }), err: String(e.message || e).slice(0, 120) }; }   // the graduation feed is extra: a failed read never stops the desk
     try { await looksTick(env); } catch (e) {}
+    try { await watchTick(st, env); } catch (e) {}
     try { await twinsTick(env); } catch (e) {}
     try { await bondTick(env); } catch (e) {}
     try { await lindexTick(env); } catch (e) {}

@@ -49,7 +49,7 @@
       <h5>Community</h5>
       <a href="#telegram">Telegram</a>
       <h5>Build on it</h5>
-      <a href="#api">Agent API</a><a href="#mcp">MCP</a><a href="#cli">CLI</a><a href="#skill">Agent skill</a><a href="#extension">Browser extension</a><a href="#cards">Share cards</a><a href="#data">Open record</a><a href="#sources">Data sources</a><a href="#architecture">Architecture</a><a href="#run">Run it yourself</a>
+      <a href="#api">Agent API</a><a href="#mcp">MCP</a><a href="#cli">CLI</a><a href="#skill">Agent skill</a><a href="#watchlist">Watchlist</a><a href="#extension">Browser extension</a><a href="#cards">Share cards</a><a href="#data">Open record</a><a href="#sources">Data sources</a><a href="#architecture">Architecture</a><a href="#run">Run it yourself</a>
       <h5>More</h5>
       <a href="#token">$SHUNT</a><a href="#faq">FAQ</a><a href="#legal">Privacy and terms</a>
       </details>
@@ -414,6 +414,7 @@
 <tr><td><code>shared &lt;token&gt; &lt;token&gt;</code></td><td>top wallets holding both</td></tr>
 <tr><td><code>replay &lt;token&gt;</code></td><td>its chart drawn in the terminal</td></tr>
 <tr><td><code>exit &lt;token&gt; [size]</code></td><td>Exit Door: what a buy gets back if the dev, the snipers or a big wallet sells first</td></tr>
+<tr><td><code>watchlist [code]</code></td><td>your watchlist, the same one as the site, the extension and the bot; <code>watchlist add 0x…</code> and <code>remove 0x…</code></td></tr>
 <tr><td><code>live [--clean]</code></td><td>every Pons launch and bond as it lands, each new token read on arrival</td></tr>
 <tr><td><code>sim &lt;token&gt; [eth]</code></td><td>a buy on a Pons curve, the round trip, and the inflow it needs to break even</td></tr>
 <tr><td><code>watch &lt;token&gt;</code></td><td>a curve live: progress, price, net flow, pace and time to bond</td></tr>
@@ -424,6 +425,14 @@
 <tr><td><code>rugrun</code> · <code>bondgame</code></td><td>Rug Run and Will it bond?, played at the terminal</td></tr>
 </tbody></table></div>
 <p>Add <code>--json</code> to any read for the raw answer. A part that could not be read is said as not read, never as zero. The source is in <a href="https://github.com/shuntdesk/shuntdesk/tree/main/cli">cli/</a>.</p>
+</section>
+
+<section id="watchlist"><h2>Watchlist</h2>
+<p>One watchlist, everywhere. Press Watch on a ticket or in the extension's panel and the list gets a code like <code>wl-7k2p9x</code>, with no account and no wallet. The same code opens the same list in the CLI (<code>npx shuntdesk watchlist wl-7k2p9x</code>), the extension and the bot (<code>/watchlist wl-7k2p9x</code> on @shuntdesk_bot). Whoever has the code can read and edit the list, so share it only with yourself.</p>
+<p>Every five minutes the server looks at every watched token and keeps what changed: a curve passing 80% or reaching the bond mark, half a curve's ETH leaving, a pooled token's price halving, and a Pons launcher moving 0.5% or more of the supply out. The extension shows them as browser notifications, the bot sends them to a linked chat, and the site and the CLI list them. A list holds 25 tokens; a list nobody opens for two months is removed.</p>
+<pre><code>GET  /api/watch?c=wl-…                  the list, each token's latest read, and its events
+GET  /api/watch/events?c=wl-…&amp;since=ms   the events since a time
+POST /api/watch {"c":"wl-…","add":{"a":"0x…"}}   add (no c makes a new list), or "remove":"0x…"</code></pre>
 </section>
 
 <section id="extension"><h2>Browser extension</h2>

@@ -156,3 +156,11 @@ test('Rug Run: a run needs a known record, the server scores it once, and the si
   const [c1, v1] = await call('rugrun', { id: 'nope', handle: 'tester', calls: [] }); assert.equal(c1, 400); assert.match(v1.why, /ended/);
   const r = await worker.fetch(new Request('http://x/api/sim?a=nope'), env); assert.equal(r.status, 400);
 });
+test('one watchlist: a code is made on the first edit, tokens are added, read back and removed', async () => {
+  const T = '0x7e517e779b85895894becad80c9bb69b4cb1c4d6';
+  const [s0, a] = await call('watch', { add: { a: T, sym: 'SHUNT' } }); assert.equal(s0, 200); assert.match(a.code, /^wl-[a-z0-9]{6}$/); assert.equal(a.tokens.length, 1);
+  const [s1, b] = await call('watch?c=' + a.code); assert.equal(s1, 200); assert.equal(b.tokens[0].a, T);
+  const [s2, c] = await call('watch', { c: a.code, remove: T }); assert.equal(s2, 200); assert.equal(c.tokens.length, 0);
+  const [s3] = await call('watch?c=wl-zzzzzz'); assert.equal(s3, 404);
+  const [s4, d] = await call('watch', { c: a.code, add: { a: 'nope' } }); assert.equal(s4, 400); assert.equal(d.ok, false);
+});

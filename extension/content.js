@@ -80,7 +80,10 @@
       ${l?.ok ? `<div class="row"><i>holders</i><span>${n0(tok.serverCheck?.holders ?? l.holders)}</span></div>${l.liquidity ? `<div class="row"><i>liquidity</i><span>$${n0(l.liquidity)}</span></div>` : ''}` : ''}
       ${s?.v ? `<div class="row"><i>curve</i><span>${s.v.progress.toFixed(1)}% · ${s.v.raised.toFixed(3)} of ${s.v.need} ETH</span></div><div class="bar"><u style="width:${Math.min(100, s.v.progress)}%"></u></div>` : ''}
       <ul>${F.map(f => `<li class="${f.lvl}">${esc(f.text)}</li>`).join('')}${unread.map(([k, r]) => `<li class="u">${k} not read: ${esc(r.why).slice(0, 80)}</li>`).join('')}</ul>
-      <div class="f"><a href="${BASE}/ticket/?a=${a}" target="_blank" rel="noopener">Full check →</a><a href="${BASE}/card/${a}" target="_blank" rel="noopener">Share card</a><em>not advice</em></div>`;
+      <div class="f"><a href="${BASE}/ticket/?a=${a}" target="_blank" rel="noopener">Full check →</a><a href="#" id="wt">Watch</a><a href="${BASE}/card/${a}" target="_blank" rel="noopener">Share card</a><em>not advice</em></div>`;
+    // Watch puts the token on the watchlist this extension shares with the site, the CLI and the bot
+    $('wt').addEventListener('click', async e => { e.preventDefault(); const b = e.currentTarget; b.textContent = 'Adding…';
+      try { const r = await chrome.runtime.sendMessage({ type: 'watch', a, sym: tok?.symbol || '' }); b.textContent = r?.ok ? `Watching · ${r.code}` : 'Not added'; } catch (x) { b.textContent = 'Not added'; } });
   }
   show(); let last = location.href; setInterval(() => { if (location.href !== last) { last = location.href; show(); } }, 800);   // the pages change address without reloading
 })();

@@ -37,6 +37,7 @@ Run `shuntdesk` alone for a prompt that takes addresses and commands until you q
 | `shuntdesk ledger <token>` | Where the launcher sent its tokens: sold, sent to wallets, sent to contracts, burned, still held |
 | `shuntdesk twins <token>` | Contracts in the radar's log running exactly the same code, and how many lost half |
 | `shuntdesk shared <token> <token>` | Top wallets holding both tokens, pools and contracts left out |
+| `shuntdesk watchlist [code]` | Your watchlist, the same one as the site, the extension and the bot: `add 0x…`, `remove 0x…`, and what changed |
 | `shuntdesk live [--clean]` | Every Pons launch and bond as it lands, each new token read on arrival |
 | `shuntdesk sim <token> [eth]` | A buy on a Pons curve worked through the curve's own reserves, fees both ways, the round trip and the inflow needed to break even |
 | `shuntdesk watch <token> [seconds]` | The curve live in your terminal: progress, price, net flow, pace and time to bond at that pace |
