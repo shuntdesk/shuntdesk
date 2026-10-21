@@ -2,7 +2,7 @@
 // read-only agent interface, and shows what the chain shows in a small panel. Nothing is signed, nothing is stored.
 (() => {
   const BASE = 'https://shuntdesk.com', cache = new Map();
-  const isAddr = a => /^0x[0-9a-fA-F]{40}$/.test(a || '');
+  const isAddr = a => /^0x[0-9a-fA-F]{40}$/.test(a || ''), isSol = a => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a || '');
   const get = async path => { const r = await fetch(BASE + '/api/v1/' + path, { headers: { Accept: 'application/json' } }); const j = await r.json().catch(() => null); if (!j || j.error || j.ok === false) throw new Error(j?.why || j?.error || 'not answering'); return j; };
   const soft = path => get(path).then(v => ({ v }), e => ({ why: e.message }));
   const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -17,6 +17,14 @@
     m = /dexscreener\.com\/robinhood\/(0x[0-9a-fA-F]{40,64})/i.exec(u);
     if (m) { const id = m[1].toLowerCase(); if (cache.has('pair:' + id)) return cache.get('pair:' + id);
       try { const j = await (await fetch(`https://api.dexscreener.com/latest/dex/pairs/robinhood/${id}`)).json(); const t = (j.pairs || j.pair && [j.pair] || [])[0]?.baseToken?.address?.toLowerCase(); const out = t || (id.length === 42 ? id : null); cache.set('pair:' + id, out); return out; } catch (e) { return id.length === 42 ? id : null; } }
+    // Solana: a Pump.fun coin, a DexScreener Solana pair, a Solscan token (base58 keeps its case)
+    m = /pump\.fun\/(?:coin\/)?([1-9A-HJ-NP-Za-km-z]{32,44})/.exec(u); if (m) return m[1];
+    m = /solscan\.io\/token\/([1-9A-HJ-NP-Za-km-z]{32,44})/.exec(u); if (m) return m[1];
+    m = /dexscreener\.com\/solana\/([1-9A-HJ-NP-Za-km-z]{32,44})/.exec(u);
+    if (m) { const id = m[1]; if (cache.has('pair:' + id)) return cache.get('pair:' + id);
+      let out = null; try { const j = await (await fetch(`https://api.dexscreener.com/latest/dex/pairs/solana/${id}`)).json(); out = (j.pairs || j.pair && [j.pair] || [])[0]?.baseToken?.address || null; } catch (e) {}
+      if (!out) out = id;   // a mint can be in the address too
+      cache.set('pair:' + id, out); return out; }
     m = /(0x[0-9a-fA-F]{40})/.exec(location.pathname); return m ? m[1].toLowerCase() : null;
   }
 
@@ -67,6 +75,7 @@
     const a = await tokenOfPage(); if (a === current) return; current = a;
     if (!a) { host.remove(); return; } if (!host.isConnected) document.documentElement.appendChild(host);
     const id = ++job; $('st').textContent = 'reading…'; $('body').innerHTML = `<div class="s">${a}</div>`;
+    if (isSol(a) && !isAddr(a)) return showSol(a, id);
     let parts = cache.get(a);
     if (!parts) { const [t, x, d] = await Promise.all([soft('token?a=' + a), soft('scan?a=' + a), soft('ledger?a=' + a)]);
       const onCurve = t.v?.launch?.ok && /pons/i.test(t.v.launch.launchpad || '') && !t.v.launch.graduated; const s = onCurve ? await soft('sim?a=' + a) : null;
@@ -84,6 +93,28 @@
     // Watch puts the token on the watchlist this extension shares with the site, the CLI and the bot
     $('wt').addEventListener('click', async e => { e.preventDefault(); const b = e.currentTarget; b.textContent = 'Adding…';
       try { const r = await chrome.runtime.sendMessage({ type: 'watch', a, sym: tok?.symbol || '' }); b.textContent = r?.ok ? `Watching · ${r.code}` : 'Not added'; } catch (x) { b.textContent = 'Not added'; } });
+  }
+  // a Solana token: the seven checks and the deployer's ledger, read by shuntdesk.com
+  async function showSol(a, id) {
+    let parts = cache.get(a);
+    if (!parts) { const [t, d] = await Promise.all([soft('sol?a=' + a), soft('ledger?a=' + a)]); parts = { t, d }; cache.set(a, parts); setTimeout(() => cache.delete(a), 5 * 60000); }
+    if (id !== job) return;
+    const { t, d } = parts, r = t.v, F = [], add = (lvl, text) => { if (text && !F.some(f => f.text === text)) F.push({ lvl, text }); };
+    if (!r) { $('st').textContent = 'not read'; $('body').innerHTML = `<div class="s">${a}</div><ul><li class="u">${esc(t.why || 'not answering').slice(0, 90)}</li></ul>`; return; }
+    for (const x of r.steps || []) { if (x.key === 'sources' || x.key === 'judge') continue; const first = String(x.detail || '').split(/(?<=\.)\s/)[0]; if (x.status === 'bad') add('r', first); else if (x.status === 'warn') add('y', first); }
+    if (d.v) { const L = d.v.ledger || {}, got = (L.bought || 0) + (L.received || 0); if (got) { const sold = (L.sold || 0) / got; add(sold >= 0.5 ? 'r' : sold > 0 ? 'y' : 'g', sold > 0 ? `the deployer sold ${pct(sold * 100, 0)} of what it got` : 'the deployer has not sold'); }
+      if (d.v.sideBuys?.length) add('y', `the deployer paid for buys landing in ${d.v.sideBuys.length} other wallet${d.v.sideBuys.length > 1 ? 's' : ''}`); }
+    if ((r.steps || []).find(x => x.key === 'auditor')?.status === 'ok') add('g', 'mint and freeze authority both revoked');
+    F.sort((p, q) => 'ryg'.indexOf(p.lvl) - 'ryg'.indexOf(q.lvl));
+    const vd = r.verdict !== 'NO POOL' ? r : null, L = r.launch, cnt = k => F.filter(f => f.lvl === k).length;
+    $('st').innerHTML = (vd ? `<em class="v-${vd.verdict}">${vd.verdict}</em>` : '') + (cnt('r') ? `<em class="cr">● ${cnt('r')}</em>` : '') + (cnt('y') ? `<em class="cy">● ${cnt('y')}</em>` : '') + (cnt('g') ? `<em class="cg">● ${cnt('g')}</em>` : '') + `<em>${min ? '▴' : '▾'}</em>`;
+    $('body').innerHTML = `<div class="t">${esc(r.sym ? '$' + r.sym : a.slice(0, 10))}${vd ? ` <span class="v-${vd.verdict}">${vd.verdict} ${vd.score}/100</span>` : ''}</div><div class="s">${a} · Solana</div>
+      ${r.holders != null ? `<div class="row"><i>holders</i><span>${n0(r.holders)}</span></div>` : ''}${r.liq ? `<div class="row"><i>liquidity</i><span>$${n0(r.liq)}</span></div>` : ''}
+      ${L?.pad === 'pumpfun' && !L.graduated && L.progress != null ? `<div class="row"><i>Pump.fun curve</i><span>${L.progress.toFixed(1)}%${L.raised != null ? ` · ${L.raised.toFixed(1)} of 85 SOL` : ''}</span></div><div class="bar"><u style="width:${Math.min(100, L.progress)}%"></u></div>` : ''}
+      <ul>${F.map(f => `<li class="${f.lvl}">${esc(f.text)}</li>`).join('')}${d.why ? `<li class="u">deployer not read: ${esc(d.why).slice(0, 80)}</li>` : ''}</ul>
+      <div class="f"><a href="${BASE}/ticket/?a=${a}" target="_blank" rel="noopener">Full check →</a><a href="#" id="wt">Watch</a><a href="${BASE}/card/${a}" target="_blank" rel="noopener">Share card</a><em>not advice</em></div>`;
+    $('wt').addEventListener('click', async e => { e.preventDefault(); const b = e.currentTarget; b.textContent = 'Adding…';
+      try { const x = await chrome.runtime.sendMessage({ type: 'watch', a, sym: r.sym || '' }); b.textContent = x?.ok ? `Watching · ${x.code}` : 'Not added'; } catch (y) { b.textContent = 'Not added'; } });
   }
   show(); let last = location.href; setInterval(() => { if (location.href !== last) { last = location.href; show(); } }, 800);   // the pages change address without reloading
 })();

@@ -64,7 +64,7 @@ async function codeOf(a) { const r = await fetch(RPC, { method: 'POST', headers:
 const ethCall = async (to, data) => { const r = await fetch(RPC, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to, data }, 'latest'] }), signal: AbortSignal.timeout(20000) }); const j = await r.json(); if (!j.result || j.result === '0x') throw new Error('not read'); return BigInt(j.result); };
 async function supplyOf(a) { const [s, d] = await Promise.all([ethCall(a, '0x18160ddd'), ethCall(a, '0x313ce567')]); return Number(s / 10n ** (d > 4n ? d - 4n : 0n)) / (d > 4n ? 1e4 : 10 ** Number(d)); }
 function die(msg) { if (JSON_OUT) console.log(JSON.stringify({ ok: false, why: msg })); else console.error('  ' + red('✖ ') + msg); if (!INTERACTIVE) process.exit(1); throw new ReadError(msg); }
-const need = (a, what = 'token') => { if (!isAddr(a)) die(`pass a ${what} address: 0x followed by 40 hex characters`); return a.toLowerCase(); };
+const need = (a, what = 'token') => { if (isSol(a)) return a; if (!isAddr(a)) die(`pass a ${what} address: 0x followed by 40 hex characters, or a Solana address`); return a.toLowerCase(); };
 const out = (j, render) => { if (JSON_OUT) console.log(JSON.stringify(j, null, 2)); else render(j); };
 const toBond = h => h == null ? '' : h < 0.1 ? 'bonded at launch' : h < 1 ? Math.round(h * 60) + ' min to bond' : h.toFixed(1) + 'h to bond';
 const dead = o => /^0x0{40}$/i.test(o || '') || /dead$/i.test(o || '');
@@ -185,19 +185,19 @@ const COMMANDS = {
     });
   },
   async sim([a, e]) {
-    a = need(a); const E = e === undefined ? 0.05 : Number(e); if (!(E > 0 && E < 100)) die('the size is an amount of ETH, more than 0');
-    const c = await get('sim?a=' + a, 'reading the curve'), r = simulate(c, E), be = breakEven(c, E);
-    const after = [0.05, 0.1, 0.25, 0.5, 1, 2].map(X => ({ others: X, ...simulate(c, E, X) }));
+    a = need(a); const sol = isSol(a), U = sol ? 'SOL' : 'ETH', E = e === undefined ? (sol ? 0.5 : 0.05) : Number(e); if (!(E > 0 && E < 1000)) die(`the size is an amount of ${U}, more than 0`);
+    const c = await get('sim?a=' + a, 'reading the curve'), r = simulate(c, E), be = breakEven(c, E), eth = v => v == null ? '—' : v.toFixed(v < 0.01 ? 5 : 4) + ' ' + U;
+    const after = (sol ? [0.5, 1, 2.5, 5, 10, 20] : [0.05, 0.1, 0.25, 0.5, 1, 2]).map(X => ({ others: X, ...simulate(c, E, X) }));
     out({ curve: c, size: E, result: r, breakEvenInflow: be, after }, () => {
-      head('Curve Simulator', `${short(c.token)} · ${E} ETH in`);
-      line('curve now', `${bar(c.progress, 24)} ${c.progress.toFixed(1)}% ${dim(`${c.raised.toFixed(3)} of ${c.need} ETH · fee ${(c.fee * 100).toFixed(1)}% each way`)}`);
-      line('after your buy', `${bar(r.after, 24, cyan)} ${r.after.toFixed(1)}%` + (r.bonds ? green(' · reaches the bond mark') : ''));
+      head('Curve Simulator', `${short(c.token)} · ${E} ${U} in${sol ? ' · Pump.fun' : ''}`);
+      line('curve now', `${bar(c.progress, 24)} ${c.progress.toFixed(1)}% ${dim(`${c.raised.toFixed(3)} of ${c.need} ${U} · fee ${(c.fee * 100).toFixed(1)}% each way`)}`);
+      line('after your buy', `${bar(r.after, 24, cyan)} ${r.after.toFixed(1)}%` + (r.bonds ? green(sol ? ' · graduates the curve' : ' · reaches the bond mark') : ''));
       line('you get', `${bold(n0(r.tok))} tokens ${dim(`at $${(r.avg * c.ethUsd).toPrecision(3)} average, ${usd(E * c.ethUsd)} in`)}`);
       line('price moves', pc(r.impact) + dim(' from your buy alone'));
       line('sold straight back', `${eth(r.back)} ${(r.back < E ? red : green)(pc(r.back / E - 1))}`);
-      line('break even when', be == null ? yellow('the curve bonds first') : `${bold(eth(be))} ${dim('comes in after you')}`);
+      line('break even when', be == null ? yellow(sol ? 'the curve graduates first' : 'the curve bonds first') : `${bold(eth(be))} ${dim('comes in after you')}`);
       console.log('\n  ' + dim(pad('others put in', 16) + pad('curve then', 30) + 'you get back'));
-      for (const q of after) console.log('  ' + pad(`${q.others} ETH`, 16) + pad(`${bar(q.afterX, 16, dim)} ${q.afterX.toFixed(1)}%`, 30) + `${eth(q.back)} ${(q.back < E ? red : green)(pc(q.back / E - 1))}`);
+      for (const q of after) console.log('  ' + pad(`${q.others} ${U}`, 16) + pad(`${bar(q.afterX, 16, dim)} ${q.afterX.toFixed(1)}%`, 30) + `${eth(q.back)} ${(q.back < E ? red : green)(pc(q.back / E - 1))}`);
       foot('Worked on the curve\'s own reserves, read from its contract now: constant product, the fee off the ETH in and out, never more out than the curve has raised. Not modeled: others selling, the order of trades in a block, gas, a buy that crosses the bond mark. Not advice.', `${BASE}/sim/?a=${c.token}&e=${E}`);
     });
   },
@@ -239,12 +239,20 @@ const COMMANDS = {
       row('sold', 'sold', red); row('toWallets', 'to other wallets', yellow); row('toContracts', 'to contracts', cyan); row('burned', 'burned', green);
       console.log(); line('holds now', n0(v.holdsNow));
       if (v.burns?.count) line('burns', `${v.burns.count} burns, ${n0(v.burns.total)} in all${v.burns.byDev === v.burns.count ? dim(' · every one by the launcher') : dim(` · ${v.burns.byDev} by the launcher`)}`);
+      if (v.sideBuys?.length) { console.log('  ' + yellow(`○ the deployer paid for buys that landed in ${v.sideBuys.length} other wallet${v.sideBuys.length > 1 ? 's' : ''}:`)); for (const x of v.sideBuys.slice(0, 5)) console.log('    ' + pad(x.wallet, 46) + n0(x.amount)); }
       if (v.partial) console.log('  ' + yellow('○ part of the history could not be read: the totals may be low'));
       foot(v.note || 'Read from the chain index. Not advice.', `${BASE}/ticket/?a=${v.token}`);
     });
   },
   async dev([w]) {
     w = need(w, 'launcher wallet'); const v = await get('devscore?a=' + w, 'reading every launch by this wallet');
+    if (v.chain === 'solana') return out(v, v => {
+      head('Dev Score', v.wallet + dim(' · Solana'));
+      line('score', v.score == null ? dim('no launch over an hour old yet') : `${bar(v.score, 24, v.score >= 80 ? green : v.score >= 50 ? yellow : red)} ${bold(v.score + '/100')} ${dim('share of launches still alive after an hour')}`);
+      line('launched', `${v.launched} ${dim(`· the newest ${v.read} read`)}`); line('graduated', String(v.bonded)); line('dead', (v.dead ? red : green)(String(v.dead)) + dim(` of ${v.judged} over an hour old`));
+      if (v.launches?.length) { console.log(); for (const l of v.launches.slice(0, 12)) console.log('  ' + pad(bold((l.symbol || '?').slice(0, 12)), 14) + pad(dim(short(l.token)), 14) + pad(dim(ago(l.launched)), 10) + pad(usd(l.marketCap), 10) + (l.bonded ? green('graduated') : l.dead ? red('dead') : dim(l.progress != null ? Math.round(l.progress) + '% to graduation' : 'live'))); }
+      foot(v.note, `${BASE}/dev/?w=${v.wallet}`);
+    });
     out(v, v => {
       head('Dev Score', v.wallet);
       line('score', v.score == null ? dim('no launch it held tokens of') : `${bar(v.score, 24, v.score >= 80 ? green : v.score >= 50 ? yellow : red)} ${bold(v.score + '/100')} ${dim('share of its launches it did not dump')}`);
@@ -281,15 +289,15 @@ const COMMANDS = {
   async wallet([w]) {
     w = need(w, 'wallet'); const v = await get('wallet?a=' + w, 'reading the wallet');
     out(v, v => {
-      head('Wallet X-ray', v.wallet);
-      const T = v.tokens || []; line('tokens', String(T.length)); console.log();
+      head('Wallet X-ray', v.wallet + (v.chain === 'solana' ? dim(' · Solana') : ''));
+      const T = v.tokens || []; if (v.sol) line('SOL', `${v.sol.amount.toFixed(4)}${v.sol.usd != null ? dim(' · ' + usd(v.sol.usd)) : ''}`); line('tokens', String(T.length)); console.log();
       for (const t of T.slice(0, 25)) {
         const amt = Number(BigInt(t.balance || '0') / 10n ** BigInt(Math.max(0, (t.decimals ?? 18) - 4))) / 1e4, vd = t.verdict;
-        const tags = [t.impostor ? red(`copy: the real ${t.symbol || 'token'} is ${short(t.impostor)}`) : '', vd ? (vd.verdict === 'CLEAN' ? green : vd.verdict === 'DANGER' ? red : yellow)(vd.verdict) : '', t.curve?.progress != null ? dim(`curve ${pct(t.curve.progress)}`) : '', t.powers?.length ? yellow(t.powers.length + ' powers') : ''].filter(Boolean).join(dim(' · '));
+        const tags = [t.impostor ? red(v.chain === 'solana' ? `copy of ${t.impostor}, not the real one` : `copy: the real ${t.symbol || 'token'} is ${short(t.impostor)}`) : '', vd ? (vd.verdict === 'CLEAN' ? green : vd.verdict === 'DANGER' ? red : yellow)(vd.verdict) : '', t.curve?.progress != null ? dim(`curve ${pct(t.curve.progress)}`) : '', t.powers?.length ? yellow(t.powers.length + ' powers') : ''].filter(Boolean).join(dim(' · '));
         console.log('  ' + pad(bold((t.symbol || '?').slice(0, 12)), 14) + pad(n0(amt), 12) + pad(dim(short(t.token)), 14) + tags);
       }
       if (T.length > 25) console.log('  ' + dim(`and ${T.length - 25} more`));
-      foot((v.note || '') + ' What each would fetch if sold now is worked on the site.', `${BASE}/wallet/?w=${v.wallet}`); console.log(dim('  share it: ') + cyan(`${BASE}/card/wallet/${v.wallet}`) + '\n');
+      foot((v.note || '') + ' What each would fetch if sold now is worked on the site.', `${BASE}/wallet/?w=${v.wallet}`); if (v.chain !== 'solana') console.log(dim('  share it: ') + cyan(`${BASE}/card/wallet/${v.wallet}`) + '\n');
     });
   },
   async bonds([k]) {
@@ -426,16 +434,21 @@ const COMMANDS = {
     foot('', `${BASE}/rug-run/`);
   },
   async exit([a, e]) {
-    a = need(a); const tok = await get('token?a=' + a, 'reading the token'), l = tok.launch;
-    if (!l?.ok) die('no launch facts for this token: try it on the site');
-    const supply = await spin('reading the supply', supplyOf(a)).catch(() => null); if (!supply) die('the supply could not be read');
-    const onCurve = /pons/i.test(l.launchpad || '') && !l.graduated;
+    a = need(a); const sol = isSol(a);
+    let tok, l, supply;
+    if (sol) { const r = await get('sol?a=' + a, 'reading the token'); if (r.verdict === 'NO POOL') die('no pool found for this token');
+      tok = { symbol: r.sym }; l = { ok: true, launchpad: r.launch?.pad === 'pumpfun' ? 'Pump.fun' : r.launch?.pad || null, graduated: r.launch?.pad !== 'pumpfun' || !!r.launch?.graduated, devPct: r.devShare, sniperPct: r.launch?.sn, bundlerPct: r.launch?.bu, insiderPct: r.launch?.ins, price: r.price, liquidity: r.liq };
+      supply = r.fdv && r.price ? r.fdv / r.price : 1e9; }
+    else { tok = await get('token?a=' + a, 'reading the token'); l = tok.launch;
+      if (!l?.ok) die('no launch facts for this token: try it on the site');
+      supply = await spin('reading the supply', supplyOf(a)).catch(() => null); if (!supply) die('the supply could not be read'); }
+    const onCurve = sol ? !l.graduated : /pons/i.test(l.launchpad || '') && !l.graduated, CU = sol ? 'SOL' : 'ETH';
     const hold = await spin('reading the largest holders', soft('holders?a=' + a));
     const top = hold.v ? [['the largest wallet sells first', hold.v.top1], ['the three largest wallets sell first', hold.v.top3], ['the ten largest wallets sell first', hold.v.top10]] : [['if a wallet with 1% sells first', 1], ['if wallets with 5% sell first', 5]];
     const first = [['nobody sells before you', 0], ['the dev sells first', l.devPct], ['launch snipers and bundles sell first', (l.sniperPct || 0) + (l.bundlerPct || 0)], ['insiders sell first', l.insiderPct]].filter(([, s], i) => i === 0 || s >= 0.1).concat(top.filter(([, s]) => s >= 0.1));
     let rows, size, unit;
     if (onCurve) {
-      const c = await get('sim?a=' + a, 'reading the curve'); size = e === undefined ? 0.05 : Number(e); unit = 'ETH'; if (!(size > 0 && size < 100)) die('the size is an amount of ETH, more than 0');
+      const c = await get('sim?a=' + a, 'reading the curve'); size = e === undefined ? (sol ? 0.5 : 0.05) : Number(e); unit = CU; if (!(size > 0 && size < 1000)) die(`the size is an amount of ${CU}, more than 0`);
       rows = first.map(([label, share]) => ({ label, share, ...curveExit(c, size, share / 100 * supply) }));
     } else {
       if (!(l.price > 0 && l.liquidity > 0)) die('no price or liquidity read for its pool');
@@ -443,8 +456,8 @@ const COMMANDS = {
       rows = first.map(([label, share]) => ({ label, share, ...poolExit({ price: l.price, liquidity: l.liquidity }, size, share / 100 * supply) }));
     }
     out({ token: a, onCurve, size, unit, rows, holders: hold.v || { ok: false, why: hold.why } }, () => {
-      head('Exit Door', `${tok.symbol ? '$' + tok.symbol + ' · ' : ''}${size} ${unit} in · ${onCurve ? 'on its Pons curve' : 'through its pool'}`); console.log();
-      const fmt = v => unit === 'ETH' ? eth(v) : usd(v);
+      head('Exit Door', `${tok.symbol ? '$' + tok.symbol + ' · ' : ''}${size} ${unit} in · ${onCurve ? `on its ${sol ? 'Pump.fun' : 'Pons'} curve` : 'through its pool'}`); console.log();
+      const fmt = v => unit === 'USD' ? usd(v) : v.toFixed(v < 0.01 ? 5 : 4) + ' ' + unit;
       if (hold.why) console.log('  ' + yellow('○ ') + dim(`the largest holders were not read (${hold.why}): the 1% and 5% rows are examples`) + '\n');
       for (const r of rows) { const k = r.back / size; console.log('  ' + pad(r.label, 40) + pad(r.share ? dim(pct(r.share) + ' of supply') : '', 18) + bar(Math.max(0, k * 100), 20, k >= 0.9 ? green : k >= 0.5 ? yellow : red) + ' ' + pad(bold(fmt(r.back)), 14) + (k - 1 < 0 ? red : green)(pc(k - 1, 0))); }
       foot(onCurve ? 'Worked on the curve\'s own reserves, the fee off the ETH out, never more out than the curve holds. The dev, snipers and insiders as read 30 to 90 minutes after launch; the largest wallets read now from the chain index. Taxes are not read here.'

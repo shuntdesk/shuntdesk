@@ -2,7 +2,7 @@
 // DexScreener in this browser, and Agent Scan is asked about the largest holdings.
 import { createYard } from './yard.js';
 import { mountChrome, $, esc, feedYard } from './ui.js';
-import { api, prices, isAddr, compact } from './data.js';
+import { api, prices, isToken as isAddr, isSol, normAddr, compact } from './data.js';
 // a line under the result: this read as a card, a preview image wherever the link is posted
 const shareLine = (host, url) => { let p = host.querySelector('.share-card'); if (!p) { p = document.createElement('p'); p.className = 'note share-card'; p.style.marginTop = '10px'; host.appendChild(p); }
   p.innerHTML = `SHARE AS A CARD: <a class="acc" href="${url}" target="_blank" rel="noopener">${url.replace('https://', '')}</a> <button class="btn ghost" type="button" style="margin-left:8px">Copy</button>`;
@@ -20,20 +20,21 @@ const curveOut = (qty, c) => Math.max(0, Math.min(c.quoteUsd * qty / (c.tokens +
 let job = 0;
 
 async function run(w) {
-  const id = ++job; w = w.toLowerCase(); $('#a').value = w; $('#out').hidden = true; history.replaceState(null, '', '?w=' + w);
+  const id = ++job; w = normAddr(w); const sol = isSol(w); $('#a').value = w; $('#out').hidden = true; history.replaceState(null, '', '?w=' + w);
   msg.textContent = 'READING THE WALLET…';
   let v = null; try { v = await api('wallet?w=' + w); } catch (e) {}
   if (id !== job) return;
   if (!v?.ok) { msg.textContent = (v?.why || 'the explorer did not answer, try again in a minute').toUpperCase() + '.'; return; }
   msg.textContent = 'PRICING EVERY TOKEN…';
-  let m = {}; try { m = await prices(v.tokens.map(t => t.token)); } catch (e) {}
+  // on Solana the server has priced each token already (DexScreener, then the node's own price)
+  let m = {}; if (sol) for (const t of v.tokens) m[t.token] = t.price ? { price: t.price, liq: t.liq } : null; else try { m = await prices(v.tokens.map(t => t.token)); } catch (e) {}
   if (id !== job) return;
   const rows = v.tokens.map(t => { const p = m[t.token], qty = amount(t.balance, t.decimals), c = t.curve?.pool;
     if (c) return { ...t, qty, p: p || { price: c.quoteUsd / c.tokens, liq: c.realUsd }, mark: qty * c.quoteUsd / c.tokens, out: curveOut(qty, c) };
     return { ...t, qty, p, mark: p ? qty * p.price : null, out: p ? exitOut(qty, p) : null }; })
     .sort((a, b) => (b.mark || 0) - (a.mark || 0));
   const mark = rows.reduce((s, r) => s + (r.mark || 0), 0), out = rows.reduce((s, r) => s + (r.out || 0), 0), fakes = rows.filter(r => r.impostor).length;
-  shareLine($('#out'), location.origin + '/card/wallet/' + w);
+  if (!sol) shareLine($('#out'), location.origin + '/card/wallet/' + w); else $('#out').querySelector('.share-card')?.remove();
   $('#out').hidden = false;
   $('#wx-mark').textContent = usd(mark); $('#wx-out').textContent = usd(out); $('#wx-out').className = 'v ' + (mark && out < mark * 0.8 ? 'short' : '');
   $('#wx-out2').textContent = mark ? `${Math.round((out / mark - 1) * 100)}% against the marked value` : 'through each pool’s depth';
@@ -44,14 +45,14 @@ async function run(w) {
     const know = [r.impostor ? `<b class="short">COPY OF ${esc(r.symbol)}</b>` : '', r.verdict ? `<span class="vd ${r.verdict.verdict}">${r.verdict.verdict} ${r.verdict.score}</span>` : '', r.curve && !r.curve.bonded ? `on the Pons curve, ${r.curve.progress}%` : '', `<span class="wx-x" data-i="${i}">${r.powers ? (r.powers.length ? 'can ' + r.powers.slice(0, 2).join(', ') : 'no high-risk power') : ''}</span>`].filter(Boolean).join(' · ');
     return `<a class="r" href="/ticket/?a=${r.token}"><span class="sy">${esc(r.symbol || short(r.token))}<small>${short(r.token)}</small></span><span>${r.qty.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span><span>${usd(r.mark)}</span>
       <span class="${r.mark && r.out < r.mark * 0.8 ? 'short' : ''}">${r.p ? usd(r.out) + (r.mark ? `<small>${Math.round((r.out / r.mark - 1) * 100)}%</small>` : '') : 'no pool'}</span><span class="wx-k">${know}</span><span class="go">→</span></a>`;
-  }).join('') || '<p class="note" style="margin:10px 0 0">No ERC-20 token with a balance in this wallet.</p>');
-  msg.textContent = `${rows.length} TOKENS · MARKED ${usd(mark)} · ${usd(out)} IF SOLD NOW${fakes ? ` · ${fakes} COP${fakes > 1 ? 'IES' : 'Y'} OF REAL TOKENS` : ''}`;
+  }).join('') || `<p class="note" style="margin:10px 0 0">No ${sol ? 'SPL' : 'ERC-20'} token with a balance in this wallet.</p>`);
+  msg.textContent = `${sol && v.sol ? `${v.sol.amount.toFixed(3)} SOL${v.sol.usd != null ? ' ($' + compact(v.sol.usd) + ')' : ''} · ` : ''}${rows.length} TOKENS · MARKED ${usd(mark)} · ${usd(out)} IF SOLD NOW${fakes ? ` · ${fakes} COP${fakes > 1 ? 'IES' : 'Y'} OF REAL TOKENS` : ''}`;
   // Agent Scan on the largest holdings that have not been scanned yet
   for (const [i, r] of rows.entries()) {
-    if (i >= 8 || r.powers || !r.p) continue;
+    if (sol || i >= 8 || r.powers || !r.p) continue;
     const x = await api('xray?a=' + r.token).catch(() => null); if (id !== job) return;
     const n = list.querySelector(`.wx-x[data-i="${i}"]`); if (n && x?.ok) { const hi = x.powers.filter(p => p.level === 'high').map(p => p.what); n.textContent = hi.length ? 'can ' + [...new Set(hi)].slice(0, 2).join(', ') : 'no high-risk power'; n.classList.toggle('short', !!hi.length); }
   }
 }
-$('#f').addEventListener('submit', e => { e.preventDefault(); const a = $('#a').value.trim(); if (!isAddr(a)) { msg.textContent = 'THAT IS NOT AN ADDRESS. IT SHOULD BE 0x FOLLOWED BY 40 HEX CHARACTERS.'; return; } run(a); });
+$('#f').addEventListener('submit', e => { e.preventDefault(); const a = $('#a').value.trim(); if (!isAddr(a)) { msg.textContent = 'THAT IS NOT AN ADDRESS: 0x… ON ROBINHOOD CHAIN OR A SOLANA WALLET.'; return; } run(a); });
 const q = new URLSearchParams(location.search).get('w'); if (isAddr(q)) run(q);

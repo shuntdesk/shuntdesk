@@ -2,7 +2,7 @@
 // marked where they happened. Everything comes from /api/replay, which reads the chain log and Codex.
 import { createYard } from './yard.js';
 import { mountChrome, $, esc, feedYard } from './ui.js';
-import { api, isAddr, sig, ageShort } from './data.js';
+import { api, isToken as isAddr, normAddr, sig, ageShort } from './data.js';
 
 mountChrome('');
 feedYard(createYard($('#yard'), { ambient: true }));
@@ -33,7 +33,8 @@ function draw(r) {
 
 function story(r) {
   const ev = [];
-  if (r.launch) ev.push([r.launch.t, 'Launch', `Launched on Pons by <a class="acc" href="/deployer/?a=${r.launch.by}">${short(r.launch.by)}</a>.`]);
+  if (r.launch && r.chain === 'solana') ev.push([r.launch.t, 'Launch', `The pool opened${r.launchFacts?.launchpad ? ' on ' + r.launchFacts.launchpad : ''}.`]);
+  else if (r.launch) ev.push([r.launch.t, 'Launch', `Launched on Pons by <a class="acc" href="/deployer/?a=${r.launch.by}">${short(r.launch.by)}</a>.`]);
   if (r.launchFacts) { const L = r.launchFacts, f = v => v == null ? '—' : Number(v).toFixed(1) + '%'; ev.push([r.launch?.t || r.bars[0]?.[0], 'At launch', `Snipers held ${f(L.sniperPct)}, bundles ${f(L.bundlerPct)}, insiders ${f(L.insiderPct)}, the developer ${f(L.devPct)}.`]); }
   for (const v of r.verdicts) ev.push([v.t, 'Our call', `Shuntdesk filed <b>${v.verdict} ${v.score}</b>${v.claimed && v.claimed !== v.verdict ? ` (the browser said ${v.claimed}; the server held it back)` : ''}, ${v.desk === 'depot' ? 'no trade' : 'sent to the ' + v.desk + ' desk'}. Stops: ${esc(v.stops.join(' · ')) || '—'}.`]);
   if (r.graduated) ev.push([r.graduated.t, 'Graduated', 'Completed the Pons curve; liquidity moved to a pool.']);
@@ -57,18 +58,32 @@ function stats(r) {
   $('#r-call').textContent = v ? `${v.verdict} ${v.score}` : 'none';
   $('#r-call').style.color = v ? (v.verdict === 'DANGER' ? 'var(--short)' : v.verdict === 'CLEAN' ? 'var(--long)' : '') : '';
   $('#r-callat').textContent = !v ? 'no verdict on file' : !fallT ? 'filed ' + when(v.t) : v.t < fallT ? `${gap(fallT - v.t)} before the steepest fall` : `${gap(v.t - fallT)} after the steepest fall`;
-  $('#r-res').textContent = `${r.res === '5' ? '5-minute' : r.res === '15' ? '15-minute' : r.res === '60' ? 'hourly' : '4-hour'} candles · Codex`;
+  $('#r-res').textContent = `${r.res === '5' ? '5-minute' : r.res === '15' ? '15-minute' : r.res === '60' ? 'hourly' : '4-hour'} candles · ${r.via || 'Codex'}`;
   $('#r-run').href = '/ticket/?a=' + r.token; $('#r-dep').href = '/deployer/?t=' + r.token;
 }
 
+// a Solana pool's candles straight from GeckoTerminal, when the server could not get them; the same peak, fall and drop
+async function geckoReplay(r) {
+  const tf = r.res === '5' || r.res === '15' ? ['minute', r.res] : r.res === '60' ? ['hour', '1'] : ['hour', '4'];
+  const j = await (await fetch(`https://api.geckoterminal.com/api/v2/networks/solana/pools/${r.pool}/ohlcv/${tf[0]}?aggregate=${tf[1]}&limit=1000&currency=usd`, { headers: { Accept: 'application/json' } })).json();
+  const bars = (j?.data?.attributes?.ohlcv_list || []).map(([t, o, h, l, c]) => ({ t: t * 1000, o, h, l, c })).filter(x => !r.from || x.t >= r.from * 1000).sort((p, q) => p.t - q.t);
+  if (!bars.length) return r;
+  let peak = bars[0]; for (const x of bars) if (x.h > peak.h) peak = x;
+  let low = peak; for (const x of bars) if (x.t >= peak.t && x.l < low.l) low = x;
+  let drop = null; for (let i = 1; i < bars.length; i++) { const d = bars[i].c / bars[i - 1].c - 1; if (!drop || d < drop.d) drop = { t: bars[i].t, d, from: bars[i - 1].c, to: bars[i].c }; }
+  const last = bars[bars.length - 1];
+  return { ...r, ok: true, via: 'GeckoTerminal', bars: bars.map(x => [x.t, x.o, x.h, x.l, x.c]), peak: { t: peak.t, price: peak.h }, fall: low !== peak ? { t: low.t, price: low.l, fromPeak: low.l / peak.h - 1 } : null, drop: drop && drop.d < -0.2 ? drop : null, now: { t: last.t, price: last.c, fromPeak: last.c / peak.h - 1 } };
+}
 async function go(a) {
-  const id = ++job; a = a.toLowerCase(); history.replaceState(null, '', '?a=' + a); $('#a').value = a;
+  const id = ++job; a = normAddr(a); history.replaceState(null, '', '?a=' + a); $('#a').value = a;
   msg.textContent = 'READING THE LOG AND THE PRICE HISTORY…';
   let r = null; try { r = await api('replay?a=' + a); } catch (e) {}
   if (id !== job) return;
+  if (r && !r.ok && r.chain === 'solana' && r.pool) r = await geckoReplay(r).catch(() => r);
+  if (id !== job) return;
   if (!r || !r.ok) { msg.textContent = (r?.why || 'the replay did not answer').toUpperCase() + '.'; return; }
   $('#out').hidden = false; stats(r); story(r); draw(r);
-  msg.textContent = `${r.bars.length} BARS · ${r.verdicts.length} CALL${r.verdicts.length === 1 ? '' : 'S'} ON FILE · ${r.launch ? 'PONS LAUNCH' : 'NOT A PONS V2 LAUNCH'}`;
+  msg.textContent = `${r.bars.length} BARS · ${r.verdicts.length} CALL${r.verdicts.length === 1 ? '' : 'S'} ON FILE · ${r.chain === 'solana' ? 'SOLANA' + (r.launchFacts?.launchpad ? ' · ' + r.launchFacts.launchpad.toUpperCase() : '') : r.launch ? 'PONS LAUNCH' : 'NOT A PONS V2 LAUNCH'}`;
 }
 $('#f').addEventListener('submit', e => { e.preventDefault(); const a = $('#a').value.trim(); if (isAddr(a)) go(a); else msg.textContent = 'THAT IS NOT A TOKEN ADDRESS.'; });
 $('#rugs').addEventListener('click', e => { const c = e.target.closest('.chip'); if (c) go(c.dataset.a); });

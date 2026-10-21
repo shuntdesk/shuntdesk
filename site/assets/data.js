@@ -66,7 +66,7 @@ function fromGtPool(d, inc) {
 function fromDsPair(p) {
   const t = p.txns?.h24 || {};
   const links = [...(p.info?.websites || []).map(w => w.url), ...(p.info?.socials || []).map(s => s.url)].filter(u => /^https?:\/\//.test(u || '')).slice(0, 6);
-  return { links, pool: p.pairAddress, addr: p.baseToken.address.toLowerCase(), sym: p.baseToken.symbol, name: p.baseToken.name, created: p.pairCreatedAt || 0, liq: p.liquidity?.usd || 0, fdv: p.fdv || 0, price: Number(p.priceUsd) || 0, tx24: (t.buys || 0) + (t.sells || 0), buyers: t.buys || 0, sellers: t.sells || 0, chg: p.priceChange?.h24 || 0, vol24: p.volume?.h24 || 0, url: p.url, dex: p.dexId, quote: p.quoteToken.address.toLowerCase(), quoteSym: p.quoteToken.symbol, native: Number(p.priceNative) || 0 };
+  return { links, pool: p.pairAddress, addr: p.chainId === 'solana' ? p.baseToken.address : p.baseToken.address.toLowerCase(), sym: p.baseToken.symbol, name: p.baseToken.name, created: p.pairCreatedAt || 0, liq: p.liquidity?.usd || 0, fdv: p.fdv || 0, price: Number(p.priceUsd) || 0, tx24: (t.buys || 0) + (t.sells || 0), buyers: t.buys || 0, sellers: t.sells || 0, chg: p.priceChange?.h24 || 0, vol24: p.volume?.h24 || 0, url: p.url, dex: p.dexId, quote: p.quoteToken.address.toLowerCase(), quoteSym: p.quoteToken.symbol, native: Number(p.priceNative) || 0 };
 }
 
 // newest pools on the chain; falls back to DexScreener's latest profiles when GeckoTerminal says no
@@ -166,15 +166,17 @@ async function deployerFromServer(wallet, err) {
 // best pair (deepest liquidity) per token
 export async function prices(addrs) {
   const out = {};
-  const list = [...new Set(addrs.map(a => a.toLowerCase()))];
-  for (let i = 0; i < list.length; i += 30) {
-    const j = await getJSON(`${DS}/tokens/v1/robinhood/${list.slice(i, i + 30).join(',')}`, 8);
+  // Robinhood Chain and Solana tokens are asked for on their own chain; a Solana mint keeps its case
+  const evm = [...new Set(addrs.filter(a => !isSol(a)).map(a => a.toLowerCase()))], sol = [...new Set(addrs.filter(isSol))];
+  for (const [chain, list] of [['robinhood', evm], ['solana', sol]]) for (let i = 0; i < list.length; i += 30) {
+    const j = await getJSON(`${DS}/tokens/v1/${chain}/${list.slice(i, i + 30).join(',')}`, 8);
     for (const p of j || []) { const r = fromDsPair(p); if (!out[r.addr] || out[r.addr].liq < r.liq) out[r.addr] = r; }
   }
   return out;
 }
 // brand-new pools reach GeckoTerminal minutes before DexScreener lists them
 export async function pairFor(addr) {
+  if (isSol(addr)) { try { return (await prices([addr.trim()]))[addr.trim()] || null; } catch (e) { return null; } }
   addr = addr.toLowerCase();
   try { const p = (await prices([addr]))[addr]; if (p) return p; } catch (e) {}
   try {

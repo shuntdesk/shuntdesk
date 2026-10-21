@@ -49,9 +49,12 @@ function paintCard(res, done) {
   shown = res;
   const live = res.verdict !== 'NO POOL';
   $('#t-crew').textContent = !live || !res.crew ? '' : 'CREW DESK: ' + ({ offline: 'NOT ANSWERING', 'no answer': 'NO ANSWER YET' }[res.crew] || res.crew.toUpperCase());
-  if (sol) {   // a Solana ticket: read, not traded; the Robinhood Chain tools below do not apply
-    $('#tkx').hidden = true; $('#second').hidden = true;
-    $('#t-acts').innerHTML = `<button class="btn ghost" data-do="ask">Ask the conductor</button><button class="btn ghost" data-do="card">Save the card</button><button class="btn ghost" data-do="x">Post on X</button><button class="btn ghost" data-do="link">Copy link</button><a class="btn ghost" href="https://solscan.io/token/${res.addr}" target="_blank" rel="noopener">Solscan ↗</a>` + (res.url ? `<a class="btn ghost" href="${esc(res.url)}" target="_blank" rel="noopener">DexScreener ↗</a>` : '');
+  if (sol) {   // a Solana ticket: read, not traded by the crew; the Robinhood Chain-only boxes stay hidden
+    $('#second').hidden = true;
+    for (const id of ['#lk', '#xs-sum']) $(id).closest('.stub').hidden = true;
+    extras(res); devCard(res);
+    $('#t-acts').innerHTML = `<button class="btn ghost" data-do="ask">Ask the conductor</button><button class="btn ghost" data-do="card">Save the card</button><button class="btn ghost" data-do="x">Post on X</button><button class="btn ghost" data-do="link">Copy link</button><a class="btn ghost" href="https://solscan.io/token/${res.addr}" target="_blank" rel="noopener">Solscan ↗</a>` + (res.url ? `<a class="btn ghost" href="${esc(res.url)}" target="_blank" rel="noopener">DexScreener ↗</a>` : '')
+      + (live ? `<button class="btn ghost" data-do="watch">${watching(res.addr) ? 'Watching' : 'Watch'}</button><a class="btn ghost" href="/exit/?a=${res.addr}">Exit Door</a><a class="btn ghost" href="/dev/?w=${res.addr}">Dev Score</a><a class="btn ghost" href="/replay/?a=${res.addr}">Replay</a>` + (res.launch?.pad === 'pumpfun' && !res.launch.graduated ? `<a class="btn ghost" href="/sim/?a=${res.addr}">Curve sim</a>` : '') : '');
     $('#t-crew').textContent = live ? 'SOLANA · READ ONLY, THE CREW DOES NOT TRADE IT' : '';
     return;
   }
@@ -75,11 +78,11 @@ async function ask(q = '') {
 $('#cond-form').addEventListener('submit', e => { e.preventDefault(); const q = $('#cond-q').value.trim(); if (q && shown) ask(q); });
 $('#t-acts').addEventListener('click', async e => {
   const b = e.target.closest('[data-do]'); if (!b || !shown) return;
-  const link = isSol(shown.addr) ? location.origin + '/ticket/?a=' + shown.addr : location.origin + '/card/' + shown.addr;   // the card page: a preview image on X and Telegram, then straight to this ticket
+  const link = location.origin + '/card/' + shown.addr;   // the card page: a preview image on X and Telegram, then straight to this ticket
   if (b.dataset.do === 'ask') ask();
   if (b.dataset.do === 'card') { b.textContent = 'Drawing…'; const how = await saveCard(shown).catch(() => 'failed'); b.textContent = how === 'saved' ? 'Saved' : how === 'shared' ? 'Shared' : 'Save the card'; }
   if (b.dataset.do === 'x') window.open(postUrl(shown, link), '_blank', 'noopener');
-  if (b.dataset.do === 'watch' && !isSol(shown.addr)) { if (watching(shown.addr)) { unwatch(shown.addr); b.textContent = 'Watch'; } else { watch(shown); b.textContent = 'Watching'; } paintWatch(); }
+  if (b.dataset.do === 'watch') { if (watching(shown.addr)) { unwatch(shown.addr); b.textContent = 'Watch'; } else { watch(shown); b.textContent = 'Watching'; } paintWatch(); }
   if (b.dataset.do === 'link') { try { await navigator.clipboard.writeText(link); b.textContent = 'Copied'; } catch (x) { b.textContent = link; } }
 });
 
@@ -164,12 +167,12 @@ let extrasFor = '';
 async function extras(res) {
   const box = $('#tkx');
   if (res.verdict === 'NO POOL') { box.hidden = true; return; }
-  box.hidden = false; scanCard(res);
+  box.hidden = false; if (isSol(res.addr)) siteFor(res); else scanCard(res);
   const d = exitDoor(res, 500), top = d?.firsts.find(f => f.key === 'top10');
   $('#dx').innerHTML = !d ? '<p class="note">No pool to sell into.</p>' : `<div class="door-big sm"><span>$500</span><i>→</i><b class="${d.now < 400 ? 'short' : ''}">${usd(d.now)}</b></div>
     <p class="note" style="margin:0">${d.noSell ? 'A SELL FAILS IN SIMULATION: NOTHING COMES BACK.' : top ? `IF THE TEN LARGEST WALLETS SELL FIRST: ${usd(top.back)}` : 'THE HOLDER LIST COULD NOT BE READ'}</p>`;
   $('#dx-a').href = `/exit/?a=${res.addr}&usd=500`;
-  if (extrasFor === res.addr) return; extrasFor = res.addr;
+  if (extrasFor === res.addr || isSol(res.addr)) return; extrasFor = res.addr;
   const lk = $('#lk'); lk.innerHTML = '<p class="note">READING THE LOG…</p>';
   let r = null; try { r = await api('looks?a=' + res.addr); } catch (e) {}
   if (extrasFor !== res.addr) return;
@@ -194,12 +197,16 @@ async function devCard(res) {
   if (devFor !== res.addr) return;
   if (!v?.ok) { box.innerHTML = `<p class="note">${esc((v?.why || 'not answering right now').toUpperCase())}.</p>`; return; }
   const L = v.ledger, got = L.bought + L.received, pct = x => got > 0 ? ` · ${Math.round(x / got * 100)}%` : '';
-  box.innerHTML = [[n0(got), L.received ? 'Bought or received' : 'Bought on the curve'], [n0(L.sold) + pct(L.sold), 'Sold into the curve'], [n0(L.toContracts) + pct(L.toContracts), 'Into other contracts'],
+  box.innerHTML = [[n0(got), L.received ? 'Bought or received' : 'Bought on the curve'], [n0(L.sold) + pct(L.sold), v.chain === 'solana' ? 'Sold' : 'Sold into the curve'], [n0(L.toContracts) + pct(L.toContracts), 'Into other contracts'],
     [n0(L.toWallets) + pct(L.toWallets), 'Sent to other wallets'], [n0(L.burned) + pct(L.burned), 'Burned'], [v.holdsNow == null ? '?' : n0(v.holdsNow), 'Holds now']]
     .map(([a, b]) => `<div><b>${a}</b><span>${b}</span></div>`).join('');
   $('#dv-by').innerHTML = `launcher ${v.dev.slice(0, 6)}…${v.dev.slice(-4)}, found from the ${esc(v.devFound)} · <a href="/dev/?w=${v.dev}">every launch by this dev →</a>`;
+  if (v.chain === 'solana') { $('#dv-n').textContent = (v.sideBuys?.length ? `The deployer also paid for buys that landed in ${v.sideBuys.length} other wallet${v.sideBuys.length > 1 ? 's' : ''}: ${v.sideBuys.slice(0, 3).map(x => x.wallet.slice(0, 4) + '…' + x.wallet.slice(-4) + ' ' + n0(x.amount)).join(', ')}. ` : '') + (v.partial ? 'Read from the deployer\'s latest 200 transactions. ' : '') + 'Parsed by Helius from the deployer\'s own transactions.'; return; }
   $('#dv-n').textContent = (v.partial ? 'The launcher has over 1,000 transfers of it; the first 1,000 are counted. ' : '') + '"Into other contracts" can be a sale through a router or a deposit: the chain index cannot tell which.';
-}// Agent Scan, under the verdict: what the contract lets its controller do
+}// Site Check alone, for a Solana ticket
+let siteAt = '';
+function siteFor(res) { if (siteAt === res.addr) return; siteAt = res.addr; siteCheck($('#sc'), res.addr, res.links || [], v => { $('#sc-by').textContent = `${v.links.length} link${v.links.length === 1 ? '' : 's'} · ${v.flags.filter(f => f.level === 'high').length} high · Safe Browsing, urlscan.io, RDAP, the page itself`; }); }
+// Agent Scan, under the verdict: what the contract lets its controller do
 let scanFor = '';
 async function scanCard(res) {
   if (scanFor === res.addr) return; scanFor = res.addr;

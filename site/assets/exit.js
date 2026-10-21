@@ -2,7 +2,7 @@
 // buy of the chosen size gets back, straight away and after the biggest holders sell first.
 import { createYard } from './yard.js';
 import { mountChrome, $, $$, esc, feedYard } from './ui.js';
-import { scan, cachedScan, isAddr, compact } from './data.js';
+import { scan, cachedScan, isToken as isAddr, isSol, normAddr, compact } from './data.js';
 import { exitDoor } from './door.js';
 
 mountChrome('');
@@ -36,9 +36,10 @@ function paint(res) {
   }).join('');
   const cp = res.launch?.pool && !res.launch.graduated ? res.launch.pool : null;
   $('#x-liq').textContent = '$' + compact(cp ? cp.realUsd : res.liq);
-  $('#x-liq2').textContent = cp ? `ETH raised on the Pons curve, ${Math.round(res.launch.progress)}% to bond` : 'liquidity, both sides';
+  const sol = isSol(res.addr), pad = sol ? 'Pump.fun' : 'Pons', unit = sol ? 'SOL' : 'ETH';
+  $('#x-liq2').textContent = cp ? `${unit} raised on the ${pad} curve, ${Math.round(res.launch.progress)}% to ${sol ? 'graduation' : 'bond'}` : 'liquidity, both sides';
   $('#x-model').textContent = cp
-    ? `An estimate, not a quote. The token is still on its Pons curve, so the sale goes into the curve: a constant product over the curve's own reserves, with its fee and the creator's tax (${(cp.fee * 100).toFixed(1)}% together) taken off the ETH going in and coming out, and never more out than the curve has raised. Worked the way the curve's own buy and sell answer. Holder shares come from the ticket's own reading. Nothing is bought or sold. Not advice.`
+    ? `An estimate, not a quote. The token is still on its ${pad} curve, so the sale goes into the curve: a constant product over the curve's own reserves, with its fee and the creator's tax (${(cp.fee * 100).toFixed(1)}% together) taken off the ${unit} going in and coming out, and never more out than the curve has raised. Worked the way the curve's own buy and sell answer. Holder shares come from the ticket's own reading. Nothing is bought or sold. Not advice.`
     : `An estimate, not a quote. The pool is treated as one constant-product pool holding its quoted liquidity, with a 0.3% swap fee; concentrated pools can be deeper near the price and thinner away from it. Holder shares come from the ticket's own reading. Nothing is bought or sold. Not advice.`;
   $('#x-imp').textContent = '+' + (d.buyImpact * 100).toFixed(1) + '%';
   $('#x-tax').textContent = `${res.buyTax == null ? '?' : res.buyTax.toFixed(0)}% / ${res.sellTax == null ? '?' : res.sellTax.toFixed(0)}%`;
@@ -49,7 +50,7 @@ function paint(res) {
 }
 
 async function run(addr) {
-  const id = ++job; addr = addr.toLowerCase(); $('#a').value = addr;
+  const id = ++job; addr = normAddr(addr); $('#a').value = addr;
   let res = cachedScan(addr);
   // a run from before Exit Door kept no holder shares or taxes: run it again
   if (!res || res.sellTax === undefined) {
@@ -61,7 +62,7 @@ async function run(addr) {
   paint(res);
 }
 
-$('#f').addEventListener('submit', e => { e.preventDefault(); const a = $('#a').value.trim(); if (!isAddr(a)) { msg.textContent = 'THAT IS NOT A TOKEN ADDRESS. IT SHOULD BE 0x FOLLOWED BY 40 HEX CHARACTERS.'; return; } run(a); });
+$('#f').addEventListener('submit', e => { e.preventDefault(); const a = $('#a').value.trim(); if (!isAddr(a)) { msg.textContent = 'THAT IS NOT A TOKEN ADDRESS. PASTE 0x… FOR ROBINHOOD CHAIN OR A SOLANA MINT.'; return; } run(a); });
 const q = new URLSearchParams(location.search);
 if (+q.get('usd') > 0) { const v = +q.get('usd'); const chip = $$('#sizes button').find(b => +b.dataset.usd === v); if (!chip) $('#usd').value = v; size(v); }
 if (isAddr(q.get('a'))) run(q.get('a'));

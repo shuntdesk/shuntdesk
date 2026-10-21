@@ -12,7 +12,8 @@
 // position per token, rate-limited per address.
 import { FEE, MAX_IMPACT, impact, fill, value } from '../site/assets/trade.js';
 import { sameHand } from '../site/assets/hand.js';
-import { solScan, isSol } from './solana.js';
+import { solScan, isSol, solPrice, pumpCurve } from './solana.js';
+import { solHolders, solShared, solLedger, solWallet, solSim } from './soltools.js';
 
 const DS = 'https://api.dexscreener.com';
 // some data services turn away requests that do not say who is asking
@@ -398,6 +399,92 @@ const ADDR = { type: 'string', pattern: '^0x[0-9a-fA-F]{40}$', description: 'A t
 const AGENT_LIMIT = { shared: 20, devscore: 30, wallet: 30, holders: 30, sol: 30 };
 // a Solana token through the seven stops, on the server (the Helius key stays here)
 const solRead = (env, mint) => solScan(env, mint, { goplus: m => goplusSol(env, m), codex: m => launchCodex(env, m, 1399811149) });
+// the Robinhood Chain tools answered for a Solana mint or wallet: the same shapes, read from Solana
+const SOL_TOOLS = ['ledger', 'devledger', 'wallet', 'sim', 'shared', 'replay', 'site', 'looks', 'lookalikes', 'xray', 'scan', 'twins', 'devscore', 'holders'];
+async function solRoute(st, env, p, a, b = '', extra = []) {
+  if (p === 'ledger' || p === 'devledger') return solLedger(env, a, await solRead(env, a));
+  if (p === 'wallet') return solWallet(env, a);
+  if (p === 'sim') return solSim(env, a);
+  if (p === 'holders') return solHolders(env, a);
+  if (p === 'shared') return isSol(b) && b !== a ? solShared(env, a, b) : { ok: false, why: 'pass two different Solana mints' };
+  if (p === 'replay') return solReplay(st, env, a);
+  if (p === 'site') { const r = await solRead(env, a).catch(() => null); return siteCheck(st, env, a, [...(r?.links || []), ...extra]); }
+  if (p === 'devscore') return solDevScore(st, env, a);
+  if (p === 'looks' || p === 'lookalikes') return { ok: false, why: 'Lookalikes reads the Robinhood Chain launch log only, for now' };
+  if (p === 'xray' || p === 'scan') return { ok: false, why: 'Agent Scan reads contract bytecode. A Solana token runs the shared token program, so its powers sit on the mint itself: the Auditor stop on the ticket reads them' };
+  if (p === 'twins') return { ok: false, why: 'every SPL token runs the same token program, so there is no code of its own to compare. Twin Finder reads Robinhood Chain contracts' };
+  return { ok: false, why: 'not on Solana yet' };
+}
+// Replay on Solana: Codex's price bars since the pool opened, its peak, the steepest fall, where it is now
+async function solReplay(st, env, mint) {
+  const hit = replays.get(mint), now = Date.now(); if (hit && now - hit.t < 30 * 60000) return hit.v;
+  const r = await solRead(env, mint).catch(() => null), born = r?.ageMin != null ? now - r.ageMin * 60000 : null;
+  const to = Math.floor(now / 1000), from = Math.max(to - 30 * 86400, born ? Math.floor(born / 1000) - 600 : r?.launch?.pad === 'pumpfun' && !r.launch.graduated ? to - 2 * 86400 : to - 30 * 86400), span = to - from;
+  const res = span <= 2 * 86400 ? '5' : span <= 7 * 86400 ? '15' : span <= 20 * 86400 ? '60' : '240';
+  let bars = [];
+  if (env.CODEX_API_KEY && await codexOk(env, 'replay')) try {
+    const q = `{ getBars(symbol: "${mint}:1399811149", from: ${from}, to: ${to}, resolution: "${res}", removeLeadingNullValues: true) { t o h l c v } }`;
+    const b = (await (await fetch('https://graph.codex.io/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: env.CODEX_API_KEY }, body: JSON.stringify({ query: q }) })).json()).data?.getBars;
+    if (b) bars = b.t.map((t, i) => ({ t: t * 1000, o: b.o[i], h: b.h[i], l: b.l[i], c: b.c[i] })).filter(x => x.c != null && x.o != null);
+  } catch (e) {}
+  // when Codex has spent its day, GeckoTerminal's candles for the pool (free, no key)
+  if (!bars.length && r?.pool) try {
+    const tf = res === '5' || res === '15' ? ['minute', res] : res === '60' ? ['hour', '1'] : ['hour', '4'];
+    const j = await (await fetch(`https://api.geckoterminal.com/api/v2/networks/solana/pools/${r.pool}/ohlcv/${tf[0]}?aggregate=${tf[1]}&limit=1000&currency=usd`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(9000) })).json();
+    bars = (j?.data?.attributes?.ohlcv_list || []).map(([t, o, h, l, c]) => ({ t: t * 1000, o, h, l, c })).filter(x => x.t >= from * 1000).sort((a, b) => a.t - b.t);
+  } catch (e) {}
+  // no bars here: the page can read the pool's candles from GeckoTerminal itself, which turns servers away more than browsers
+  if (!bars.length) { const v = { ok: false, why: 'no price history found for this token', chain: 'solana', token: mint, pool: r?.pool || null, symbol: r?.sym || null, res, from, launch: born ? { t: born } : null, verdicts: r && r.verdict !== 'NO POOL' ? [{ t: r.at, verdict: r.verdict, score: r.score, desk: 'depot', price: r.price, stops: r.steps.map(x => x.tag) }] : [], launchFacts: r?.launch ? { launchpad: r.launch.pad === 'pumpfun' ? 'Pump.fun' : r.launch.pad, graduated: r.launch.graduated, progress: r.launch.progress } : null }; replays.set(mint, { t: now - 27 * 60000, v }); return v; }
+  let peak = bars[0]; for (const x of bars) if (x.h > peak.h) peak = x;
+  let low = peak; for (const x of bars) if (x.t >= peak.t && x.l < low.l) low = x;
+  let drop = null; for (let i = 1; i < bars.length; i++) { const d = bars[i].c / bars[i - 1].c - 1; if (!drop || d < drop.d) drop = { t: bars[i].t, d, from: bars[i - 1].c, to: bars[i].c }; }
+  const last = bars[bars.length - 1];
+  const v = { ok: true, chain: 'solana', token: mint, symbol: r?.sym || null, res, bars: bars.map(x => [x.t, x.o, x.h, x.l, x.c]), launch: born ? { t: born } : null, graduated: r?.launch?.graduated ? { t: null } : null,
+    peak: { t: peak.t, price: peak.h }, fall: low !== peak ? { t: low.t, price: low.l, fromPeak: low.l / peak.h - 1 } : null, drop: drop && drop.d < -0.2 ? drop : null, now: { t: last.t, price: last.c, fromPeak: last.c / peak.h - 1 },
+    verdicts: r && r.verdict !== 'NO POOL' ? [{ t: r.at, verdict: r.verdict, score: r.score, desk: 'depot', price: r.price, stops: r.steps.map(x => x.tag) }] : [], launchFacts: r?.launch ? { launchpad: r.launch.pad === 'pumpfun' ? 'Pump.fun' : r.launch.pad, graduated: r.launch.graduated, progress: r.launch.progress } : null };
+  replays.set(mint, { t: now, v }); if (replays.size > 200) replays.delete(replays.keys().next().value);
+  return v;
+}
+// Dev Score on Solana: every token Codex has from the wallet that deployed it, newest first, and how each is doing
+const solDevs = new Map();
+async function solDevScore(st, env, a) {
+  let w = a;
+  const isMint = await solRead(env, a).then(r => r.verdict !== 'NO POOL' ? r : null).catch(() => null);
+  if (isMint) { w = isMint.creator; if (!w) return { ok: false, why: 'the wallet that launched this token could not be found' }; }
+  const hit = solDevs.get(w); if (hit && Date.now() - hit.t < 30 * 60000) return hit.v;
+  if (!env.CODEX_API_KEY || !(await codexOk(env, 'devsol'))) return { ok: false, why: 'busy, try again later' };
+  let j = null; try {
+    const q = `{ filterTokens(filters: { network: [1399811149], creatorAddress: "${w}" }, limit: 50, rankings: { attribute: createdAt, direction: DESC }) { count results { createdAt marketCap liquidity holders devHeldPercentage token { address symbol launchpad { completed graduationPercent launchpadName } } } } }`;
+    j = (await (await fetch('https://graph.codex.io/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: env.CODEX_API_KEY }, body: JSON.stringify({ query: q }) })).json()).data?.filterTokens;
+  } catch (e) {}
+  if (!j) return { ok: false, why: 'the launch index did not answer' };
+  const now = Date.now(), launches = (j.results || []).map(x => { const lp = x.token?.launchpad, mc = Number(x.marketCap) || 0, age = now - x.createdAt * 1000;
+    return { token: x.token?.address, symbol: x.token?.symbol || '?', launched: new Date(x.createdAt * 1000).toISOString(), launchpad: lp?.launchpadName || null, bonded: !!lp?.completed, progress: lp?.graduationPercent ?? null, marketCap: mc, liquidity: Number(x.liquidity) || 0, holders: x.holders ?? null, devHolds: x.devHeldPercentage ?? null, dead: !lp?.completed && mc < 5000 && age > 3600000 }; });
+  const judged = launches.filter(x => now - Date.parse(x.launched) > 3600000), dead = judged.filter(x => x.dead).length;
+  const v = { ok: true, chain: 'solana', wallet: w, from: isMint ? a : null, launched: j.count ?? launches.length, read: launches.length, bonded: launches.filter(x => x.bonded).length, dead, judged: judged.length,
+    score: judged.length ? Math.round((1 - dead / judged.length) * 100) : null, launches,
+    note: 'Every token Codex lists as deployed by this wallet on Solana, newest 50. Dead: not graduated and under $5K market cap an hour or more after launch. The score is the share of launches over an hour old that are not dead. Read only. Not advice.' };
+  solDevs.set(w, { t: Date.now(), v }); if (solDevs.size > 200) solDevs.delete(solDevs.keys().next().value);
+  return v;
+}
+// the share card for a Solana token: its verdict, the curve, and the findings that matter
+async function solCard(st, env, a) {
+  const hit = cards.get('s:' + a); if (hit && Date.now() - hit.t < 30 * 60000) return hit.v;
+  const r = await solRead(env, a).catch(() => null), led = r && r.verdict !== 'NO POOL' ? await solLedger(env, a, r).catch(() => null) : null;
+  const F = [], add = (lvl, text) => { if (text && !F.some(f => f.text === text)) F.push({ lvl, text }); }, first = d => String(d || '').split(/(?<=\.)\s/)[0].replace(/\.$/, '');
+  const pc = v => Number(v).toFixed(v < 10 ? 1 : 0) + '%';
+  for (const x of r?.steps || []) { if (['sources', 'judge'].includes(x.key)) continue; if (x.status === 'bad') add('r', first(x.detail)); else if (x.status === 'warn') add('y', first(x.detail)); }
+  if (led?.ok) { const L = led.ledger, got = L.bought + L.received; if (got) { const sold = L.sold / got; if (sold >= 0.5) add('r', `the deployer sold ${pc(sold * 100)} of what it got`); else if (sold > 0) add('y', `the deployer sold ${pc(sold * 100)} of what it got`); else add('g', 'the deployer has not sold'); }
+    if (led.sideBuys?.length) add('y', `the deployer paid for buys that landed in ${led.sideBuys.length} other wallet${led.sideBuys.length > 1 ? 's' : ''}`); }
+  if ((r?.steps || []).find(x => x.key === 'auditor')?.status === 'ok') add('g', 'mint and freeze authority both revoked');
+  F.sort((p, q) => 'ryg'.indexOf(p.lvl) - 'ryg'.indexOf(q.lvl));
+  const L = r?.launch, curve = L?.pad === 'pumpfun' && !L.graduated && L.progress != null;
+  const v = { token: a, chain: 'solana', unit: 'SOL', padName: 'PUMP.FUN', chainLabel: 'SOLANA', symbol: r?.sym || null, name: r?.name || null, verdict: r && r.verdict !== 'NO POOL' ? { verdict: r.verdict, score: r.score } : null,
+    launch: r ? { launchpad: L?.pad || null, graduated: !!L?.graduated, holders: r.holders, liquidity: r.liq } : null, curve: curve ? { progress: L.progress, raised: L.raised ?? 0, need: 85 } : null,
+    findings: F, unread: [!r && 'token', r && !led?.ok && 'deployer'].filter(Boolean), read: new Date().toISOString() };
+  cards.set('s:' + a, { t: Date.now(), v }); if (cards.size > 150) cards.delete(cards.keys().next().value);
+  return v;
+}
 const TOOLS = [
   { name: 'token', title: 'What Shuntdesk knows about one token', p: 'token', description: 'The latest Shuntdesk verdict on a Robinhood Chain token (CLEAN, RISKY or DANGER, scored out of 100) and how its price moved an hour and a day later, a fresh server-side security read (red flags, holders), launch facts for Pons tokens (snipers, bundles, insiders, developer share, curve progress) and the crew desk position. verdict is null when nobody has run the checks yet; the reply carries the link that runs them. A verdict is a rule-based reading and can be wrong. Not advice.', inputSchema: { type: 'object', properties: { address: ADDR }, required: ['address'], additionalProperties: false } },
   { name: 'verdicts', title: 'Latest verdicts', p: 'verdicts', description: 'The 50 latest verdicts Shuntdesk filed, each with its price at the call and an hour and a day later, and how many CLEAN and DANGER calls held an hour later.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
@@ -685,6 +772,10 @@ async function telegram(st, env, request, body) {
     if (!allow(st, 'tgsol:' + chat, 'tgsol', 20)) return reply('Slow down a little: 20 Solana checks an hour per chat.');
     let r = null; try { r = await solRead(env, solFound[0]); } catch (e) { return reply('The Solana node did not answer. Try again in a minute.'); }
     const rows = r.steps.filter(x => x.key !== 'judge').map(x => `<b>${tgEsc(x.name)}</b> · ${tgEsc(x.tag)}\n${tgEsc(x.detail)}`);
+    // the deployer's own record of this token: what it bought and what it sold
+    const led = r.verdict !== 'NO POOL' ? await solLedger(env, r.addr, r).catch(() => null) : null;
+    if (led?.ok) { const L = led.ledger, got = L.bought + L.received, pc = x => got ? Math.round(x / got * 100) + '%' : '0%';
+      rows.push(`<b>Deployer</b> · <code>${led.dev.slice(0, 4)}…${led.dev.slice(-4)}</code>\n${got ? `sold ${pc(L.sold)} of what it got, sent ${pc(L.toWallets)} to other wallets` : 'bought none of it in its last 200 transactions'}${led.sideBuys?.length ? `, and paid for buys that landed in ${led.sideBuys.length} other wallet${led.sideBuys.length > 1 ? 's' : ''}` : ''}. Every launch by it: ${site}/dev/?w=${led.dev}`); }
     return reply([`<b>${tgEsc(r.sym || '')}</b>${r.name ? ' · ' + tgEsc(r.name) : ''} · Solana`, `<code>${r.addr}</code>`, '', r.verdict === 'NO POOL' ? '<b>NO POOL</b>' : `<b>${r.verdict} ${r.score}</b>`, '', ...rows.flatMap(x => [x, '']), `Full ticket: ${site}/ticket/?a=${r.addr}`].join('\n') + footer);
   }
   const question = clean.replace(/^\/\w+\s*/, '').replace(/0x[0-9a-fA-F]{40}/, '').trim();
@@ -927,7 +1018,7 @@ async function agentToken(st, env, addr) {
 // The free plan is 10,000 calls a month, about 330 a day. Each feature has its own share of a 320-call day, so a
 // busy page can never use up what the Lookalikes log and the alerts need. The counts live in the desk's state,
 // so a restart of the server does not hand the day out a second time.
-const CODEX_SHARE = { looks: 70, launch: 130, candles: 40, replay: 30, push: 40 };   // launch facts feed every ticket, so they get the largest share
+const CODEX_SHARE = { looks: 70, launch: 125, candles: 40, replay: 30, push: 40, devsol: 15 };   // launch facts feed every ticket, so they get the largest share
 async function codexOk(env, kind) {
   if (!env.CODEX_API_KEY) return false;
   const st = await load(env), day = new Date().toISOString().slice(0, 10);
@@ -1060,12 +1151,12 @@ async function launchCodex(env, addr, net = 4663) {
   if (!(await codexOk(env, 'launch'))) return hit ? hit.v : { ok: false, why: 'not available right now' };
   let v = { ok: false, why: 'no answer' };
   try {
-    const q = `{ filterTokens(tokens: ["${addr}:${net}"], limit: 1) { results { priceUSD liquidity holders top10HoldersPercent createdAt sniperCount sniperHeldPercentage bundlerCount bundlerHeldPercentage insiderCount insiderHeldPercentage devHeldPercentage token { symbol launchpad { launchpadName graduationPercent completed completedAt } } } } }`;
+    const q = `{ filterTokens(tokens: ["${addr}:${net}"], limit: 1) { results { priceUSD liquidity holders top10HoldersPercent createdAt sniperCount sniperHeldPercentage bundlerCount bundlerHeldPercentage insiderCount insiderHeldPercentage devHeldPercentage token { symbol creatorAddress launchpad { launchpadName graduationPercent completed completedAt } } } } }`;
     const r = await fetch('https://graph.codex.io/graphql', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: env.CODEX_API_KEY }, body: JSON.stringify({ query: q }) });
     const x = (await r.json()).data?.filterTokens?.results?.[0];
     if (x) { const lp = x.token?.launchpad; v = { ok: true, launchpad: lp?.launchpadName || null, progress: lp?.graduationPercent ?? null, graduated: lp ? !!lp.completed : null,
       snipers: x.sniperCount, sniperPct: x.sniperHeldPercentage, bundlers: x.bundlerCount, bundlerPct: x.bundlerHeldPercentage, insiders: x.insiderCount, insiderPct: x.insiderHeldPercentage, devPct: x.devHeldPercentage,
-      symbol: x.token?.symbol || null, price: Number(x.priceUSD) || 0, liquidity: Number(x.liquidity) || 0, holders: x.holders ?? null, top10Pct: x.top10HoldersPercent ?? null, created: x.createdAt ? x.createdAt * 1000 : null }; }
+      creator: x.token?.creatorAddress || null, symbol: x.token?.symbol || null, price: Number(x.priceUSD) || 0, liquidity: Number(x.liquidity) || 0, holders: x.holders ?? null, top10Pct: x.top10HoldersPercent ?? null, created: x.createdAt ? x.createdAt * 1000 : null }; }
     else v = { ok: true, launchpad: null };
   } catch (e) {}
   launches.set(addr, { t: now, v }); if (launches.size > 400) launches.delete(launches.keys().next().value);
@@ -1822,7 +1913,7 @@ async function siteCheck(st, env, token, extra = [], opts = {}) {
   const day = new Date().toISOString().slice(0, 10); if (st.siteDay?.day !== day) st.siteDay = { day, n: 0, scans: 0 };
   // links: on chain first, then what the browser passed
   let onChain = [];
-  try { const r = await contractCall(token, await selOf('socials()')); if (r) onChain = urlsIn(new TextDecoder().decode(new Uint8Array(r.slice(2).match(/../g).map(b => parseInt(b, 16))))); } catch (e) {}
+  if (isAddr(token)) try { const r = await contractCall(token, await selOf('socials()')); if (r) onChain = urlsIn(new TextDecoder().decode(new Uint8Array(r.slice(2).match(/../g).map(b => parseInt(b, 16))))); } catch (e) {}
   const links = [...new Set([...onChain, ...extra.filter(u => /^https?:\/\/[^\s]{4,300}$/.test(u))])].slice(0, 12);
   const kind = u => { const h = (() => { try { return new URL(u).hostname.toLowerCase(); } catch (e) { return ''; } })(); return /x\.com|twitter\.com/.test(h) ? 'x' : /t\.me|telegram/.test(h) ? 'telegram' : /discord/.test(h) ? 'discord' : /github/.test(h) ? 'github' : BIG.test(h) ? 'other' : 'website'; };
   const L = links.map(u => ({ url: u, kind: kind(u), from: onChain.includes(u) ? 'contract' : 'listing' }));
@@ -1976,10 +2067,11 @@ async function watchEdit(env, b) {
   const W = await watchLoad(env); let c = String(b?.c || '').toLowerCase();
   if (c && !W.lists[c]) return [404, { ok: false, why: 'no watchlist with that code' }];
   if (!c) { c = watchCode(); W.lists[c] = { tokens: [], chat: null, t: Date.now() }; }
-  const l = W.lists[c], clean = x => ({ a: String(x?.a || x?.addr || '').toLowerCase(), sym: String(x?.sym || x?.symbol || '').slice(0, 16) });
-  if (Array.isArray(b?.tokens)) l.tokens = b.tokens.map(clean).filter(x => isAddr(x.a)).filter((x, i, A) => A.findIndex(y => y.a === x.a) === i).slice(0, WATCH_MAX).map(x => ({ ...x, t: l.tokens.find(y => y.a === x.a)?.t || Date.now() }));
-  if (b?.add) { const x = clean(b.add); if (!isAddr(x.a)) return [400, { ok: false, why: 'add needs a token address' }]; if (!l.tokens.some(y => y.a === x.a)) { if (l.tokens.length >= WATCH_MAX) return [400, { ok: false, why: `a watchlist holds ${WATCH_MAX} tokens` }]; l.tokens.unshift({ ...x, t: Date.now() }); } }
-  if (b?.remove) { const a = String(b.remove).toLowerCase(); l.tokens = l.tokens.filter(y => y.a !== a); }
+  const norm = v => { v = String(v || '').trim(); return isSol(v) ? v : v.toLowerCase(); }, ok = a => isAddr(a) || isSol(a);
+  const l = W.lists[c], clean = x => ({ a: norm(x?.a || x?.addr), sym: String(x?.sym || x?.symbol || '').slice(0, 16) });
+  if (Array.isArray(b?.tokens)) l.tokens = b.tokens.map(clean).filter(x => ok(x.a)).filter((x, i, A) => A.findIndex(y => y.a === x.a) === i).slice(0, WATCH_MAX).map(x => ({ ...x, t: l.tokens.find(y => y.a === x.a)?.t || Date.now() }));
+  if (b?.add) { const x = clean(b.add); if (!ok(x.a)) return [400, { ok: false, why: 'add needs a token address' }]; if (!l.tokens.some(y => y.a === x.a)) { if (l.tokens.length >= WATCH_MAX) return [400, { ok: false, why: `a watchlist holds ${WATCH_MAX} tokens` }]; l.tokens.unshift({ ...x, t: Date.now() }); } }
+  if (b?.remove) { const a = norm(b.remove); l.tokens = l.tokens.filter(y => y.a !== a); }
   l.t = Date.now();
   for (const [k, v] of Object.entries(W.lists)) if (Date.now() - v.t > 60 * 86400000) delete W.lists[k];   // a list nobody touched for two months
   await env.KV.put(WATCH, JSON.stringify(W));
@@ -2001,11 +2093,20 @@ async function watchTick(st, env) {
       s.progress = r.progress; }
     if (bonded.has(a) && !s.bonded) { if (s.progress != null) add(a, 'bonded', `${sym[a]}: it reached the bond mark on Pons`); s.bonded = true; }
   }
-  // the pooled tokens' prices: DexScreener, thirty a call
-  const pooled = tokens.filter(a => !rows.has(a));
-  for (let i = 0; i < pooled.length && i < 90; i += 30) {
-    try { const j = await (await fetch(`https://api.dexscreener.com/tokens/v1/robinhood/${pooled.slice(i, i + 30).join(',')}`, { headers: UA, signal: AbortSignal.timeout(10000) })).json();
-      const best = {}; for (const q of Array.isArray(j) ? j : []) { const a = String(q.baseToken?.address || '').toLowerCase(), liq = Number(q.liquidity?.usd) || 0; if (!best[a] || liq > best[a].liq) best[a] = { price: Number(q.priceUsd) || 0, liq }; }
+  // Solana: a Pump.fun curve read from its account (passing 80%, half the SOL leaving, graduating), the rest priced below
+  const solT = tokens.filter(isSol), solPooled = [];
+  for (const a of solT.slice(0, 40)) {
+    const c = /pump$/.test(a) ? await pumpCurve(env, a).catch(() => null) : null, s = S.tok[a] = S.tok[a] || {};
+    if (!c || c.complete) { if (c?.complete && !s.bonded) { if (s.progress != null) add(a, 'bonded', `${sym[a]}: it graduated from the Pump.fun curve`); s.bonded = true; } solPooled.push(a); continue; }
+    if (s.progress != null && s.progress < 80 && c.progress >= 80) add(a, 'curve80', `${sym[a]}: its Pump.fun curve passed 80%, now ${c.progress.toFixed(1)}% (${c.realSol.toFixed(1)} of 85 SOL)`);
+    s.peak = Math.max(s.peak || 0, c.realSol); if (s.peak >= 5 && c.realSol <= s.peak / 2) { add(a, 'curvehalf', `${sym[a]}: half the SOL has left its curve, ${c.realSol.toFixed(1)} SOL from a peak of ${s.peak.toFixed(1)}`); s.peak = c.realSol; }
+    s.progress = c.progress;
+  }
+  // the pooled tokens' prices: DexScreener, thirty a call, each chain on its own
+  const pooled = tokens.filter(a => !rows.has(a) && !isSol(a));
+  for (const [chain, list] of [['robinhood', pooled], ['solana', solPooled]]) for (let i = 0; i < list.length && i < 90; i += 30) {
+    try { const j = await (await fetch(`https://api.dexscreener.com/tokens/v1/${chain}/${list.slice(i, i + 30).join(',')}`, { headers: UA, signal: AbortSignal.timeout(10000) })).json();
+      const best = {}; for (const q of Array.isArray(j) ? j : []) { const a = chain === 'solana' ? String(q.baseToken?.address || '') : String(q.baseToken?.address || '').toLowerCase(), liq = Number(q.liquidity?.usd) || 0; if (!best[a] || liq > best[a].liq) best[a] = { price: Number(q.priceUsd) || 0, liq }; }
       for (const [a, q] of Object.entries(best)) { const s = S.tok[a] = S.tok[a] || {}; if (!q.price) continue; s.ref = s.ref || q.price;
         if (q.price <= s.ref / 2) { add(a, 'price', `${sym[a]}: its price fell by half, to $${q.price.toPrecision(3)} from $${s.ref.toPrecision(3)}`); s.ref = q.price; } else if (q.price > s.ref) s.ref = q.price;
         s.price = q.price; } } catch (e) {}
@@ -2189,10 +2290,10 @@ function cardSvg(c) {
   const meta = [c.name && cut(c.name, 28), short, c.launch?.holders != null && `${Math.round(c.launch.holders).toLocaleString('en-US')} holders`, c.launch?.liquidity && `$${Math.round(c.launch.liquidity).toLocaleString('en-US')} liquidity`].filter(Boolean).join('  ·  ');
   let y = 318, mid = '';
   if (c.curve) { const w = Math.max(6, Math.min(100, c.curve.progress) / 100 * 640);
-    mid = `<text x="64" y="${y}" font-family="JetBrains Mono" font-weight="700" font-size="17" letter-spacing="3" fill="#8d8b86">PONS CURVE</text>
-      <text x="704" y="${y}" text-anchor="end" font-family="JetBrains Mono" font-weight="700" font-size="19" fill="#edebe6">${c.curve.progress.toFixed(1)}%  ·  ${c.curve.raised.toFixed(3)} of ${c.curve.need} ETH</text>
+    mid = `<text x="64" y="${y}" font-family="JetBrains Mono" font-weight="700" font-size="17" letter-spacing="3" fill="#8d8b86">${c.padName || 'PONS'} CURVE</text>
+      <text x="704" y="${y}" text-anchor="end" font-family="JetBrains Mono" font-weight="700" font-size="19" fill="#edebe6">${c.curve.progress.toFixed(1)}%  ·  ${c.curve.raised.toFixed(c.unit === 'SOL' ? 1 : 3)} of ${c.curve.need} ${c.unit || 'ETH'}</text>
       <rect x="64" y="${y + 14}" width="640" height="14" rx="7" fill="#232427"/><rect x="64" y="${y + 14}" width="${w.toFixed(1)}" height="14" rx="7" fill="#2ed3a0"/>`; y += 82; }
-  else if (c.launch?.graduated) { mid = `<text x="64" y="${y}" font-family="JetBrains Mono" font-weight="700" font-size="19" letter-spacing="3" fill="#2ed3a0">BONDED ON PONS</text>`; y += 46; }
+  else if (c.launch?.graduated) { mid = `<text x="64" y="${y}" font-family="JetBrains Mono" font-weight="700" font-size="19" letter-spacing="3" fill="#2ed3a0">${c.padName ? 'GRADUATED ON ' + c.padName : 'BONDED ON PONS'}</text>`; y += 46; }
   else y += 6;
   const shown = c.findings.slice(0, c.curve ? 4 : 5), more = c.findings.length - shown.length;
   const rows = shown.map((f, i) => `<circle cx="72" cy="${y + i * 46 - 9}" r="8" fill="${col[f.lvl]}"/><text x="94" y="${y + i * 46}" font-family="Barlow" font-weight="500" font-size="29" fill="#edebe6">${X(cut(f.text, 74))}</text>`).join('')
@@ -2210,7 +2311,7 @@ function cardSvg(c) {
   <text x="64" y="272" font-family="Barlow" font-weight="500" font-size="24" fill="#8d8b86">${X(meta)}</text>
   ${mid}${rows}
   <line x1="64" y1="566" x2="1136" y2="566" stroke="#ffffff" stroke-opacity=".1"/>
-  <text x="64" y="600" font-family="JetBrains Mono" font-weight="700" font-size="16" letter-spacing="2" fill="#6f6d68">READ FROM THE CHAIN ${X(c.read.slice(0, 16).replace('T', ' '))} UTC  ·  FINDINGS, NOT ADVICE</text>
+  <text x="64" y="600" font-family="JetBrains Mono" font-weight="700" font-size="16" letter-spacing="2" fill="#6f6d68">READ FROM ${c.chainLabel ? X(c.chainLabel) : 'THE CHAIN'} ${X(c.read.slice(0, 16).replace('T', ' '))} UTC  ·  FINDINGS, NOT ADVICE</text>
   <text x="1136" y="600" text-anchor="end" font-family="JetBrains Mono" font-weight="700" font-size="18" fill="#2ed3a0">shuntdesk.com</text>
 </svg>`;
 }
@@ -2968,13 +3069,19 @@ const api = {
       if (url.pathname === '/api/stocks') return json(await stockRefs());
       if (url.pathname === '/api/bonds') return json(await bondView(env));
       if (url.pathname === '/api/lab') return json(await labData(env));
-      if (url.pathname === '/api/ledger') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); if (!ledgers.has(a) && !allow(await load(env), ip, 'ledger', 60)) return json({ ok: false, why: 'slow down: 60 an hour' }, 429); return json(await devLedger(env, a)); }
+      if (url.pathname === '/api/ledger' && !isSol((url.searchParams.get('a') || '').trim())) { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); if (!ledgers.has(a) && !allow(await load(env), ip, 'ledger', 60)) return json({ ok: false, why: 'slow down: 60 an hour' }, 429); return json(await devLedger(env, a)); }
       if (url.pathname === '/api/radar') return json(await radarView(env));
       if (url.pathname === '/api/hand/launches') { const ws = [...new Set((url.searchParams.get('w') || '').toLowerCase().split(',').filter(isAddr))].slice(0, 40); return ws.length ? json(await handLaunches(env, ws)) : json({ ok: false, why: 'pass ?w= up to 40 wallets, comma separated' }, 400); }
       if (url.pathname === '/api/hand') { const w = (url.searchParams.get('w') || '').toLowerCase(); return isAddr(w) ? json(await handWallet(env, w, url.searchParams.get('creator') === '1')) : json({ ok: false, why: 'bad address' }, 400); }
-      if (url.pathname === '/api/looks') { const a = (url.searchParams.get('a') || '').toLowerCase(); return isAddr(a) ? json(await lookalikes(env, a)) : json({ ok: false, why: 'bad address' }, 400); }
+      if (url.pathname === '/api/looks' && !isSol((url.searchParams.get('a') || '').trim())) { const a = (url.searchParams.get('a') || '').toLowerCase(); return isAddr(a) ? json(await lookalikes(env, a)) : json({ ok: false, why: 'bad address' }, 400); }
       const st = await load(env);
       const body = request.method === 'POST' ? await request.json().catch(() => ({})) : null;
+      // a Solana mint or wallet on a Robinhood Chain tool's route gets that tool's Solana reading
+      { const sa = (url.searchParams.get('a') || url.searchParams.get('w') || '').trim(), sp = url.pathname.slice(5);
+        if (isSol(sa) && SOL_TOOLS.includes(sp)) {
+          if (!allow(st, ip, 'sol', 120)) return json({ ok: false, why: 'slow down: 120 Solana reads an hour' }, 429);
+          const r = await solRoute(st, env, sp, sa, (url.searchParams.get('b') || '').trim(), (url.searchParams.get('u') || '').split(' ').filter(Boolean).slice(0, 6)); await save(env, st); return json(r);
+        } }
       if (url.pathname === '/api/desk') {
         const pos = st.pos.map(p => { const v = worth(p), { m, ...rest } = p; return { ...rest, net: v.net, health: v.health }; });
         return json({ start: START, equity: Math.round(equity(st) * 100) / 100, cash: Math.round(st.cash * 100) / 100, pos, hist: st.hist.slice(0, 20), log: st.log.slice(0, 30), curve: st.curve, updated: st.updated, record: record(st) });
@@ -2990,7 +3097,8 @@ const api = {
       if (url.pathname.startsWith('/api/v1/')) {
         if (!allow(st, ip, 'agent', 120)) return json({ error: 'rate limited: 120 calls an hour' }, 429);
         const ep = url.pathname.slice(8); if (AGENT_LIMIT[ep] && !allow(st, ip, 'agent-' + ep, AGENT_LIMIT[ep])) return json({ error: `rate limited: ${AGENT_LIMIT[ep]} calls an hour for ${ep}` }, 429);
-        const rawA = (url.searchParams.get('a') || '').trim(), solEp = ep === 'sol' || (isSol(rawA) && ['token', 'scan', 'check'].includes(ep));
+        const rawA = (url.searchParams.get('a') || url.searchParams.get('w') || '').trim(), solEp = ep === 'sol' || (isSol(rawA) && ['token', 'check'].includes(ep));
+        if (isSol(rawA) && SOL_TOOLS.includes(ep)) { if (!allow(st, ip, 'agent-sol', 60)) return json({ error: 'rate limited: 60 Solana reads an hour' }, 429); const r = await solRoute(st, env, ep, rawA, (url.searchParams.get('b') || '').trim()); await save(env, st); return json(r, r.ok === false ? 400 : 200); }
         if (solEp && AGENT_LIMIT.sol && ep !== 'sol' && !allow(st, ip, 'agent-sol', AGENT_LIMIT.sol)) return json({ error: `rate limited: ${AGENT_LIMIT.sol} calls an hour for Solana tokens` }, 429);
         const [code, out] = await agentData(st, env, solEp ? 'sol' : ep, solEp ? rawA : rawA.toLowerCase(), (url.searchParams.get('b') || '').toLowerCase());
         return json(out, code);
@@ -3043,7 +3151,7 @@ const api = {
         await save(env, st); return json(v);
       }
       if (url.pathname.startsWith('/card/')) {
-        const png = url.pathname.endsWith('.png'), parts = url.pathname.slice(6).replace(/\.png$/, '').toLowerCase().split('/'), kind = parts.length === 2 ? parts[0] : 'token', a = parts[parts.length - 1];
+        const png = url.pathname.endsWith('.png'), raw = url.pathname.slice(6).replace(/\.png$/, '').split('/'), parts = raw.map((x, i) => i === raw.length - 1 && isSol(x) ? x : x.toLowerCase()), kind = parts.length === 2 ? parts[0] : 'token', a = parts[parts.length - 1];
         // the week's champion: /card/champ/latest(.png)
         if (kind === 'champ') {
           const c = (st.champions || [])[0], read = new Date().toISOString();
@@ -3052,10 +3160,10 @@ const api = {
           if (png) { const { svgToPng } = await import('./card.js'); return new Response(await svgToPng(svg), { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=1800' } }); }
           return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Shuntdesk champion</title><meta property="og:title" content="${c ? cardX(c.handle) + ' is the Shuntdesk champion' : 'Shuntdesk Season Pass'}"><meta property="og:image" content="${url.origin}/card/champ/latest.png?h=${Math.floor(Date.now() / 1800000)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta http-equiv="refresh" content="0;url=/season/"></head><body></body></html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
         }
-        if (!isAddr(a) || !['token', 'wallet', 'dev'].includes(kind)) return new Response('not found', { status: 404 });
-        const ck = kind === 'token' ? a : (kind === 'wallet' ? 'w:' : 'd:') + a;
+        if (!(isAddr(a) || (isSol(a) && kind === 'token')) || !['token', 'wallet', 'dev'].includes(kind)) return new Response('not found', { status: 404 });
+        const ck = kind === 'token' ? (isSol(a) ? 's:' + a : a) : (kind === 'wallet' ? 'w:' : 'd:') + a;
         if (!cards.has(ck) && !allow(st, ip, 'card', 60)) return new Response('slow down', { status: 429 });
-        const c = kind === 'wallet' ? await walletCard(st, env, a) : kind === 'dev' ? await devCard(st, env, a) : await cardData(st, env, a); await save(env, st);
+        const c = kind === 'wallet' ? await walletCard(st, env, a) : kind === 'dev' ? await devCard(st, env, a) : isSol(a) ? await solCard(st, env, a) : await cardData(st, env, a); await save(env, st);
         const svg = () => kind === 'wallet' ? walletSvg(c) : kind === 'dev' ? devSvg(c) : cardSvg(c);
         if (png) { const { svgToPng } = await import('./card.js'); return new Response(await svgToPng(svg()), { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=1800' } }); }
         if (url.searchParams.has('svg')) return new Response(svg(), { headers: { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'no-store' } });
