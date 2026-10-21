@@ -460,7 +460,7 @@ const COMMANDS = {
       const fmt = v => unit === 'USD' ? usd(v) : v.toFixed(v < 0.01 ? 5 : 4) + ' ' + unit;
       if (hold.why) console.log('  ' + yellow('○ ') + dim(`the largest holders were not read (${hold.why}): the 1% and 5% rows are examples`) + '\n');
       for (const r of rows) { const k = r.back / size; console.log('  ' + pad(r.label, 40) + pad(r.share ? dim(pct(r.share) + ' of supply') : '', 18) + bar(Math.max(0, k * 100), 20, k >= 0.9 ? green : k >= 0.5 ? yellow : red) + ' ' + pad(bold(fmt(r.back)), 14) + (k - 1 < 0 ? red : green)(pc(k - 1, 0))); }
-      foot(onCurve ? 'Worked on the curve\'s own reserves, the fee off the ETH out, never more out than the curve holds. The dev, snipers and insiders as read 30 to 90 minutes after launch; the largest wallets read now from the chain index. Taxes are not read here.'
+      foot(onCurve ? `Worked on the ${sol ? 'Pump.fun ' : ''}curve's own reserves, the fee off the ${CU} out, never more out than the curve holds.` + ' The dev, snipers and insiders as read 30 to 90 minutes after launch; the largest wallets read now from the chain index. Taxes are not read here.'
         : 'One constant-product pool holding its quoted liquidity, half each side, a 0.3% fee: an estimate of size, not a quote. A concentrated pool can be thinner away from the price. Taxes are not read here: the site reads them.', `${BASE}/exit/?a=${a}`);
     });
   },

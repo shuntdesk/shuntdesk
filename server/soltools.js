@@ -104,6 +104,7 @@ export async function solSim(env, mint) {
   const c = await pumpCurve(env, mint).catch(() => null); if (!c) return { ok: false, why: 'not a Pump.fun token, or its curve did not answer' };
   if (c.complete) return { ok: false, why: 'this token has graduated: it trades in a pool now, not on its curve' };
   const usd = await solPrice(env); if (!usd) return { ok: false, why: 'the SOL price did not answer' };
-  return { ok: true, chain: 'solana', unit: 'SOL', token: mint, curve: c.curve, progress: c.progress, raised: c.realSol, need: PUMP_NEED, quoteEth: c.vSol, tokens: c.vTok, realEth: c.realSol, fee: c.fee, ethUsd: usd,
-    note: 'Read from the Pump.fun curve account now: a constant product over its virtual reserves, the fee (protocol and creator, from Pump.fun\'s global account) taken off the SOL going in and out, never more out than the curve has raised. Other trades move it before yours lands. Not advice.' };
+  // the simulator works in SOL raised (of 85); Pump.fun's own figure counts tokens sold, so both are given
+  return { ok: true, chain: 'solana', unit: 'SOL', token: mint, curve: c.curve, progress: Math.min(100, c.realSol / PUMP_NEED * 100), tokenProgress: c.progress, raised: c.realSol, need: PUMP_NEED, quoteEth: c.vSol, tokens: c.vTok, realEth: c.realSol, fee: c.fee, ethUsd: usd,
+    note: 'Read from the Pump.fun curve account now. Progress here is SOL raised of the 85 that graduate it; Pump.fun shows progress by tokens sold, which runs ahead. A constant product over its virtual reserves, the fee (protocol and creator, from Pump.fun\'s global account) taken off the SOL going in and out, never more out than the curve has raised. Other trades move it before yours lands. Not advice.' };
 }
