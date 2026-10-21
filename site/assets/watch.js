@@ -93,7 +93,7 @@ async function check() {
   const due = l.filter(w => Date.now() - w.checked > 30 * 60000).sort((a, b) => a.checked - b.checked)[0];
   if (due) {
     due.checked = Date.now();
-    try { const r = await scan(due.addr); if (r.verdict && r.verdict !== 'NO POOL' && r.verdict !== due.verdict) { alert(due, `Verdict changed from ${due.verdict} ${due.score} to ${r.verdict} ${r.score}.`); due.verdict = r.verdict; due.score = r.score; } } catch (e) {}
+    try { const r = await scan(due.addr); if (r.verdict && r.verdict !== 'NO POOL' && r.verdict !== due.verdict) { if (due.verdict !== 'WATCH') alert(due, `Verdict changed from ${due.verdict} ${due.score} to ${r.verdict} ${r.score}.`); due.verdict = r.verdict; due.score = r.score; } } catch (e) {}
   }
   // keep what the visitor did in the meantime (another tab may have added or removed one)
   const now = read(), byAddr = new Map(l.map(w => [w.addr, w]));
