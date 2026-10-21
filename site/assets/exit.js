@@ -79,7 +79,7 @@ async function card() {
   c.fillText('IN', 58, 170); c.fillText('BACK, SOLD STRAIGHT AWAY', 430, 170);
   c.font = '900 120px "Big Shoulders Display"'; c.fillStyle = '#edebe6'; c.fillText(usdFmt(usd), 52, 280); c.fillStyle = d.now < usd * 0.8 ? '#ff4d5e' : '#edebe6'; c.fillText(usdFmt(d.now), 424, 280);
   c.font = '400 18px "JetBrains Mono"'; c.fillStyle = '#8b8e94'; c.fillText('IF THEY SELL FIRST', 58, 344);
-  d.firsts.slice(1).forEach((f, i) => { const y = 386 + i * 52; c.font = '400 19px "JetBrains Mono"'; c.fillStyle = '#c9c7c2'; c.fillText(f.label.replace(' sells first', '').replace(' sell first', '').toUpperCase(), 58, y); c.font = '900 40px "Big Shoulders Display"'; c.fillStyle = f.back < usd * 0.5 ? '#ff4d5e' : '#edebe6'; c.textAlign = 'right'; c.fillText(usdFmt(f.back), W - 58, y + 8); c.textAlign = 'left'; });
+  d.firsts.slice(1).sort((p, q) => p.back - q.back).slice(0, 4).forEach((f, i) => { const y = 386 + i * 52; c.font = '400 19px "JetBrains Mono"'; c.fillStyle = '#c9c7c2'; c.fillText(f.label.replace(' sells first', '').replace(' sell first', '').toUpperCase(), 58, y); c.font = '900 40px "Big Shoulders Display"'; c.fillStyle = f.back < usd * 0.5 ? '#ff4d5e' : '#edebe6'; c.textAlign = 'right'; c.fillText(usdFmt(f.back), W - 58, y + 8); c.textAlign = 'left'; });
   c.font = '400 16px "JetBrains Mono"'; c.fillStyle = '#8b8e94'; c.fillText('ESTIMATE FROM POOL DEPTH AND SELL TAX · NOT ADVICE', 58, 630); c.textAlign = 'right'; c.fillText('SHUNTDESK.COM/EXIT', W - 56, 630); c.textAlign = 'left';
   return cv;
 }

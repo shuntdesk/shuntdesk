@@ -386,7 +386,7 @@ async function secondRead(st, env, b, ip) {
 // Add it to a client as a remote server at https://shuntdesk.com/mcp. Read-only, no key, 120 calls an hour per caller.
 const MCP_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 const ADDR = { type: 'string', pattern: '^0x[0-9a-fA-F]{40}$', description: 'A token address on Robinhood Chain (chain id 4663)' };
-const AGENT_LIMIT = { shared: 20, devscore: 30, wallet: 30 };
+const AGENT_LIMIT = { shared: 20, devscore: 30, wallet: 30, holders: 30 };
 const TOOLS = [
   { name: 'token', title: 'What Shuntdesk knows about one token', p: 'token', description: 'The latest Shuntdesk verdict on a Robinhood Chain token (CLEAN, RISKY or DANGER, scored out of 100) and how its price moved an hour and a day later, a fresh server-side security read (red flags, holders), launch facts for Pons tokens (snipers, bundles, insiders, developer share, curve progress) and the crew desk position. verdict is null when nobody has run the checks yet; the reply carries the link that runs them. A verdict is a rule-based reading and can be wrong. Not advice.', inputSchema: { type: 'object', properties: { address: ADDR }, required: ['address'], additionalProperties: false } },
   { name: 'verdicts', title: 'Latest verdicts', p: 'verdicts', description: 'The 50 latest verdicts Shuntdesk filed, each with its price at the call and an hour and a day later, and how many CLEAN and DANGER calls held an hour later.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
@@ -819,6 +819,7 @@ async function agentData(st, env, p, a, b = '') {
   if (p === 'weekly') return [200, await weeklyData(st, env)];
   if (p === 'twins') { if (!isAddr(a)) return [400, { error: need }]; return [200, await twins(env, a)]; }
   if (p === 'devscore') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… the launcher wallet' }]; return [200, await devScore(st, env, a)]; }
+  if (p === 'holders') { if (!isAddr(a)) return [400, { error: need }]; return [200, await topHolders(env, a)]; }
   if (p === 'shared') { if (!isAddr(a) || !isAddr(b) || a === b) return [400, { error: 'pass ?a=0x…&b=0x… two different token addresses' }]; return [200, await sharedBags(env, a, b)]; }
   return [404, { error: 'unknown endpoint', see: 'https://shuntdesk.com/llms.txt' }];
 }
@@ -2375,6 +2376,27 @@ export async function twins(env, a) {
 }
 // Shared Bags: the wallets that hold both of two tokens, from the index's holder lists; pools, curves and contracts left out
 const bagsCache = new Map();
+// the largest holders that are wallets: the index's holder list with the curve, pools, the burn address and other
+// contracts left out (a smart wallet, EIP-7702, counts as a wallet). Exit Door and the CLI work "who sells first" from it.
+const holdersCache = new Map();
+async function topHolders(env, a) {
+  const hit = holdersCache.get(a); if (hit && Date.now() - hit.t < 15 * 60000) return hit.v;
+  if (bsLow()) return { ok: false, why: INDEX_OUT };
+  let list; try { list = await bsStrict(env, `module=token&action=getTokenHolders&contractaddress=${a}&page=1&offset=40`); } catch (e) { return { ok: false, why: String(e.message || e).slice(0, 120) }; }
+  const [sup, dec] = await Promise.all([contractCall(a, '18160ddd').catch(() => null), contractCall(a, '313ce567').catch(() => null)]);
+  if (!sup || sup === '0x') return { ok: false, why: 'the supply could not be read' };
+  const supply = BigInt(sup), d = dec && dec !== '0x' ? Number(BigInt(dec)) : 18;
+  const rows = list.map(h => ({ w: String(h.address).toLowerCase(), v: BigInt(h.value || '0') })).filter(h => h.w !== DEAD && !/^0x0{40}$/.test(h.w));
+  const codes = await rpcBatch(rows.map(h => ['eth_getCode', [h.w, 'latest']])).catch(() => rows.map(() => null));
+  const unread = codes.filter(c => typeof c !== 'string').length;
+  const wallets = rows.map((h, i) => ({ ...h, c: codes[i] })).filter(h => typeof h.c === 'string' && (h.c === '0x' || isDelegated(h.c)))
+    .map(h => ({ wallet: h.w, share: supply ? Number(h.v * 10000000n / supply) / 100000 : null, tokens: Number(h.v / 10n ** BigInt(Math.max(0, d - 4))) / 1e4, smart: h.c !== '0x' }));
+  const sum = n => wallets.slice(0, n).reduce((s, h) => s + (h.share || 0), 0);
+  const v = { ok: true, token: a, read: rows.length, unread, wallets: wallets.slice(0, 20), top1: sum(1), top3: sum(3), top10: sum(10),
+    note: 'The largest holders from the chain index, wallets only: the curve, pools, the burn address and other contracts left out; a smart wallet counts as a wallet. Shares of the whole supply.' };
+  holdersCache.set(a, { t: Date.now(), v }); if (holdersCache.size > 200) holdersCache.delete(holdersCache.keys().next().value);
+  return v;
+}
 async function sharedBags(env, a, b) {
   const key = [a, b].sort().join(':'), hit = bagsCache.get(key); if (hit && Date.now() - hit.t < 30 * 60000) return hit.v;
   if (bsLow()) return { ok: false, why: INDEX_OUT };

@@ -410,7 +410,9 @@ const COMMANDS = {
     if (!l?.ok) die('no launch facts for this token: try it on the site');
     const supply = await spin('reading the supply', supplyOf(a)).catch(() => null); if (!supply) die('the supply could not be read');
     const onCurve = /pons/i.test(l.launchpad || '') && !l.graduated;
-    const first = [['nobody sells before you', 0], ['the dev sells first', l.devPct], ['launch snipers and bundles sell first', (l.sniperPct || 0) + (l.bundlerPct || 0)], ['insiders sell first', l.insiderPct]].filter(([, s], i) => i === 0 || s >= 0.1).concat([['if a wallet with 1% sells first', 1], ['if wallets with 5% sell first', 5]]);
+    const hold = await spin('reading the largest holders', soft('holders?a=' + a));
+    const top = hold.v ? [['the largest wallet sells first', hold.v.top1], ['the three largest wallets sell first', hold.v.top3], ['the ten largest wallets sell first', hold.v.top10]] : [['if a wallet with 1% sells first', 1], ['if wallets with 5% sell first', 5]];
+    const first = [['nobody sells before you', 0], ['the dev sells first', l.devPct], ['launch snipers and bundles sell first', (l.sniperPct || 0) + (l.bundlerPct || 0)], ['insiders sell first', l.insiderPct]].filter(([, s], i) => i === 0 || s >= 0.1).concat(top.filter(([, s]) => s >= 0.1));
     let rows, size, unit;
     if (onCurve) {
       const c = await get('sim?a=' + a, 'reading the curve'); size = e === undefined ? 0.05 : Number(e); unit = 'ETH'; if (!(size > 0 && size < 100)) die('the size is an amount of ETH, more than 0');
@@ -420,11 +422,12 @@ const COMMANDS = {
       size = e === undefined ? 100 : Number(e); unit = 'USD'; if (!(size > 0)) die('the size is an amount of dollars, more than 0');
       rows = first.map(([label, share]) => ({ label, share, ...poolExit({ price: l.price, liquidity: l.liquidity }, size, share / 100 * supply) }));
     }
-    out({ token: a, onCurve, size, unit, rows }, () => {
+    out({ token: a, onCurve, size, unit, rows, holders: hold.v || { ok: false, why: hold.why } }, () => {
       head('Exit Door', `${tok.symbol ? '$' + tok.symbol + ' · ' : ''}${size} ${unit} in · ${onCurve ? 'on its Pons curve' : 'through its pool'}`); console.log();
       const fmt = v => unit === 'ETH' ? eth(v) : usd(v);
+      if (hold.why) console.log('  ' + yellow('○ ') + dim(`the largest holders were not read (${hold.why}): the 1% and 5% rows are examples`) + '\n');
       for (const r of rows) { const k = r.back / size; console.log('  ' + pad(r.label, 40) + pad(r.share ? dim(pct(r.share) + ' of supply') : '', 18) + bar(Math.max(0, k * 100), 20, k >= 0.9 ? green : k >= 0.5 ? yellow : red) + ' ' + pad(bold(fmt(r.back)), 14) + (k - 1 < 0 ? red : green)(pc(k - 1, 0))); }
-      foot(onCurve ? 'Worked on the curve\'s own reserves, the fee off the ETH out, never more out than the curve holds. Shares are read 30 to 90 minutes after launch and may have moved. Taxes are not read here.'
+      foot(onCurve ? 'Worked on the curve\'s own reserves, the fee off the ETH out, never more out than the curve holds. The dev, snipers and insiders as read 30 to 90 minutes after launch; the largest wallets read now from the chain index. Taxes are not read here.'
         : 'One constant-product pool holding its quoted liquidity, half each side, a 0.3% fee: an estimate of size, not a quote. A concentrated pool can be thinner away from the price. Taxes are not read here: the site reads them.', `${BASE}/exit/?a=${a}`);
     });
   },

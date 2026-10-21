@@ -35,6 +35,8 @@ export function exitDoor(t, usd) {
     ['dev', 'The developer sells first', t.devShare || L.dev || 0],
     ['group', 'The largest funded group sells first', t.group?.share || 0],
     ['launch', 'Snipers and bundles from the launch sell first', (L.sn || 0) + (L.bu || 0)],
+    ['top1', 'The largest wallet sells first', t.topShares?.[0] || 0],
+    ['top3', 'The three largest wallets sell first', sum((t.topShares || []).slice(0, 3))],
     ['top10', 'The ten largest wallets sell first', sum(t.topShares) || t.top10 || 0],
   ].filter(([k, , s], i) => i === 0 || s >= 0.1).map(([key, label, share]) => ({ key, label, share, ...run(share) }));
   return {
