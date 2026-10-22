@@ -861,14 +861,30 @@ async function pushTick(st, env) {
 const tgEsc = s => String(s ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 const pct = v => v == null ? '—' : Number(v).toFixed(1) + '%';
 // free questions on Telegram: the conductor answers from what Shuntdesk actually holds right now
-const ABOUT = 'Shuntdesk (shuntdesk.com) runs seven fixed-rule checks on Robinhood Chain tokens in the browser (sources, gate, scout, tracer, linker, auditor, judge) and gives CLEAN (75+), RISKY (45-74) or DANGER (under 45). The crew desk is a public paper desk: CLEAN calls go long, DANGER calls on pools with $20K+ go short, 4% of equity each, paper money only. Every call is priced again after an hour and a day; the record is on Hugging Face (huggingface.co/datasets/shuntdesk/verdicts). Site pages (links, not bot commands): shuntdesk.com/ticket (run the checks), shuntdesk.com/board (live yard, Pons graduations), shuntdesk.com/desk (your paper desk, 10,000 paper USDG, up to 100x on deep pools), shuntdesk.com/deployer (what a wallet launched on Pons), shuntdesk.com/replay (a token\'s fall with its events), shuntdesk.com/report (daily), shuntdesk.com/agents (JSON API, MCP at shuntdesk.com/mcp). Bot commands: /check 0x..., /new, /desk, /report. Phone alerts for watched tokens. $SHUNT is the project token, CA 0x7e517e779b85895894becad80c9bb69b4cb1c4d6, launched on Pons. No wallet, no key, no account.';
-async function tgAsk(st, env, chat, q, addr) {
+const ABOUT = 'Shuntdesk (shuntdesk.com) runs seven fixed-rule checks on Robinhood Chain tokens in the browser (sources, gate, scout, tracer, linker, auditor, judge) and gives CLEAN (75+), RISKY (45-74) or DANGER (under 45). The crew desk is a public paper desk: CLEAN calls go long, DANGER calls on pools with $20K+ go short, 4% of equity each, paper money only. Every call is priced again after an hour and a day; the record is on Hugging Face (huggingface.co/datasets/shuntdesk/verdicts). Site pages (links, not bot commands): shuntdesk.com/ticket (run the checks), shuntdesk.com/board (live yard, Pons graduations), shuntdesk.com/desk (your paper desk, 10,000 paper USDG, up to 100x on deep pools), shuntdesk.com/deployer (what a wallet launched on Pons), shuntdesk.com/replay (a token\'s fall with its events), shuntdesk.com/report (daily), shuntdesk.com/agents (JSON API, MCP at shuntdesk.com/mcp). Bot commands: /check 0x..., /new, /desk, /report, /watchlist wl-..., /daily. Pasting a Solana mint to the bot runs the seven checks on Solana too (pool or Pump.fun curve, First Buyers in the launch slot, what the deployer sold, Dev Score, Deployer Ring, Graduation Watch at shuntdesk.com/graduation, the hub at shuntdesk.com/solana); Solana is a feature only, $SHUNT is not on Solana and any $SHUNT there is not ours. Games: The Yard (shuntdesk.com/play), Rug Run, Will it bond?, Curve Racing, Launch Bingo, Fantasy Launcher, Paper Sniper, Guess the Chart, the Season Pass with a weekly champion; the Telegram mini app (the Open button in the bot) has the checks, Rug or Ride and $SHUNT live. Also a CLI (npm i -g shuntdesk) and a browser extension. Phone alerts for watched tokens. $SHUNT is the project token, CA 0x7e517e779b85895894becad80c9bb69b4cb1c4d6, launched on Pons on Robinhood Chain only. No wallet, no key, no account.';
+async function tgAsk(st, env, chat, q, addr, ctx = {}) {
   const r = report(st), d = await agentData(st, env, 'desk', '').then(x => x[1]);
+  // $SHUNT as it is now: the curve and the dev wallet, both cached on the server
+  let shunt = '';
+  try { const [c, l] = await Promise.all([curveSim(SHUNT_CA).catch(() => null), devLedger(env, SHUNT_CA).catch(() => null)]);
+    if (c?.ok) shunt += ` $SHUNT now: curve ${c.progress.toFixed(1)}% to bond (${c.raised.toFixed(2)} of ${c.need} ETH), market cap about $${Math.round(c.quoteEth / c.tokens * 1e9 * c.ethUsd).toLocaleString('en-US')}.`;
+    if (l?.ok) shunt += ` The dev wallet bought ${Math.round(l.ledger.bought).toLocaleString('en-US')} $SHUNT, sold ${Math.round(l.ledger.sold)}, burned ${Math.round(l.burns?.total || l.ledger.burned).toLocaleString('en-US')} in ${l.burns?.count || 0} burns.`; } catch (e) {}
+  const hist = (ctx.history || []).map(h => `Earlier, ${h.who || 'someone'} asked: ${h.q}\nYou answered: ${h.a}`).join('\n');
+  const around = ctx.replyTo ? `\nThe message they replied to${ctx.replyToBot ? ' (your own)' : ''}: ${String(ctx.replyTo).slice(0, 400)}` : '';
   let tok = ''; if (addr) { const [code, x] = await agentData(st, env, 'token', addr); if (code === 200) tok = `\nToken asked about: ${x.symbol || addr} (${addr}). Verdict on file: ${x.verdict ? `${x.verdict.verdict} ${x.verdict.score}, ${x.verdict.desk}, filed ${x.verdict.at}` : 'none yet'}. Security read: ${x.serverCheck ? (x.serverCheck.redFlags.join(', ') || 'no red flag') : 'unavailable'}. Launch: ${x.launch?.launchpad ? `${x.launch.launchpad}, snipers ${x.launch.sniperPct}%, bundles ${x.launch.bundlerPct}%, insiders ${x.launch.insiderPct}%, developer ${x.launch.devPct}%${x.launch.graduated ? ', graduated' : ''}` : 'not a launchpad token or unknown'}. Crew position: ${x.crewPosition ? x.crewPosition.side + ' ' + x.crewPosition.leverage + 'x' : 'none'}. Full check: ${x.fullCheck}`; }
-  const facts = `${ABOUT}\n\nRight now: crew desk equity ${d.equity} paper USDG (started ${d.start}), ${d.open.length} open: ${d.open.slice(0, 6).map(p => `${p.symbol} ${p.side} ${p.net >= 0 ? '+' : ''}${p.net}`).join(', ') || 'none'}. Last closed: ${d.closed.slice(0, 3).map(h => `${h.symbol} ${h.side} ${h.pnl} (${h.why})`).join('; ') || 'none'}. Last 24h: ${r.verdicts.CLEAN} clean, ${r.verdicts.RISKY} risky, ${r.verdicts.DANGER} danger; ${r.judged ? `${r.held} of ${r.judged} calls held an hour later` : 'none checked an hour later yet'}. Latest calls: ${st.verdicts.slice(0, 6).map(v => `${v.sym} ${v.verdict} ${v.score}`).join(', ') || 'none'}. Pons graduations in the last day: ${(st.grads?.rows || []).length}.${tok}\n\nQuestion: ${q.slice(0, 300)}`;
+  const facts = `${ABOUT}\n\nRight now: crew desk equity ${d.equity} paper USDG (started ${d.start}), ${d.open.length} open: ${d.open.slice(0, 6).map(p => `${p.symbol} ${p.side} ${p.net >= 0 ? '+' : ''}${p.net}`).join(', ') || 'none'}. Last closed: ${d.closed.slice(0, 3).map(h => `${h.symbol} ${h.side} ${h.pnl} (${h.why})`).join('; ') || 'none'}. Last 24h: ${r.verdicts.CLEAN} clean, ${r.verdicts.RISKY} risky, ${r.verdicts.DANGER} danger; ${r.judged ? `${r.held} of ${r.judged} calls held an hour later` : 'none checked an hour later yet'}. Latest calls: ${st.verdicts.slice(0, 6).map(v => `${v.sym} ${v.verdict} ${v.score}`).join(', ') || 'none'}. Pons graduations in the last day: ${(st.grads?.rows || []).length}.${shunt}${tok}${hist ? '\n\nThe conversation so far:\n' + hist : ''}${around}\n\n${ctx.who ? ctx.who + ' says' : 'Message'}: ${q.slice(0, 400)}`;
   const plain = addr ? `I can only answer that with the language model, which is not available right now. Send /check ${addr} for what Shuntdesk knows.` : 'I can only answer that with the language model, which is not available right now. Try /help.';
-  const out = await conduct(st, env, 'tg:' + chat, 'tg:' + chat + ':' + q.toLowerCase().slice(0, 120), 'You are answering on Telegram as the Shuntdesk bot. Answer the question in at most four short sentences from the facts only. If the facts do not cover it, say so and point to the right page or command. Never say whether to buy or sell, never predict a price, never promise anything about $SHUNT. Plain text, no markdown, no emoji.', facts, plain);
-  return tgEsc(out.text) + (out.by === 'model' ? '\n\n<i>The conductor, a language model, from Shuntdesk\'s own figures. Not advice.</i>' : '');
+  const out = await conduct(st, env, 'tg:' + chat, 'tg:' + chat + ':' + q.toLowerCase().slice(0, 120) + ':' + (ctx.history?.length ? ctx.history[ctx.history.length - 1].a.slice(0, 24) : '') + ':' + Math.floor(Date.now() / 600000), 'You are Shunt, the Shuntdesk bot, talking in a Telegram chat. Read the message and answer it as it was asked, like a person in the chat: in the language it was written in (Indonesian or English), in one to four short sentences, friendly and plain. A greeting gets a short greeting back. Every number, name and claim about a token, Shuntdesk or $SHUNT must come from the facts; if the facts do not cover it, say plainly that you do not know and point to the right page or command. You may explain general crypto ideas briefly. Use the conversation so far to understand follow-ups. Never say whether to buy or sell, never predict a price, never promise anything about $SHUNT. Plain text, no markdown, no emoji.', facts, plain);
+  return tgEsc(out.text) + (out.by === 'model' ? '\n\n<i>AI answer from Shuntdesk data · not advice</i>' : '');
+}
+const SHUNT_CA = '0x7e517e779b85895894becad80c9bb69b4cb1c4d6';
+async function tgSeen(env, msg) {
+  if (!env.TELEGRAM_BOT_TOKEN) return; const api = m => `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${m}`, H = { 'Content-Type': 'application/json' };
+  const thread = msg.is_topic_message && msg.message_thread_id ? { message_thread_id: msg.message_thread_id } : {};
+  await Promise.all([
+    fetch(api('setMessageReaction'), { method: 'POST', headers: H, body: JSON.stringify({ chat_id: msg.chat.id, message_id: msg.message_id, reaction: [{ type: 'emoji', emoji: '👀' }] }) }).catch(() => null),
+    fetch(api('sendChatAction'), { method: 'POST', headers: H, body: JSON.stringify({ chat_id: msg.chat.id, action: 'typing', ...thread }) }).catch(() => null),
+  ]);
 }
 async function telegram(st, env, request, body) {
   if (!env.TELEGRAM_SECRET || request.headers.get('x-telegram-bot-api-secret-token') !== env.TELEGRAM_SECRET) return new Response('forbidden', { status: 403 });
@@ -877,8 +893,12 @@ async function telegram(st, env, request, body) {
   const reply = (html, extra = {}) => new Response(JSON.stringify({ method: 'sendMessage', chat_id: chat, text: html.slice(0, 4000), parse_mode: 'HTML', disable_web_page_preview: true, reply_to_message_id: msg.message_id, ...extra }), { headers: { 'Content-Type': 'application/json' } });
   // the bot's own username, exactly: a loose match on 'shuntdesk' would answer every message that names the X account
   const me = /bot$/i.test(env.TELEGRAM_BOT_NAME || '') ? env.TELEGRAM_BOT_NAME.toLowerCase().replace(/^@/, '') : 'shuntdesk_bot', group = msg.chat.type !== 'private';
-  const mentioned = new RegExp('@' + me + '(?![a-z0-9_])', 'i').test(text) || msg.reply_to_message?.from?.username?.toLowerCase() === me;
-  const clean = text.replace(new RegExp('@' + me + '(?![a-z0-9_])', 'ig'), '').trim();
+  if (msg.from?.is_bot) return new Response('ok');   // buy alerts and other bots are not spoken to
+  const replyToBot = msg.reply_to_message?.from?.username?.toLowerCase() === me;
+  const NAME = /^\s*(?:(?:hey|hei|hi|hello|halo|hai|yo|oi|gm|gn|ok|okay|oke|thanks|thank you|thx|makasih|bro|sup)[\s,!.]+)?shunt(?:desk)?(?![\w$])[\s,:!?.]*/i;
+  const named = NAME.test(text) || /,\s*shunt(?:desk)?\s*[?!.]*$/i.test(text);
+  const mentioned = new RegExp('@' + me + '(?![a-z0-9_])', 'i').test(text) || replyToBot || named;
+  const clean = text.replace(new RegExp('@' + me + '(?![a-z0-9_])', 'ig'), '').replace(NAME, '').replace(/,\s*shunt(?:desk)?\s*([?!.]*)$/i, '$1').trim() || text.trim();
   const found = clean.match(/0x[0-9a-fA-F]{40}/), cmd = (clean.match(/^\/(\w+)/)?.[1] || '').toLowerCase();
   if (group && !cmd && !mentioned) return new Response('ok');   // in groups, only speak when spoken to
   // a command meant for another bot (/start@otherbot) is not ours
@@ -904,7 +924,15 @@ async function telegram(st, env, request, body) {
     return reply([`<b>${tgEsc(r.sym || '')}</b>${r.name ? ' · ' + tgEsc(r.name) : ''} · Solana`, `<code>${r.addr}</code>`, '', r.verdict === 'NO POOL' ? '<b>NO POOL</b>' : `<b>${r.verdict} ${r.score}</b>`, '', ...rows.flatMap(x => [x, '']), `Full ticket: ${site}/ticket/?a=${r.addr}`].join('\n') + footer);
   }
   const question = clean.replace(/^\/\w+\s*/, '').replace(/0x[0-9a-fA-F]{40}/, '').trim();
-  if (!cmd && (!found || question.length > 3)) return reply(await tgAsk(st, env, chat, clean, found ? found[0].toLowerCase() : null));
+  if (!cmd && (!found || question.length > 3)) {
+    await tgSeen(env, msg);   // seen at once, then typing while the answer is written
+    const C = st.tgCtx = st.tgCtx || {}, key = String(chat), hist = (C[key] || []).filter(h => Date.now() - h.t < 30 * 60000).slice(-4);
+    const who = msg.from?.first_name ? String(msg.from.first_name).slice(0, 24) : null;
+    const ans = await tgAsk(st, env, chat, clean, found ? found[0].toLowerCase() : null, { history: hist, who, replyTo: msg.reply_to_message?.text || msg.reply_to_message?.caption || null, replyToBot });
+    C[key] = [...hist, { t: Date.now(), who, q: clean.slice(0, 200), a: ans.replace(/<[^>]+>/g, '').slice(0, 300) }].slice(-4);
+    const keys = Object.keys(C); if (keys.length > 300) delete C[keys[0]];
+    return reply(ans);
+  }
   if (cmd === 'watch' || cmd === 'unwatch' || cmd === 'watching') {
     if (group) return reply('Tripwire works in a private chat: open @shuntdesk_bot and send /watch there.');
     const T = st.trip || {}, mine = Object.entries(T).filter(([, w]) => w.chats.includes(chat));

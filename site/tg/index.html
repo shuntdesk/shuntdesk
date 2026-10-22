@@ -2,60 +2,107 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<meta name="description" content="Shuntdesk inside Telegram: check a Robinhood Chain token and play the games.">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="description" content="Shuntdesk inside Telegram: check any token, play Rug or Ride, and watch $SHUNT live.">
 <meta name="theme-color" content="#060708">
 <link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
 <title>Shuntdesk · Telegram</title>
+<script src="https://telegram.org/js/telegram-web-app.js?57"></script>
 <style>
   @font-face { font-family: "JetBrains Mono"; src: url(/assets/fonts/jbm-700.woff2) format("woff2"); font-weight: 700; font-display: swap; }
   @font-face { font-family: "Big Shoulders Display"; src: url(/assets/fonts/bsd-900.woff2) format("woff2"); font-weight: 900; font-display: swap; }
   @font-face { font-family: "Barlow"; src: url(/assets/fonts/barlow-500.woff2) format("woff2"); font-weight: 500; font-display: swap; }
-  :root { --bg: #060708; --ink: #edebe6; --dim: #8d8b86; --hair: rgba(237,235,230,.14); --long: #2ed3a0; }
-  * { box-sizing: border-box; } html, body { margin: 0; background: var(--bg); color: var(--ink); font: 500 15px/1.45 "Barlow", system-ui, sans-serif; }
-  main { max-width: 560px; margin: 0 auto; padding: 18px 16px 40px; }
-  header { display: flex; align-items: center; gap: 10px; } header svg { width: 14px; height: 22px; } header b { font: 700 13px "JetBrains Mono", monospace; letter-spacing: .24em; }
-  h1 { font: 900 44px/0.95 "Big Shoulders Display", sans-serif; text-transform: uppercase; margin: 22px 0 6px; } h1 span { color: transparent; -webkit-text-stroke: 1.5px var(--ink); display: block; }
-  p.s { color: var(--dim); margin: 0 0 18px; }
-  form { display: flex; gap: 8px; margin-bottom: 22px; } input { flex: 1; min-width: 0; background: #111215; color: var(--ink); border: 1px solid var(--hair); padding: 12px; font: 700 13px "JetBrains Mono", monospace; border-radius: 8px; }
-  button { background: var(--long); color: #04110b; border: 0; padding: 12px 16px; font: 700 13px "JetBrains Mono", monospace; border-radius: 8px; }
-  h2 { font: 700 11px "JetBrains Mono", monospace; letter-spacing: .22em; color: var(--dim); margin: 20px 0 10px; text-transform: uppercase; }
+  :root { --bg: #060708; --ink: #edebe6; --dim: #8d8b86; --mute: #6f6d68; --hair: rgba(237,235,230,.13); --card: rgba(237,235,230,.04); --long: #2ed3a0; --short: #ff5c6c; --warn: #f0c75e; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 500 15px/1.45 "Barlow", system-ui, sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 14px 14px calc(92px + env(safe-area-inset-bottom)); }
+  header { display: flex; align-items: center; gap: 9px; } header svg { width: 13px; height: 21px; } header b { font: 700 12px "JetBrains Mono", monospace; letter-spacing: .24em; }
+  header .hi { margin-left: auto; font: 700 11px "JetBrains Mono", monospace; color: var(--dim); letter-spacing: .06em; }
+  .tick { display: flex; gap: 14px; overflow: hidden; white-space: nowrap; margin: 12px -14px 0; padding: 9px 14px; border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); font: 700 12px "JetBrains Mono", monospace; color: var(--dim); }
+  .tick b { color: var(--ink); } .tick .g { color: var(--long); }
+  h1 { font: 900 40px/.94 "Big Shoulders Display", sans-serif; text-transform: uppercase; margin: 18px 0 6px; } h1 span { color: transparent; -webkit-text-stroke: 1.4px var(--ink); display: block; }
+  h2 { font: 700 11px "JetBrains Mono", monospace; letter-spacing: .22em; color: var(--dim); margin: 22px 0 10px; text-transform: uppercase; display: flex; justify-content: space-between; }
+  p.s { color: var(--dim); margin: 0 0 14px; font-size: 14px; }
+  .tab { display: none; } .tab.on { display: block; animation: in .25s ease; } @keyframes in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  form { display: flex; gap: 8px; } input { flex: 1; min-width: 0; background: #111215; color: var(--ink); border: 1px solid var(--hair); padding: 13px 12px; font: 700 13px "JetBrains Mono", monospace; border-radius: 10px; }
+  button, .btn { background: var(--long); color: #04110b; border: 0; padding: 12px 16px; font: 700 12px "JetBrains Mono", monospace; letter-spacing: .08em; border-radius: 10px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+  .ghost { background: var(--card); color: var(--ink); border: 1px solid var(--hair); }
+  .card { border: 1px solid var(--hair); border-radius: 12px; background: var(--card); padding: 14px; margin-top: 12px; }
+  .stops { margin-top: 12px; display: grid; gap: 6px; } .stop { display: flex; justify-content: space-between; gap: 10px; padding: 9px 11px; border-radius: 9px; background: rgba(237,235,230,.03); border: 1px solid var(--hair); font: 700 12px "JetBrains Mono", monospace; }
+  .stop span { color: var(--dim); } .stop.ok b { color: var(--long); } .stop.bad b { color: var(--short); } .stop.warn b { color: var(--warn); } .stop.skip b { color: var(--mute); }
+  .stop.run { border-color: rgba(46,211,160,.5); } .stop.run b::after { content: '···'; }
+  .verdict { display: flex; align-items: center; gap: 14px; } .stamp { font: 900 34px/1 "Big Shoulders Display"; padding: 6px 12px; border: 3px solid currentColor; border-radius: 8px; transform: rotate(-4deg); }
+  .CLEAN { color: var(--long); } .RISKY { color: var(--warn); } .DANGER { color: var(--short); }
+  .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; margin-top: 12px; font: 700 12px "JetBrains Mono", monospace; } .facts span { color: var(--dim); display: block; font-size: 10.5px; letter-spacing: .1em; }
+  .row2 { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; } .row2 > * { flex: 1; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .grid a { display: block; padding: 14px 12px; border: 1px solid var(--hair); border-radius: 10px; background: rgba(237,235,230,.03); color: var(--ink); text-decoration: none; }
-  .grid a b { display: block; font: 900 20px/1 "Big Shoulders Display", sans-serif; text-transform: uppercase; margin-bottom: 6px; } .grid a small { color: var(--dim); font-size: 12.5px; }
-  .grid a.wide { grid-column: span 2; border-color: rgba(46,211,160,.5); }
-  footer { margin-top: 26px; color: #6f6d68; font: 700 11px "JetBrains Mono", monospace; letter-spacing: .1em; }
+  .grid a { display: block; padding: 13px 12px; border: 1px solid var(--hair); border-radius: 12px; background: var(--card); color: var(--ink); text-decoration: none; }
+  .grid a b { display: block; font: 900 19px/1 "Big Shoulders Display", sans-serif; text-transform: uppercase; margin-bottom: 5px; } .grid a small { color: var(--dim); font-size: 12.5px; }
+  .list a, .list div.r { display: flex; justify-content: space-between; gap: 10px; padding: 10px 2px; border-top: 1px solid var(--hair); color: var(--ink); text-decoration: none; font: 700 12.5px "JetBrains Mono", monospace; }
+  .list small { color: var(--dim); font-weight: 700; }
+  .bar { height: 6px; background: #1d1f23; border-radius: 3px; overflow: hidden; margin-top: 6px; } .bar u { display: block; height: 100%; background: var(--long); }
+  /* Rug or Ride */
+  .rr { text-align: center; } .rr .n { font: 700 11px "JetBrains Mono", monospace; color: var(--dim); letter-spacing: .2em; }
+  .rr .big { font: 900 46px/1 "Big Shoulders Display"; margin: 8px 0 2px; }
+  .rr .kv { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 14px 0; } .rr .kv div { background: rgba(237,235,230,.03); border: 1px solid var(--hair); border-radius: 9px; padding: 9px 6px; } .rr .kv b { display: block; font: 900 22px "Big Shoulders Display"; } .rr .kv span { font: 700 10px "JetBrains Mono", monospace; color: var(--dim); letter-spacing: .08em; }
+  .rr .flags { min-height: 22px; font: 700 12px "JetBrains Mono", monospace; color: var(--warn); }
+  .rr .go { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; } .rr .go button { padding: 18px; font-size: 16px; } .rr .go .rug { background: var(--short); color: #1a0306; }
+  .dots { display: flex; gap: 4px; justify-content: center; margin-top: 12px; } .dots i { width: 22px; height: 4px; border-radius: 2px; background: #2a2c30; } .dots i.c { background: var(--ink); }
+  nav { position: fixed; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr); background: rgba(6,7,8,.94); border-top: 1px solid var(--hair); padding: 8px 6px calc(8px + env(safe-area-inset-bottom)); backdrop-filter: blur(12px); }
+  nav button { background: none; color: var(--dim); padding: 6px 0; font: 700 10px "JetBrains Mono", monospace; letter-spacing: .14em; flex-direction: column; gap: 4px; }
+  nav button svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; } nav button.on { color: var(--long); }
+  .note { color: var(--mute); font: 700 11px "JetBrains Mono", monospace; letter-spacing: .06em; margin-top: 12px; }
 </style>
 </head>
 <body>
 <main>
-  <header><svg viewBox="136 56 240 400"><path fill="#edebe6" d="M136 456V297.7L292 173.7V90L326 56H376V214.3L220 338.3V422L186 456Z"/></svg><b>SHUNTDESK</b></header>
-  <h1>Read it<span>before you ride it.</span></h1>
-  <p class="s">Paste any Robinhood Chain token: its contract, its launcher, its website and its curve, read from the chain.</p>
-  <form id="f"><input id="a" placeholder="0x… token address" spellcheck="false" autocomplete="off" inputmode="text"><button type="submit">Check</button></form>
-  <h2>Play</h2>
-  <div class="grid">
-    <a class="wide" href="/season/"><b>Season Pass</b><small>Your XP across every game this week, and the weekly tournament</small></a>
-    <a href="/race/"><b>Curve Racing</b><small>Back a curve in the race to bond</small></a>
-    <a href="/bingo/"><b>Launch Bingo</b><small>Pick four things the chain will do</small></a>
-    <a href="/sniper/"><b>Paper Sniper</b><small>Snipe new launches on paper</small></a>
-    <a href="/fantasy/"><b>Fantasy Launcher</b><small>Back five launchers for the week</small></a>
-    <a href="/rug-run/"><b>Rug Run</b><small>Ten tokens: rug or ride?</small></a>
-    <a href="/bond-game/"><b>Will it bond?</b><small>Five curves a day</small></a>
-    <a href="/guess/"><b>Guess the Chart</b><small>Up or down in the next hour</small></a>
-    <a href="/play/"><b>The Yard</b><small>The full game, best on a computer</small></a>
-  </div>
-  <h2>Tools</h2>
-  <div class="grid">
-    <a href="/bonds/"><b>Bond Watch</b><small>Curves closest to bonding</small></a>
-    <a href="/radar/"><b>Radar</b><small>New tokens as they land</small></a>
-    <a href="/sim/"><b>Curve Simulator</b><small>Run a buy before you make it</small></a>
-    <a href="/wallet/"><b>Wallet X-ray</b><small>Any wallet, read only</small></a>
-    <a href="/dev/"><b>Dev Score</b><small>A launcher's record</small></a>
-    <a href="/tools/"><b>All tools</b><small>Everything on Shuntdesk</small></a>
-  </div>
-  <footer>READ-ONLY · NO WALLET · NOT ADVICE · SHUNTDESK.COM</footer>
+  <header><svg viewBox="136 56 240 400"><path fill="#edebe6" d="M136 456V297.7L292 173.7V90L326 56H376V214.3L220 338.3V422L186 456Z"/></svg><b>SHUNTDESK</b><span class="hi" id="hi"></span></header>
+  <div class="tick" id="tick">$SHUNT · reading the curve…</div>
+
+  <section class="tab on" id="t-check">
+    <h1>Read it<span>before you ride it.</span></h1>
+    <p class="s">Paste a token: Robinhood Chain (0x…) or Solana. Seven checks, one verdict, every lost point explained.</p>
+    <form id="f"><input id="a" placeholder="paste a token address" spellcheck="false" autocomplete="off"><button type="submit">Check</button></form>
+    <div id="res"></div>
+    <h2>Recently checked</h2><div class="list" id="recent"></div>
+  </section>
+
+  <section class="tab" id="t-play">
+    <h2>Rug or Ride <span id="rr-best"></span></h2>
+    <div class="card rr" id="rr"><p class="s">Ten real tokens from the last day, names hidden, as they looked when they launched. Call each one: rug or ride? The chain already knows.</p><button id="rr-go" style="width:100%">Start a run</button></div>
+    <h2>More games</h2>
+    <div class="grid">
+      <a href="/season/"><b>Season Pass</b><small>XP from every game, a weekly champion</small></a>
+      <a href="/guess/"><b>Guess the Chart</b><small>Up or down in the next hour</small></a>
+      <a href="/race/"><b>Curve Racing</b><small>Back a curve to bond first</small></a>
+      <a href="/bond-game/"><b>Will it bond?</b><small>Five curves a day</small></a>
+      <a href="/sniper/"><b>Paper Sniper</b><small>Snipe launches on paper</small></a>
+      <a href="/bingo/"><b>Launch Bingo</b><small>Four things the chain will do</small></a>
+    </div>
+  </section>
+
+  <section class="tab" id="t-live">
+    <h2>$SHUNT</h2><div class="card" id="shunt"><p class="s">Reading…</p></div>
+    <h2>Closest to bonding <a class="btn ghost" style="padding:4px 9px;font-size:10px" href="/bonds/">ALL</a></h2><div class="list" id="bonds"></div>
+    <h2>Latest verdicts</h2><div class="list" id="calls"></div>
+  </section>
+
+  <section class="tab" id="t-me">
+    <h2>You</h2>
+    <div class="card"><div style="font:900 30px 'Big Shoulders Display'" id="me-name">Guest</div><p class="s" style="margin:4px 0 12px">Your name on the boards, the same in every game.</p>
+      <form id="hf"><input id="h" maxlength="16" placeholder="your handle" autocomplete="off"><button type="submit">Save</button></form>
+      <div class="facts" id="me-xp"></div></div>
+    <h2>Watchlist</h2><div class="card" id="me-watch"><p class="s">Watch a token from its ticket, and it gets a code that carries your list to the site, the CLI, the extension and this bot: send /watchlist with the code in the group to hear its alerts there.</p></div>
+    <h2>Ask the bot</h2><div class="card"><p class="s" style="margin:0">In the group, start a message with "Shunt" or reply to the bot, and it answers from Shuntdesk's own figures. Paste a token to it for the seven checks.</p></div>
+  </section>
+  <p class="note">READ-ONLY · NO WALLET · NOT ADVICE · SHUNTDESK.COM</p>
 </main>
-<script src="/assets/tg.js"></script>
+<nav id="nav">
+  <button class="on" data-t="check"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>CHECK</button>
+  <button data-t="play"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="11" rx="4"/><path d="M8 11v3M6.5 12.5h3M15.5 12h.01M17.5 14h.01"/></svg>PLAY</button>
+  <button data-t="live"><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 5-7 4 4"/></svg>LIVE</button>
+  <button data-t="me"><svg viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c1.2-3.6 4-5 7-5s5.8 1.4 7 5"/></svg>ME</button>
+</nav>
+<script type="module" src="/assets/tg.js"></script>
 </body>
 </html>
