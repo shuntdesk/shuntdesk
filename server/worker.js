@@ -891,7 +891,7 @@ async function tgAsk(st, env, chat, q, addr, ctx = {}) {
   const lines = tgEsc(out.text).split('\n').map(l => l.replace(/^\s*[-*•]\s*/, '').trim());
   const body = lines.map((l, i) => { const found = l.match(ADDR); ADDR.lastIndex = 0; if (!found) return l;
     // the coin's line keeps its name and facts; its address goes on a line of its own, ready to tap
-    const rest = l.replace(ADDR, '').replace(/\(\s*,?\s*/g, '(').replace(/\s*,\s*\)/g, ')').replace(/\(\s*\)/g, '').replace(/\s*,\s*,/g, ',').replace(/^[\s,:]+|[\s,]+$/g, '').replace(/\s{2,}/g, ' ');
+    const rest = l.replace(ADDR, '').replace(/\(\s*,?\s*/g, '(').replace(/\s*,\s*\)/g, ')').replace(/\(\s*\)/g, '').replace(/\s*,\s*,/g, ',').replace(/\s*,\s*\.\s*/g, ' · ').replace(/^[\s,:]+|[\s,]+$/g, '').replace(/\s{2,}/g, ' ');
     const ln = (rest ? rest + '\n' : '') + found.map(a => `<code>${a}</code>`).join('\n');
     return i < lines.length - 1 && lines[i + 1] !== '' ? ln + '\n' : ln; }).join('\n').replace(/\n{3,}/g, '\n\n');
   return body + (out.by === 'model' ? '\n\n<i>AI answer from Shuntdesk data · not advice</i>' : '');
