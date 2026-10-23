@@ -68,6 +68,8 @@ Paper points only. Curve Racing (https://shuntdesk.com/race/), Launch Bingo (/bi
 
 ## Rug replay
 
+https://shuntdesk.com/hunters/ lists the wallets that bought in the first half hour of the most Pons curves that went on to bond, and the open curves they are early in now. JSON: GET https://shuntdesk.com/api/hunters (add ?w=0x… for one wallet)
+
 https://shuntdesk.com/replay/?a=0x… shows a token's price history with its Pons launch, graduation, peak, steepest fall and the verdict Shuntdesk filed at the time. JSON: GET https://shuntdesk.com/api/replay?a=0x…
 
 ## The Yard

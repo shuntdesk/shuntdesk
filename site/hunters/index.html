@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bond Hunters — Shuntdesk</title>
+<meta name="description" content="The wallets that keep buying early into the Pons curves that go on to bond, their record, and the open curves they are in now. Read from the chain.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shuntdesk">
+<meta property="og:title" content="Bond Hunters — Shuntdesk">
+<meta property="og:description" content="The wallets that keep buying early into the Pons curves that go on to bond, their record, and the open curves they are in now. Read from the chain.">
+<meta property="og:url" content="https://shuntdesk.com/hunters/">
+<meta property="og:image" content="https://shuntdesk.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shuntdesk. One score. Three tracks.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://shuntdesk.com/og.png">
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#060708">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/simple.css">
+<script src="/assets/ui-mode.js"></script>
+</head>
+<body class="sub">
+<canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
+<main class="page">
+  <div class="ph"><div><div class="eyebrow">Bond Hunters · Robinhood Chain</div><h1 class="disp">Who keeps getting in early.<br><span class="acc">Where they are now.</span></h1></div>
+    <div class="side"><p class="note" style="max-width:460px;margin:0">THE FIRST 20 WALLETS INTO EVERY PONS CURVE, READ FROM THE CHAIN. THE ONES WHOSE EARLY BUYS KEEP BONDING RISE TO THE TOP.</p></div></div>
+  <div class="stats"><div class="stub stat"><div class="in"><div class="cap"><b>Curves read</b></div><div class="v" id="hu-c">···</div><small>first half hour of each</small></div></div><div class="stub stat"><div class="in"><div class="cap"><b>Bonded</b></div><div class="v" id="hu-b">···</div><small>of the curves read</small></div></div><div class="stub stat"><div class="in"><div class="cap"><b>Hunters</b></div><div class="v" id="hu-n">···</div><small>early in two bonds or more</small></div></div><div class="stub stat"><div class="in"><div class="cap"><b>Read</b></div><div class="v" id="hu-t">···</div><small>every ten minutes</small></div></div></div>
+  <div class="stub n" style="margin-top:16px"><div class="in"><div class="cap"><b>Early in now</b><span>open curves the board's wallets bought in their first half hour</span></div>
+    <div class="dep hnlist" id="hu-now"><p class="note">READING…</p></div></div></div>
+  <div class="stub n" style="margin-top:16px"><div class="in"><div class="cap"><b>The board</b><span>ranked by the low end of the hit rate, so one lucky buy does not top fifteen calls</span></div>
+    <div class="dep hulist" id="hu-list"><p class="note">READING…</p></div></div></div>
+  <div class="stub n" style="margin-top:16px"><div class="in"><div class="cap"><b>One wallet</b><span>any Robinhood Chain wallet, read only</span></div>
+    <form class="pf-form" id="hu-form" style="margin:10px 0 0"><input id="hu-w" placeholder="a wallet: 0x…" autocomplete="off" spellcheck="false"><button class="btn" type="submit">Read its record →</button></form>
+    <div id="hu-one" style="margin-top:12px"></div></div></div>
+  <p class="note" style="margin-top:14px">For every Pons curve on the bond board, the first 20 wallets that bought in its first half hour, from the token's own Transfer log: tokens leaving the curve, the wallet they land in, never a router, the launcher or the fee wallet. A hit is a curve that then bonded; a try is any curve a day old. Holders of $SHUNT can follow any wallet here with /follow in the bot and hear when it buys. A record of past buys, not a call. Early wallets can be the launcher's own. Read the token before anything. Not advice.</p>
+</main>
+<footer class="foot"></footer>
+<script type="module" src="/assets/hunters.js"></script>
+</body>
+</html>

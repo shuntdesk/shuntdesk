@@ -178,3 +178,8 @@ test('games, part two: every board answers, and a bad pick is refused with a rea
   const [s3, d] = await call('fantasy', { handle: 'tester', wallets: ['0x12'] }); assert.ok(s3 === 400 && /five/.test(d.why));
   const [, sv] = await call('season'); assert.ok(sv.games.length === 6 && sv.tournament.name);
 });
+test('Bond Hunters answers with an empty board and refuses a bad wallet', async () => {
+  const [s, v] = await call('hunters'); assert.equal(s, 200); assert.equal(v.ok, true); assert.ok(Array.isArray(v.hunters)); assert.ok(Array.isArray(v.inNow));
+  const [bs] = await call('hunters?w=0x12'); assert.equal(bs, 400);
+  const [, one] = await call('hunters?w=0x' + '1'.repeat(40)); assert.equal(one.found, false);
+});

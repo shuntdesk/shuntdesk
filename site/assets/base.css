@@ -985,3 +985,10 @@ html.simple.light ::selection { background: #2ed3a0; color: #060708; }
 .howto { margin-bottom: 14px; } .howto summary { list-style: none; cursor: pointer; } .howto summary::-webkit-details-marker { display: none; }
 .howto summary .cap b::after { content: " ▾"; color: var(--dim); } .howto:not([open]) summary .cap b::after { content: " ▸"; }
 .howto-l { margin: 4px 0 0; padding-left: 22px; font: 500 16px/1.6 var(--sans, "Barlow", sans-serif); color: var(--ink); } .howto-l li { margin: 4px 0; } .howto-l li::marker { color: var(--long); font-family: var(--mono); font-weight: 700; }
+/* ---------- Bond Hunters ---------- */
+.hulist .r { grid-template-columns: 34px minmax(150px, 1fr) 90px 80px minmax(140px, 1.2fr) 70px !important; }
+.hnlist .r { grid-template-columns: minmax(120px, 1fr) 110px 90px minmax(160px, 1.4fr) !important; }
+@media (max-width: 760px) {
+  .hulist .r { grid-template-columns: 26px 1fr 70px !important; } .hulist .r > :nth-child(4), .hulist .r > :nth-child(5), .hulist .r > :nth-child(6) { display: none; }
+  .hnlist .r { grid-template-columns: 1fr 80px !important; } .hnlist .r > :nth-child(3), .hnlist .r > :nth-child(4) { display: none; }
+}
