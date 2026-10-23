@@ -521,7 +521,7 @@ async function solGrad(st, env) {
       const done = st.gradSol = st.gradSol || [];
       grad.list.forEach((x, i) => { const c = curveFrom(vals[i]); if (!c) return; Object.assign(x, { progress: c.progress, raised: c.realSol, need: c.need, sq: c.solQuoted, complete: c.complete });
         const h = grad.hist.get(x.token) || []; h.push([now, c.progress]); while (h.length > 1 && now - h[0][0] > 3 * 3600000) h.shift(); grad.hist.set(x.token, h);
-        if (c.complete && !done.some(d => d.token === x.token)) { const d = { token: x.token, symbol: x.symbol, at: now, hours: Math.round((now - x.launched) / 360000) / 10 }; done.unshift(d); done.splice(30); if (h.length > 1) gradPost(st, env, x, d); } });
+        if (c.complete && !done.some(d => d.token === x.token)) { const d = { token: x.token, symbol: x.symbol, at: now, hours: Math.round((now - x.launched) / 360000) / 10 }; done.unshift(d); done.splice(30); } });   // shown on the site only: the group hears about Solana when it asks, never unprompted
       st.gradSol = done.filter(d => now - d.at < 2 * 86400000);
     } catch (e) {}
   }
