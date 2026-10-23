@@ -52,6 +52,13 @@ test('Telegram in a group: quiet unless spoken to, and /id gives the chat id', a
   assert.equal(await tg('gm everyone'), 'ok');
   assert.equal(await tg('/start@SkeletonPriceBot'), 'ok');
   assert.match(await tg('/id'), /-100123/);
+  // called by name it answers; the ticker in passing, or another bot, it does not
+  assert.equal(await tg('$SHUNT to the moon'), 'ok');
+  assert.equal(await tg('buy more shunt'), 'ok');
+  assert.notEqual(await tg('gm shunt'), 'ok');
+  assert.notEqual(await tg('Hey Shunt, what bonded today?'), 'ok');
+  const fromBot = await worker.fetch(new Request('http://x/api/tg', { method: 'POST', headers: { 'x-telegram-bot-api-secret-token': 'right' }, body: JSON.stringify({ message: { message_id: 2, chat: { id: -100123, type: 'supergroup', title: 'Yard' }, from: { id: 9, is_bot: true }, text: 'Shunt NEW BUY' } }) }), { ...env, TELEGRAM_SECRET: 'right' });
+  assert.equal(await fromBot.text(), 'ok');
 });
 test('Telegram: the webhook refuses a wrong secret', async () => {
   const r = await worker.fetch(new Request('http://x/api/tg', { method: 'POST', headers: { 'x-telegram-bot-api-secret-token': 'nope' }, body: '{"message":{"chat":{"id":1},"text":"/start"}}' }), { ...env, TELEGRAM_SECRET: 'right' });

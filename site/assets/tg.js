@@ -88,8 +88,13 @@ async function rrSend() {
   const pc = v => v == null ? 'no result yet' : (v >= 0 ? '+' : '') + Math.round(v * 100) + '%';
   $('rr').innerHTML = `<div class="n">YOUR RUN</div><div class="big">${r.right} / ${r.results.filter(x => x.move24h !== null).length || r.of}</div><p class="s">read right, a day later · as ${esc(h)}</p>
     <div class="list" style="text-align:left">${r.results.map((x, i) => `<a href="/ticket/?a=${x.token}"><span>${esc(x.symbol || x.token.slice(0, 8))}<small> · you said ${calls[i] ? 'rug' : 'ride'}</small></span><b class="${x.move24h == null ? '' : x.rug ? 'DANGER' : 'CLEAN'}">${pc(x.move24h)}</b></a>`).join('')}</div>
-    <div class="row2"><button id="rr-go">Another run</button><a class="btn ghost" href="/rug-run/">The board</a></div>`;
+    <h2 style="margin-top:18px">This week's board</h2><div class="list" style="text-align:left">${(r.board || []).slice(0, 10).map((b, i) => `<div class="r"><span>${i + 1}. ${esc(b.handle)}${b.handle === h ? ' <small>· you</small>' : ''}${b.holder ? ' <small>· holder</small>' : ''}</span><b>${b.best}/10</b></div>`).join('') || '<p class="s">You are the first this week.</p>'}</div>
+    <div class="row2"><button id="rr-go">Another run</button><button class="ghost" id="rr-sh">Share my score</button></div>`;
   $('rr-go').onclick = rrStart;
+  // the score goes to any chat the player picks, the group included, with the link to play
+  const place = (r.board || []).findIndex(b => b.handle === h) + 1;
+  $('rr-sh').onclick = () => { const t = `I read ${r.right} of 10 right on Rug or Ride${place ? `, #${place} on this week's board` : ''}. Ten real Robinhood Chain tokens, names hidden: rug or ride?`, u = 'https://t.me/shuntdesk_bot';
+    buzz('tap'); try { tg?.openTelegramLink ? tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(u)}&text=${encodeURIComponent(t)}`) : open(`https://t.me/share/url?url=${encodeURIComponent(u)}&text=${encodeURIComponent(t)}`); } catch (x) {} };
 }
 $('rr-go').onclick = rrStart;
 

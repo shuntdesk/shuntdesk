@@ -497,6 +497,24 @@ async function rugDayTick(st, env) {
   (st.rugDay = st.rugDay || []).unshift({ day, token, symbol: x.s, creator: x.c, peak: x.p, now: x.m, fell, hoursToPeak: hrs, sold, created: ser?.created ?? null, caption });
   st.rugDay.splice(14);
 }
+// Rug of the Day for Robinhood Chain: at 12:00 UTC, of the tokens the radar read a day or two ago, the one that had the
+// deepest pool when it was read and lost 80% or more of its price a day later, with what its launcher did with it
+async function rugDayRH(st, env, force = false) {
+  const now = Date.now(), day = new Date(now).toISOString().slice(0, 10); if (!force && (new Date(now).getUTCHours() < 12 || st.rugRH?.[0]?.day === day)) return st.rugRH?.[0] || null;
+  const L = await looksLoad(env).catch(() => null);
+  const pool = (L?.rows || []).filter(r => r.x !== undefined && now - r.t >= 24 * HOUR && now - r.t < 48 * HOUR && (r.l0 || 0) >= 2000 && lookMove(r, 'p24') !== null && lookMove(r, 'p24') <= -0.8).sort((p, q) => (q.l0 || 0) - (p.l0 || 0));
+  const r = pool[0]; if (!r) return null;
+  const led = await devLedger(env, r.a).catch(() => null), Ld = led?.ok ? led.ledger : null, got = Ld ? Ld.bought + Ld.received : 0;
+  const sold = got ? Math.round((Ld.sold + Ld.toWallets + Ld.toContracts) / got * 100) : null, fell = Math.round(-lookMove(r, 'p24') * 100), flags = radarFlags(r);
+  const usd = n => '$' + (n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'K' : Math.round(n));
+  const caption = [`Rug of the day on Robinhood Chain: $${String(r.s || '?').trim()}.`, '', `When our radar read it, it had ${usd(r.l0)} in its pool and ${r.f[1]} holders. A day later its price was down ${fell}%.`,
+    flags.length ? `What the radar flagged at the time: ${flags.slice(0, 3).join(', ')}.` : 'The radar raised no flag on it at the time. That is a miss, and it is on our Caught page too.',
+    sold != null && sold >= 50 ? `The wallet that launched it sold or moved ${sold}% of what it got.` : '',
+    '', 'Read any token before you ride it: shuntdesk.com/ticket', `shuntdesk.com/ticket/?a=${r.a}`].filter((l, i, A) => !(l === '' && A[i - 1] === '')).join('\n');
+  const v = { day, chain: 'robinhood', token: r.a, symbol: String(r.s || '?').trim(), read: new Date(r.t).toISOString(), liquidity: r.l0, holders: r.f[1], fell, flags, launcher: led?.ok ? led.dev : null, sold, caption };
+  if (!force) { (st.rugRH = st.rugRH || []).unshift(v); st.rugRH.splice(14); }
+  return v;
+}
 // Graduation Watch: the Pump.fun curves closest to graduating. Codex lists the open curves past 50% every twenty
 // minutes; every curve on the list is then read from the chain, all in one call, at most every thirty seconds
 let grad = { t: 0, live: 0, list: [], hist: new Map(), why: null };
@@ -882,16 +900,30 @@ async function tgAsk(st, env, chat, q, addr, ctx = {}) {
   } catch (e) {}
   const hist = (ctx.history || []).map(h => `Earlier, ${h.who || 'someone'} asked: ${h.q}\nYou answered: ${h.a}`).join('\n');
   const around = ctx.replyTo ? `\nThe message they replied to${ctx.replyToBot ? ' (your own)' : ''}: ${String(ctx.replyTo).slice(0, 400)}` : '';
-  let tok = ''; if (addr) { const [code, x] = await agentData(st, env, 'token', addr); if (code === 200) tok = `\nToken asked about: ${x.symbol || addr} (${addr}). Verdict on file: ${x.verdict ? `${x.verdict.verdict} ${x.verdict.score}, ${x.verdict.desk}, filed ${x.verdict.at}` : 'none yet'}. Security read: ${x.serverCheck ? (x.serverCheck.redFlags.join(', ') || 'no red flag') : 'unavailable'}. Launch: ${x.launch?.launchpad ? `${x.launch.launchpad}, snipers ${x.launch.sniperPct}%, bundles ${x.launch.bundlerPct}%, insiders ${x.launch.insiderPct}%, developer ${x.launch.devPct}%${x.launch.graduated ? ', graduated' : ''}` : 'not a launchpad token or unknown'}. Crew position: ${x.crewPosition ? x.crewPosition.side + ' ' + x.crewPosition.leverage + 'x' : 'none'}. Full check: ${x.fullCheck}`; }
+  let tok = ''; const fb = []; if (addr) { const [code, x] = await agentData(st, env, 'token', addr); if (code === 200) { fb.push(`${x.symbol ? '$' + x.symbol : 'This token'}: ${x.verdict ? `Shuntdesk's verdict on file is ${x.verdict.verdict} ${x.verdict.score}` : 'no verdict on file yet'}${x.serverCheck ? `, ${x.serverCheck.redFlags.length ? 'security flags: ' + x.serverCheck.redFlags.slice(0, 3).join(', ') : 'no security red flag'}` : ''}.`); } if (code === 200) tok = `\nToken asked about: ${x.symbol || addr} (${addr}). Verdict on file: ${x.verdict ? `${x.verdict.verdict} ${x.verdict.score}, ${x.verdict.desk}, filed ${x.verdict.at}` : 'none yet'}. Security read: ${x.serverCheck ? (x.serverCheck.redFlags.join(', ') || 'no red flag') : 'unavailable'}. Launch: ${x.launch?.launchpad ? `${x.launch.launchpad}, snipers ${x.launch.sniperPct}%, bundles ${x.launch.bundlerPct}%, insiders ${x.launch.insiderPct}%, developer ${x.launch.devPct}%${x.launch.graduated ? ', graduated' : ''}` : 'not a launchpad token or unknown'}. Crew position: ${x.crewPosition ? x.crewPosition.side + ' ' + x.crewPosition.leverage + 'x' : 'none'}. Full check: ${x.fullCheck}`; }
+  // a token in the question: who launched it and what that wallet did with it, and what its contract lets the owner do
+  if (addr) try {
+    const [led, xr] = await Promise.all([devLedger(env, addr).catch(() => null), xray(st, env, addr).catch(() => null)]);
+    if (led?.ok) { const L = led.ledger, got = L.bought + L.received, pc = v => got ? Math.round(v / got * 100) + '%' : '0%';
+      fb.push(`The launcher, ${led.dev}, got ${Math.round(got).toLocaleString('en-US')} and sold ${pc(L.sold)}, sent ${pc(L.toWallets)} to other wallets and ${pc(L.toContracts)} into other contracts, burned ${pc(L.burned)}; it holds ${Math.round(led.holdsNow || 0).toLocaleString('en-US')} now.`);
+      tok += ` Launcher wallet: ${led.dev} (found from the ${led.devFound}). It got ${Math.round(got).toLocaleString('en-US')} tokens: sold ${pc(L.sold)}, sent to other wallets ${pc(L.toWallets)}, into other contracts ${pc(L.toContracts)}, burned ${pc(L.burned)}, holds ${Math.round(led.holdsNow || 0).toLocaleString('en-US')} now.`; }
+    else if (led) tok += ` Launcher: ${led.why}.`;
+    if (xr?.ok) { const hi = xr.powers.filter(p => p.level === 'high').map(p => p.what);
+      fb.push(hi.length ? `Its contract lets the owner ${[...new Set(hi)].slice(0, 3).join(', ')}${xr.owner && !xr.owner.live ? ', but ownership is renounced' : ''}.` : 'Its contract has no function that mints, pauses, blocks wallets or changes the tax.');
+      tok += ` Contract: ${xr.functions} functions, ${hi.length ? 'the owner can ' + [...new Set(hi)].slice(0, 4).join(', ') : 'no function that mints, pauses, blocks wallets or changes the tax'}${xr.proxy ? ', behind a proxy whose code can be swapped' : ''}${xr.owner ? (xr.owner.live ? ', owner ' + xr.owner.address : ', ownership renounced') : ''}.`; }
+  } catch (e) {}
   const facts = `${ABOUT}\n\nRight now: crew desk equity ${d.equity} paper USDG (started ${d.start}), ${d.open.length} open: ${d.open.slice(0, 6).map(p => `${p.symbol} ${p.side} ${p.net >= 0 ? '+' : ''}${p.net}`).join(', ') || 'none'}. Last closed: ${d.closed.slice(0, 3).map(h => `${h.symbol} ${h.side} ${h.pnl} (${h.why})`).join('; ') || 'none'}. Last 24h: ${r.verdicts.CLEAN} clean, ${r.verdicts.RISKY} risky, ${r.verdicts.DANGER} danger; ${r.judged ? `${r.held} of ${r.judged} calls held an hour later` : 'none checked an hour later yet'}. Latest calls: ${st.verdicts.slice(0, 6).map(v => `${v.sym} ${v.verdict} ${v.score}`).join(', ') || 'none'}. ${shunt}${chain}${tok}${hist ? '\n\nThe conversation so far:\n' + hist : ''}${around}\n\n${ctx.who ? ctx.who + ' says' : 'Message'}: ${q.slice(0, 400)}`;
-  const plain = addr ? `I can only answer that with the language model, which is not available right now. Send /check ${addr} for what Shuntdesk knows.` : 'I can only answer that with the language model, which is not available right now. Try /help.';
+  const plain = addr && fb.length ? fb.join(' ') + ` Full check: https://shuntdesk.com/ticket/?a=${addr}` : addr ? `I can only answer that with the language model, which is not available right now. Send /check ${addr} for what Shuntdesk knows.` : 'I can only answer that with the language model, which is not available right now. Try /help.';
   const out = await conduct(st, env, 'tg:' + chat, 'tg:' + chat + ':' + q.toLowerCase().slice(0, 120) + ':' + (ctx.history?.length ? ctx.history[ctx.history.length - 1].a.slice(0, 24) : '') + ':' + Math.floor(Date.now() / 600000), 'You are Shunt, the Shuntdesk bot, talking in a Telegram chat. Read the message and answer it as it was asked, like a person in the chat: in the language it was written in (Indonesian or English), in one to four short sentences, friendly and plain. A greeting gets a short greeting back. Every number, name and claim about a token, Shuntdesk or $SHUNT must come from the facts; if the facts do not cover it, say plainly that you do not know and point to the right page or command. You may explain general crypto ideas briefly. Use the conversation so far to understand follow-ups. When asked for tokens, give them one a line with the symbol, the address and the one or two facts that matter, up to the number asked. Never say whether to buy or sell, never predict a price, never promise anything about $SHUNT. Plain text, no markdown, no emoji.', facts, plain);
   // every address becomes a tap-to-copy code block, and each line that carries one stands apart from the next
-  const ADDR = /(?<![0-9A-Za-z])(0x[0-9a-fA-F]{40}|[1-9A-HJ-NP-Za-km-z]{32,44})(?![0-9A-Za-z])/g;
+  // an address inside a link is left alone; one on a coin's line (the line starts with its name) goes on a line of its
+  // own; one in the middle of a sentence stays where it is. Every address outside a link becomes tap-to-copy code
+  const ADDR = /(?<![0-9A-Za-z=\/.])(0x[0-9a-fA-F]{40}|[1-9A-HJ-NP-Za-km-z]{32,44})(?![0-9A-Za-z])/g;
   const lines = tgEsc(out.text).split('\n').map(l => l.replace(/^\s*[-*•]\s*/, '').trim());
   const body = lines.map((l, i) => { const found = l.match(ADDR); ADDR.lastIndex = 0; if (!found) return l;
-    // the coin's line keeps its name and facts; its address goes on a line of its own, ready to tap
-    const rest = l.replace(ADDR, '').replace(/\(\s*,?\s*/g, '(').replace(/\s*,\s*\)/g, ')').replace(/\(\s*\)/g, '').replace(/\s*,\s*,/g, ',').replace(/\s*,\s*\.\s*/g, ' · ').replace(/^[\s,:]+|[\s,]+$/g, '').replace(/\s{2,}/g, ' ');
+    const item = new RegExp('^[^\\s,:]{1,24}[\\s,(:-]+(?:' + found[0] + ')').test(l) && l.length <= 220;
+    if (!item) return l.replace(ADDR, '<code>$1</code>');
+    const rest = l.replace(ADDR, '').replace(/\(\s*,?\s*/g, '(').replace(/\s*,\s*\)/g, ')').replace(/\(\s*\)/g, '').replace(/\s*,\s*,/g, ',').replace(/\s*,\s*\.\s*/g, ' · ').replace(/\s*,\s*:\s*/g, ' · ').replace(/^[\s,:]+|[\s,]+$/g, '').replace(/\s{2,}/g, ' ');
     const ln = (rest ? rest + '\n' : '') + found.map(a => `<code>${a}</code>`).join('\n');
     return i < lines.length - 1 && lines[i + 1] !== '' ? ln + '\n' : ln; }).join('\n').replace(/\n{3,}/g, '\n\n');
   return body + (out.by === 'model' ? '\n\n<i>AI answer from Shuntdesk data · not advice</i>' : '');
@@ -1107,7 +1139,7 @@ async function telegram(st, env, request, body) {
 async function agentData(st, env, p, a, b = '') {
   const need = 'pass ?a=0x… a token address on Robinhood Chain';
   if (p === 'graduation' || p === 'gradsol') return [200, await solGrad(st, env)];
-  if (p === 'rugday') return [200, { rugDay: st.rugDay || [] }];
+  if (p === 'rugday') return [200, { robinhood: st.rugRH || [], solana: st.rugDay || [], rugDay: st.rugDay || [] }];
   if (p === 'deployers') return [200, solBoardView(st)];
   if (p === 'sol') { if (!isSol(a)) return [400, { error: 'pass ?a= a Solana mint address' }]; try { return [200, await solRead(env, a)]; } catch (e) { return [502, { error: e.message }]; } }
   if (p === 'token') { if (!isAddr(a)) return [400, { error: 'pass ?a=0x… a token address on Robinhood Chain' }]; const r = await agentToken(st, env, a); await save(env, st); return [200, r]; }
@@ -3125,13 +3157,13 @@ async function tournamentTick(st, env) {
   const v = seasonView(st); st.tour.leader = v.tournament.leaders[0] || null;
 }
 
-// ---------- the daily line, posted to the community group at 13:00 UTC ----------
+// ---------- the morning brief, posted to the community group at 01:00 UTC (08:00 in Jakarta) ----------
 // The site's own numbers for the last day, so the group hears from the line every day: the crew desk, the calls,
 // what the radar found, and the Pons curves closest to bonding. Once a day, nothing invented.
 async function groupDigest(st, env) {
   if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_GROUP) return;
   const now = new Date(), day = now.toISOString().slice(0, 10);
-  if (now.getUTCHours() < 13 || st.digestDay === day) return;
+  if (now.getUTCHours() < 1 || st.digestDay === day) return;
   st.digestDay = day;
   const r = report(st), rd = await radarView(env).catch(() => null), bw = await bondView(env).catch(() => null);
   const near = (bw?.rows || []).slice(0, 3).map(b => `${tgEsc(b.symbol)} ${b.progress}%`).join(' · ');
@@ -3142,7 +3174,14 @@ async function groupDigest(st, env) {
   const reps = Object.values(st.reports || {}).filter(x => now0 - x.t < 24 * HOUR).length, game = st.bg?.hist?.[0];
   const extra = `${reps ? `<b>Reports</b> ${reps} tokens sent with /report in the last day\n` : ''}${game && game.d === new Date(now0 - 24 * HOUR).toISOString().slice(0, 10) ? `<b>Will it bond?</b> ${game.res.filter(Boolean).length} of ${game.res.length} bonded yesterday, ${Object.keys(game.board).length} played\n` : ''}`;
   const y = bw?.days?.at(-2);
-  const text = `<b>The daily line</b> · ${day}\n\n<b>Crew desk</b> ${money(r.equity)} paper USDG (${r.change >= 0 ? '+' : ''}${money(r.change)} in 24h)\n<b>Calls</b> ${r.verdicts.CLEAN} clean · ${r.verdicts.RISKY} risky · ${r.verdicts.DANGER} danger${r.judged ? `, ${r.held} of ${r.judged} held an hour later` : ''}\n${rd ? `<b>Radar</b> ${rd.scanned} new tokens scanned so far, ${rd.flagged} with a flag\n` : ''}${y ? `<b>Pons</b> ${y.l.toLocaleString('en-US')} launched yesterday, ${y.g} bonded\n` : ''}${near ? `<b>Closest to bonding</b> ${near}\n` : ''}${caughtLine}${extra}\nshuntdesk.com/caught · shuntdesk.com/bonds · shuntdesk.com/bond-game\n\n<i>The site's own figures. Not advice.</i>`;
+  // what bonded in the last day, $SHUNT's curve and its burns, and the newest calls
+  const bonded = (bw?.bonded || []).filter(b => now0 - Date.parse(b.bonded) < 24 * HOUR), sym = b => tgEsc(String(b.symbol || '?').trim());
+  const bondLine = bonded.length ? `<b>Bonded in the last day</b> ${bonded.length}: ${bonded.slice(0, 6).map(sym).join(' · ')}${bonded.length > 6 ? ' and more' : ''}\n` : '<b>Bonded in the last day</b> none\n';
+  let shuntLine = '';
+  try { const [c, l] = await Promise.all([curveSim(SHUNT_CA).catch(() => null), devLedger(env, SHUNT_CA).catch(() => null)]);
+    if (c?.ok) shuntLine = `<b>$SHUNT</b> ${c.progress.toFixed(1)}% of its curve, ${(c.need - c.raised).toFixed(2)} ETH to bond${l?.ok ? ` · ${Math.round(l.burns?.total || l.ledger.burned).toLocaleString('en-US')} burned, ${Math.round(l.ledger.sold)} sold by the dev` : ''}\n`; } catch (e) {}
+  const calls = st.verdicts.slice(0, 3).map(v => `${tgEsc(v.sym)} ${v.verdict} ${v.score}`).join(' · ');
+  const text = `<b>GM, the morning line</b> · ${day}\n\n${shuntLine}${bondLine}${calls ? `<b>Latest calls</b> ${calls}\n` : ''}<b>Crew desk</b> ${money(r.equity)} paper USDG (${r.change >= 0 ? '+' : ''}${money(r.change)} in 24h)\n<b>Calls</b> ${r.verdicts.CLEAN} clean · ${r.verdicts.RISKY} risky · ${r.verdicts.DANGER} danger${r.judged ? `, ${r.held} of ${r.judged} held an hour later` : ''}\n${rd ? `<b>Radar</b> ${rd.scanned} new tokens scanned so far, ${rd.flagged} with a flag\n` : ''}${y ? `<b>Pons</b> ${y.l.toLocaleString('en-US')} launched yesterday, ${y.g} bonded\n` : ''}${near ? `<b>Closest to bonding</b> ${near}\n` : ''}${caughtLine}${extra}\nAsk anything: start a message with Shunt.\nshuntdesk.com/bonds · shuntdesk.com/caught\n\n<i>The site's own figures. Not advice.</i>`;
   await tgSend(env, env.TELEGRAM_GROUP, text).catch(() => 0);
 }
 
@@ -3329,6 +3368,7 @@ const api = {
       if (url.pathname === '/api/holder' && body) { if (!allow(st, ip, 'holder', 20)) return json({ ok: false, why: 'slow down' }, 429); const [code, out] = await holderVerify(st, env, body); await save(env, st); return json(out, code); }
       if (url.pathname === '/api/holder') return json({ ok: true, message: holderMessage(String(url.searchParams.get('c') || '')), min: HOLD_MIN, pro: HOLD_PRO, boost: BOOST_MIN, trip: HOLD_TRIP });
       if (url.pathname === '/api/caught') return json(await caughtView(env));
+      if (url.pathname === '/api/rugday') { const pv = url.searchParams.has('preview') ? await rugDayRH(st, env, true).catch(() => null) : null; return json({ ok: true, today: st.rugRH?.[0] || null, preview: pv, earlier: (st.rugRH || []).slice(1, 8) }); }
       if (url.pathname === '/api/solhub') { const g = await solGrad(st, env); await save(env, st); return json({ ok: true, rugDay: st.rugDay || [], board: solBoardView(st), graduation: { rows: g.rows.slice(0, 8), graduated: g.graduated.slice(0, 8), read: g.read } }); }
       if (url.pathname === '/api/gradsol') { const r = await solGrad(st, env); await save(env, st); return json(r); }
       if (url.pathname === '/api/sol') { const a = (url.searchParams.get('a') || '').trim(); if (!isSol(a)) return json({ ok: false, why: 'not a Solana mint address' }, 400); if (!allow(st, ip, 'sol', 60)) return json({ ok: false, why: 'slow down: 60 Solana checks an hour' }, 429); try { return json({ ok: true, ...(await solRead(env, a)) }); } catch (e) { return json({ ok: false, why: e.message }, 502); } }
@@ -3454,6 +3494,7 @@ const api = {
     try { await watchTick(st, env); } catch (e) {}
     try { await solGrad(st, env); } catch (e) {}
     try { await trackTick(st, env); await rugDayTick(st, env); } catch (e) {}
+    try { await rugDayRH(st, env); } catch (e) {}
     try { await boardTick(st, env); } catch (e) {}   // Graduation Watch keeps reading its curves, so a graduation is caught with nobody on the page
     try { await raceTick(st, env); } catch (e) {}
     try { await bingoTick(st, env); } catch (e) {}
