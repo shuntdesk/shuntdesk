@@ -68,6 +68,7 @@ Paper points only. Curve Racing (https://shuntdesk.com/race/), Launch Bingo (/bi
 
 ## Rug replay
 
+https://shuntdesk.com/wrapped/?w=0x… is one wallet's last seven days on Pons as a card: ETH in, ETH back, what is still held, the best and worst token. JSON: GET https://shuntdesk.com/api/wrapped?w=0x… Card: https://shuntdesk.com/card/wrapped/0x….png
 https://shuntdesk.com/profit/?a=0x… maps what every wallet paid on a Pons curve against the price now: the share of the supply in profit, the biggest bags, and what the curve price would do if every 2x holder sold. JSON: GET https://shuntdesk.com/api/profit?a=0x…
 https://shuntdesk.com/shadow/ is a paper desk that copies the Bond Hunters by fixed rules, every trade in public. JSON: GET https://shuntdesk.com/api/shadow
 

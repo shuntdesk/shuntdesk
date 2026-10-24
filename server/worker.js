@@ -959,7 +959,7 @@ async function telegram(st, env, request, body) {
   if (!allow(st, 'tg:' + chat, 'tg', 40)) return reply('Slow down a little: 40 questions an hour per chat.');
   const site = 'https://shuntdesk.com', footer = '\n\n<i>A rule-based reading of public data. It can be wrong. Not advice.</i>';
   if (cmd === 'start' || cmd === 'help') return reply(`<b>Shuntdesk</b> · every token rides the line\n\nAsk anything about Shuntdesk, a token, the crew desk or what just launched. Or use:\n\n/check <code>0x…</code> what Shuntdesk knows about a Robinhood Chain token\nPaste a Solana mint: the seven checks on a Solana token\n/watchlist <code>wl-…</code> alerts in this chat for the watchlist you keep on the site, the CLI or the extension\n/scan <code>0x…</code> Agent Scan: what the contract lets its owner do\n/ledger <code>0x…</code> Dev Ledger: what the launcher did with it\n/devscore <code>0x…</code> Dev Score: every launch by that dev\n/report <code>0x…</code> report a token; the bot reads it\n/spotters who reported what lost half\n/bondgame today's Will it bond?\n/proof everything about $SHUNT you can check\n/alarms on launch alarms in your group (admins)\n
-<b>For $SHUNT holders</b>\n/link connect your wallet\n/alarm your own alarms\n/follow <code>0x…</code> hear when a wallet buys a Pons token\n/handle your name on the holder league\n/boost burn $SHUNT to boost a full scan\n/watch <code>0x…</code> Tripwire: a private alarm when the owner or the big wallets move\n/daily today's daily shift in the Yard\n/hunters wallets that keep buying early into curves that bond\n/shadow the hunters copied on paper\n/profit <code>0x…</code> who holds a token in profit\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
+<b>For $SHUNT holders</b>\n/link connect your wallet\n/alarm your own alarms\n/follow <code>0x…</code> hear when a wallet buys a Pons token\n/handle your name on the holder league\n/boost burn $SHUNT to boost a full scan\n/watch <code>0x…</code> Tripwire: a private alarm when the owner or the big wallets move\n/daily today's daily shift in the Yard\n/hunters wallets that keep buying early into curves that bond\n/shadow the hunters copied on paper\n/profit <code>0x…</code> who holds a token in profit\n/wrapped <code>0x…</code> a wallet's week on Pons as a card\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
   // anything that is not a command, or a token address with a question around it, goes to the conductor
   // a Solana mint pasted on its own, or after /check: the seven checks, read on the server
   const solFound = !found && clean.match(/(?<![1-9A-HJ-NP-Za-km-z])[1-9A-HJ-NP-Za-km-z]{32,44}(?![1-9A-HJ-NP-Za-km-z])/);
@@ -1114,6 +1114,13 @@ async function telegram(st, env, request, body) {
     const d = dailyView(st), w = yardView(st);
     const top = (rows, f) => rows.slice(0, 5).map((r, i) => `${i + 1}. ${tgEsc(r.handle)} · ${f(r)}`).join('\n') || 'Nobody yet.';
     return reply(`<b>The Yard · daily #${d.no}</b>\nFive trains, the same for everyone today. ${d.players} played.\n\n${top(d.rows, r => `${r.right}/${r.read} right, ${r.pts} pts`)}\n\n<b>This week</b>\n${top(w.rows, r => `${r.pts} pts`)}\n\nPlay: ${site}/play/`);
+  }
+  if (cmd === 'wrapped') {
+    if (!found) return reply('Send /wrapped followed by a wallet: /wrapped <code>0x…</code>');
+    const v = await walletWrapped(env, found[0].toLowerCase()).catch(() => null), e = x => `${x >= 0 ? '+' : ''}${x.toFixed(4)} ETH`;
+    if (!v?.ok) return reply(tgEsc(v?.error || 'Could not read it right now. Try again in a minute.'));
+    if (!v.tokens) return reply(`No buy or sell of a Pons token by <code>${v.wallet}</code> in the last seven days.`);
+    return reply(`<b>Wallet Wrapped</b> · the last 7 days on Pons\n<code>${v.wallet}</code>\n\n${e(v.pnl)} across ${v.tokens} tokens: ${v.won} won, ${v.lost} lost, ${v.exitLiquidity} lost half or more.\n${v.spent.toFixed(4)} ETH in, ${v.back.toFixed(4)} ETH back, ${v.held.toFixed(4)} ETH still held.${v.best && v.best.pnl > 0 ? `\n\nBest: ${tgEsc(v.best.symbol)} ${e(v.best.pnl)}` : ''}${v.worst && v.worst.pnl < 0 ? `\nWorst: ${tgEsc(v.worst.symbol)} ${e(v.worst.pnl)}` : ''}\n\n${site}/card/wrapped/${v.wallet}${footer}`);
   }
   if (cmd === 'profit') {
     if (!found) return reply('Send /profit followed by a Pons token: /profit <code>0x…</code>');
@@ -2229,6 +2236,85 @@ export async function profitMap(env, token) {
     note: 'What each wallet paid on the curve, from the curve\'s Buy and Sell events on Robinhood Chain, against its balance and the price now. A wallet that got its tokens only by transfer, or bought only on the pool after a bond, is not on the map. Not advice.' };
   profits.set(token, { t: now, v }); if (profits.size > 200) profits.delete(profits.keys().next().value);
   return v;
+}
+
+// ---------- Wallet Wrapped: one wallet's week on Pons, as a card ----------
+// From the keyed index: the wallet's token transfers, its own transactions (the ETH it sent) and the ETH sent back to
+// it inside other calls, over the last seven days. A Pons token in with ETH out in the same transaction is a buy; a
+// Pons token out with ETH in is a sell. What it still holds is its balance now at the curve's price, or the pool's
+// once it bonded (Codex). Kept 30 minutes.
+const wrapped = new Map();
+// a multicall whose unanswered calls are asked again after a pause, twice: an empty answer is not a zero
+async function mcRetry(calls) {
+  const out = await multicall(calls);
+  for (let k = 0; k < 2 && out.some(v => v === null); k++) { await new Promise(r => setTimeout(r, 1500)); const left = out.map((v, i) => v === null ? i : -1).filter(i => i >= 0), b = await multicall(left.map(i => calls[i])); left.forEach((i, j) => { out[i] = b[j]; }); }
+  return out;
+}
+async function bsWindow(env, q, from, to) {
+  // 1,000 rows an answer and no paging that holds: newest first, each next read ends at the oldest block of the last
+  const out = []; let end = to;
+  for (let k = 0; k < 3; k++) {
+    const j = await fetch(`https://api.blockscout.com/4663/api?${q}&startblock=${from}&endblock=${end}&sort=desc&page=1&offset=1000&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA, signal: AbortSignal.timeout(20000) }).then(r => r.json()).catch(() => null);
+    if (Array.isArray(j?.result)) { out.push(...j.result); if (j.result.length < 1000) return { rows: out, full: true }; end = Number(j.result[j.result.length - 1].blockNumber); }
+    else if (j?.message === 'No transactions found' || j?.message === 'No token transfers found' || j?.message === 'No internal transactions found') return { rows: out, full: true };
+    else return out.length ? { rows: out, full: false } : null;
+  }
+  return { rows: out, full: false };
+}
+export async function walletWrapped(env, w) {
+  const hit = wrapped.get(w), now = Date.now(); if (hit && now - hit.t < 30 * 60000) return hit.v;
+  if (!env?.BLOCKSCOUT_API_KEY) return { ok: false, error: 'the chain index is not set up' };
+  const head = parseInt(await rpc('eth_blockNumber'), 16), from = head - 7 * 864000;
+  const [tt, tx, it] = await Promise.all([bsWindow(env, `module=account&action=tokentx&address=${w}`, from, head), bsWindow(env, `module=account&action=txlist&address=${w}`, from, head), bsWindow(env, `module=account&action=txlistinternal&address=${w}`, from, head)]);
+  if (!tt || !tx || !it) return { ok: false, error: 'the chain index did not answer: try again in a minute' };
+  const ethOut = new Map(), ethIn = new Map(), lc = s => String(s || '').toLowerCase();
+  for (const t of tx.rows) if (lc(t.from) === w && t.isError !== '1') ethOut.set(lc(t.hash), (ethOut.get(lc(t.hash)) || 0) + Number(t.value) / 1e18);
+  for (const t of it.rows) if (lc(t.to) === w && t.isError !== '1') ethIn.set(lc(t.transactionHash), (ethIn.get(lc(t.transactionHash)) || 0) + Number(t.value) / 1e18);
+  // which of the tokens moved are Pons tokens: each answers curve() with its curve
+  const toks = [...new Set(tt.rows.map(t => lc(t.contractAddress)))].slice(0, 200);
+  const cv = await mcRetry(toks.map(t => [t, SEL.curve])), curveOf = new Map();
+  toks.forEach((t, i) => { const h = cv[i]; if (h && h.length >= 66 && !/^0x0+$/.test(h)) curveOf.set(t, '0x' + h.slice(-40)); });
+  const T = new Map();
+  for (const t of tt.rows) {
+    const a = lc(t.contractAddress); if (!curveOf.has(a)) continue;
+    const h = lc(t.hash), amt = Number(t.value) / 10 ** Number(t.tokenDecimal || 18), x = T.get(a) || (T.set(a, { token: a, symbol: String(t.tokenSymbol || '').slice(0, 16), in: 0, out: 0, got: 0, gave: 0, moved: 0, buys: 0, sells: 0, first: Number(t.timeStamp) * 1000 }), T.get(a));
+    x.first = Math.min(x.first, Number(t.timeStamp) * 1000);
+    if (lc(t.to) === w && ethOut.has(h)) { x.in += ethOut.get(h); x.got += amt; x.buys++; ethOut.delete(h); }
+    else if (lc(t.from) === w && ethIn.has(h)) { x.out += ethIn.get(h); x.gave += amt; x.sells++; ethIn.delete(h); }
+    else if (lc(t.from) === w) x.moved += amt;   // sent on with nothing back: to another wallet, or a sale paid out elsewhere
+  }
+  const list = [...T.values()].filter(x => x.buys || x.sells);
+  if (!list.length) { const v = { ok: true, wallet: w, tokens: 0, read: new Date().toISOString(), full: tt.full && tx.full && it.full, note: 'No buy or sell of a Pons token by this wallet in the last seven days.' }; wrapped.set(w, { t: now, v }); return v; }
+  // what is still held: balance now at the price now
+  const res = await mcRetry(list.flatMap(x => [[x.token, '70a08231' + w.slice(2).padStart(64, '0')], [curveOf.get(x.token), SEL.qres], [curveOf.get(x.token), SEL.tres], [curveOf.get(x.token), SEL.grad]]));
+  const f18 = h => h ? Number(BigInt(h) / 10n ** 12n) / 1e6 : 0, bonded = [];
+  list.forEach((x, i) => { x.bal = f18(res[i * 4]); if (res[i * 4] === null) x.unread = true; const q = f18(res[i * 4 + 1]), t = f18(res[i * 4 + 2]); x.bonded = !!res[i * 4 + 3] && BigInt(res[i * 4 + 3]) === 1n; x.price = !x.bonded && t ? q / t : null; if (x.bonded && x.bal > 0) bonded.push(x); });
+  if (bonded.length && codexOn(env) && await codexOk(env, 'profit')) try {
+    const j = await (await codexPost(env, `{ getTokenPrices(inputs: [${bonded.slice(0, 25).map(x => `{ address: "${x.token}", networkId: 4663 }`).join(', ')}]) { address priceUsd } }`)).json(), e = await ethUsd();
+    for (const p of j.data?.getTokenPrices || []) { const x = bonded.find(y => y.token === lc(p.address)); if (x && p.priceUsd > 0 && e > 0) x.price = p.priceUsd / e; }
+  } catch (e) {}
+  // a token mostly sent on with nothing back has no result this card can tell: it is set aside, not counted as lost
+  for (const x of list) { x.away = x.got > 0 && x.moved > x.got * 0.5; x.held = x.bal > 0 && x.price ? x.bal * x.price : 0; x.unpriced = x.bal > 0 && !x.price; x.pnl = x.out + x.held - x.in; x.mult = x.in ? (x.out + x.held) / x.in : null; }
+  const kept = list.filter(x => !x.away), spent = kept.reduce((s, x) => s + x.in, 0), back = kept.reduce((s, x) => s + x.out, 0), held = kept.reduce((s, x) => s + x.held, 0);
+  const ranked = [...kept].filter(x => x.in > 0).sort((a, b) => b.pnl - a.pnl), r4 = v => Math.round(v * 10000) / 10000;
+  const pick = x => x && { token: x.token, symbol: x.symbol, pnl: r4(x.pnl), mult: x.mult != null ? Math.round(x.mult * 100) / 100 : null, in: r4(x.in), bonded: x.bonded };
+  const v = { ok: true, wallet: w, read: new Date().toISOString(), full: tt.full && tx.full && it.full, tokens: list.length, buys: list.reduce((s, x) => s + x.buys, 0), sells: list.reduce((s, x) => s + x.sells, 0),
+    spent: r4(spent), back: r4(back), held: r4(held), pnl: r4(back + held - spent), won: ranked.filter(x => x.pnl > 0).length, lost: ranked.filter(x => x.pnl < 0).length,
+    exitLiquidity: ranked.filter(x => x.mult != null && x.mult < 0.5).length, bonds: list.filter(x => x.bonded && x.buys).length, unpriced: list.filter(x => x.unpriced).length, unread: list.filter(x => x.unread).length, movedAway: list.filter(x => x.away).map(x => ({ token: x.token, symbol: x.symbol })).slice(0, 10),
+    best: pick(ranked[0]), worst: pick(ranked.at(-1)), rows: ranked.slice(0, 20).map(pick),
+    note: 'The last seven days on Pons, from the keyed chain index: ETH sent for each Pons token received, ETH received for each one sent, and what is still held at the price now. A token mostly sent on to another wallet with nothing back is set aside, not counted as a loss. Not advice.' };
+  wrapped.set(w, { t: now, v }); if (wrapped.size > 300) wrapped.delete(wrapped.keys().next().value);
+  return v;
+}
+function wrappedSvg(c) {
+  const eth = v => `${v >= 0 ? '+' : ''}${v.toFixed(v >= 10 || v <= -10 ? 2 : 3)} ETH`, col = v => v > 0 ? '#2ed3a0' : v < 0 ? '#ff6b6b' : '#edebe6';
+  const body = !c.ok ? cardRows([{ lvl: 'n', text: 'not read right now: ' + (c.error || 'the index did not answer') }], 360)
+    : !c.tokens ? cardRows([{ lvl: 'n', text: 'no Pons trade by this wallet in the last seven days' }], 360)
+    : [[64, 'THE WEEK', eth(c.pnl), col(c.pnl)], [470, 'TOKENS', String(c.tokens), '#edebe6'], [680, 'WON / LOST', `${c.won} / ${c.lost}`, '#edebe6'], [930, 'EXIT LIQUIDITY', String(c.exitLiquidity), c.exitLiquidity ? '#ff6b6b' : '#edebe6']].map(([x, k, v, f]) => `<text x="${x}" y="356" font-family="Big Shoulders Display" font-weight="900" font-size="64" fill="${f}">${cardX(v)}</text><text x="${x + 2}" y="386" font-family="JetBrains Mono" font-weight="700" font-size="15" letter-spacing="3" fill="#8d8b86">${k}</text>`).join('')
+      + cardRows([c.best && c.best.pnl > 0 ? { lvl: 'g', text: `best: ${c.best.symbol || c.best.token.slice(0, 8)} ${eth(c.best.pnl)}${c.best.mult != null ? ` (${c.best.mult}x)` : ''}${c.best.bonded ? ', bonded' : ''}` } : null,
+        c.worst && c.worst.pnl < 0 ? { lvl: 'r', text: `worst: ${c.worst.symbol || c.worst.token.slice(0, 8)} ${eth(c.worst.pnl)}${c.worst.mult != null ? ` (${c.worst.mult}x)` : ''}` } : null,
+        { lvl: 'n', text: `${c.spent.toFixed(3)} ETH in, ${c.back.toFixed(3)} ETH back, ${c.held.toFixed(3)} ETH still held` }].filter(Boolean), 458);
+  return cardFrame({ kind: 'WALLET WRAPPED · LAST 7 DAYS ON PONS', pill: !c.ok || !c.tokens ? 'NO TRADES' : c.pnl >= 0 ? 'UP' : 'DOWN', pillCol: c.ok && c.tokens ? col(c.pnl) : '#8d8b86', big: c.wallet.slice(0, 6) + '…' + c.wallet.slice(-4), meta: c.ok && c.tokens ? `${c.buys} buys and ${c.sells} sells across ${c.tokens} Pons tokens` : c.wallet, body, read: c.read || new Date().toISOString() });
 }
 
 // ---------- Tripwire: a private alarm on Telegram for one token ----------
@@ -3576,6 +3662,7 @@ const api = {
       if (url.pathname === '/api/launch') { const a = (url.searchParams.get('a') || '').toLowerCase(); return isAddr(a) ? json(await launch(env, a)) : json({ ok: false, why: 'bad address' }, 400); }
       if (url.pathname === '/api/stocks') return json(await stockRefs());
       if (url.pathname === '/api/bonds') return json(await bondView(env));
+      if (url.pathname === '/api/wrapped') { const a = (url.searchParams.get('w') || '').toLowerCase(); if (!/^0x[0-9a-f]{40}$/.test(a)) return json({ ok: false, error: 'a Robinhood Chain wallet, 0x and 40 characters' }, 400); return json(await walletWrapped(env, a)); }
       if (url.pathname === '/api/profit') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!/^0x[0-9a-f]{40}$/.test(a)) return json({ ok: false, error: 'a Pons token, 0x and 40 characters' }, 400); return json(await profitMap(env, a)); }
       if (url.pathname === '/api/shadow') { const H = await huntLoad(env); return json({ ok: true, err: H.shadowErr || null, ...shadowView(H, Date.now()) }); }
       if (url.pathname === '/api/hunters') { const w = (url.searchParams.get('w') || '').toLowerCase(); if (w && !/^0x[0-9a-f]{40}$/.test(w)) return json({ ok: false, error: 'a Robinhood Chain wallet, 0x and 40 characters' }, 400); return json(await hunterView(env, w || null)); }
@@ -3674,17 +3761,17 @@ const api = {
           if (png) { const { svgToPng } = await import('./card.js'); return new Response(await svgToPng(svg), { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=1800' } }); }
           return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Shuntdesk champion</title><meta property="og:title" content="${c ? cardX(c.handle) + ' is the Shuntdesk champion' : 'Shuntdesk Season Pass'}"><meta property="og:image" content="${url.origin}/card/champ/latest.png?h=${Math.floor(Date.now() / 1800000)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta http-equiv="refresh" content="0;url=/season/"></head><body></body></html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
         }
-        if (!(isAddr(a) || (isSol(a) && kind === 'token')) || !['token', 'wallet', 'dev'].includes(kind)) return new Response('not found', { status: 404 });
-        const ck = kind === 'token' ? (isSol(a) ? 's:' + a : a) : (kind === 'wallet' ? 'w:' : 'd:') + a;
-        if (!cards.has(ck) && !allow(st, ip, 'card', 60)) return new Response('slow down', { status: 429 });
-        const c = kind === 'wallet' ? await walletCard(st, env, a) : kind === 'dev' ? await devCard(st, env, a) : isSol(a) ? await solCard(st, env, a) : await cardData(st, env, a); await save(env, st);
-        const svg = () => kind === 'wallet' ? walletSvg(c) : kind === 'dev' ? devSvg(c) : cardSvg(c);
+        if (!(isAddr(a) || (isSol(a) && kind === 'token')) || !['token', 'wallet', 'dev', 'wrapped'].includes(kind)) return new Response('not found', { status: 404 });
+        const ck = kind === 'token' ? (isSol(a) ? 's:' + a : a) : (kind === 'wallet' ? 'w:' : kind === 'wrapped' ? 'r:' : 'd:') + a;
+        if (!cards.has(ck) && !(kind === 'wrapped' && wrapped.has(a)) && !allow(st, ip, 'card', 60)) return new Response('slow down', { status: 429 });
+        const c = kind === 'wrapped' ? await walletWrapped(env, a) : kind === 'wallet' ? await walletCard(st, env, a) : kind === 'dev' ? await devCard(st, env, a) : isSol(a) ? await solCard(st, env, a) : await cardData(st, env, a); await save(env, st);
+        const svg = () => kind === 'wrapped' ? wrappedSvg(c) : kind === 'wallet' ? walletSvg(c) : kind === 'dev' ? devSvg(c) : cardSvg(c);
         if (png) { const { svgToPng } = await import('./card.js'); return new Response(await svgToPng(svg()), { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=1800' } }); }
         if (url.searchParams.has('svg')) return new Response(svg(), { headers: { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'no-store' } });
         if (kind !== 'token') {
           const E = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), short = a.slice(0, 6) + '…' + a.slice(-4);
-          const name = kind === 'wallet' ? `Wallet ${short} on Shuntdesk` : `Launcher ${short} on Shuntdesk`, go = kind === 'wallet' ? `/wallet/?w=${a}` : `/dev/?w=${a}`;
-          const desc = kind === 'wallet' ? (c.ok ? `${c.tokens} tokens, ${c.copies} copies of real tokens, ${c.danger} with a DANGER verdict.` : 'Wallet X-ray.') : (c.ok ? `${c.launched} Pons launches, ${c.bonded} bonded, ${c.dumped} dumped${c.score != null ? ', score ' + c.score + '/100' : ''}.` : 'Dev Score.');
+          const name = kind === 'wrapped' ? `Wallet ${short}: the week on Pons` : kind === 'wallet' ? `Wallet ${short} on Shuntdesk` : `Launcher ${short} on Shuntdesk`, go = kind === 'wrapped' ? `/wrapped/?w=${a}` : kind === 'wallet' ? `/wallet/?w=${a}` : `/dev/?w=${a}`;
+          const desc = kind === 'wrapped' ? (c.ok && c.tokens ? `${c.pnl >= 0 ? '+' : ''}${c.pnl} ETH over ${c.tokens} Pons tokens in seven days: ${c.won} won, ${c.lost} lost.` : 'Wallet Wrapped.') : kind === 'wallet' ? (c.ok ? `${c.tokens} tokens, ${c.copies} copies of real tokens, ${c.danger} with a DANGER verdict.` : 'Wallet X-ray.') : (c.ok ? `${c.launched} Pons launches, ${c.bonded} bonded, ${c.dumped} dumped${c.score != null ? ', score ' + c.score + '/100' : ''}.` : 'Dev Score.');
           const img = `${url.origin}/card/${kind}/${a}.png?h=${Math.floor(Date.now() / 1800000)}`;
           return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${E(name)}</title><meta name="description" content="${E(desc)} Findings, not advice.">
 <meta property="og:type" content="website"><meta property="og:site_name" content="Shuntdesk"><meta property="og:title" content="${E(name)}"><meta property="og:description" content="${E(desc)} Findings, not advice."><meta property="og:url" content="${url.origin}/card/${kind}/${a}">

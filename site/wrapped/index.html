@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wallet Wrapped — Shuntdesk</title>
+<meta name="description" content="Any wallet's last seven days on Pons as one card: what went in, what came back, the best and the worst trade. Read from the chain.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shuntdesk">
+<meta property="og:title" content="Wallet Wrapped — Shuntdesk">
+<meta property="og:description" content="Any wallet's last seven days on Pons as one card: what went in, what came back, the best and the worst trade. Read from the chain.">
+<meta property="og:url" content="https://shuntdesk.com/wrapped/">
+<meta property="og:image" content="https://shuntdesk.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shuntdesk. One score. Three tracks.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://shuntdesk.com/og.png">
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#060708">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/simple.css">
+<script src="/assets/ui-mode.js"></script>
+</head>
+<body class="sub">
+<canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
+<main class="page">
+  <div class="ph"><div><div class="eyebrow">Wallet Wrapped · Robinhood Chain</div><h1 class="disp">Your week on Pons.<br><span class="acc">One card.</span></h1></div>
+    <div class="side"><p class="note" style="max-width:460px;margin:0">PASTE ANY WALLET. EVERY PONS TOKEN IT BOUGHT OR SOLD IN THE LAST SEVEN DAYS: WHAT WENT IN, WHAT CAME BACK, THE BEST, THE WORST, AND HOW OFTEN IT WAS SOMEONE'S EXIT.</p></div></div>
+  <form class="pf-form" id="wr-form"><input id="wr-w" placeholder="a wallet: 0x…" autocomplete="off" spellcheck="false"><button class="btn" type="submit">Wrap the week →</button></form>
+  <p class="note" id="wr-msg"></p>
+  <div id="wr-out" hidden>
+    <div style="display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:18px;align-items:start" class="wr-grid">
+      <div><img id="wr-card" alt="Wallet Wrapped card" style="width:100%;border-radius:8px;display:block;background:#0b0c0e;aspect-ratio:1200/630"></div>
+      <div class="stub n"><div class="in"><div class="cap"><b>Share it</b><span>the card shows wherever the link is posted</span></div>
+        <p class="note" id="wr-link" style="word-break:break-all"></p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px"><button class="btn" id="wr-copy" type="button">Copy link</button><a class="btn ghost" id="wr-x" target="_blank" rel="noopener">Post on X</a><a class="btn ghost" id="wr-png" target="_blank" rel="noopener">Save the image</a></div></div></div>
+    </div>
+    <div class="stub n" style="margin-top:16px"><div class="in"><div class="cap"><b>Every token</b><span>best first: ETH back plus what is still held, less what went in</span></div>
+      <div class="dep wrlist" id="wr-list"></div></div></div>
+    <p class="note" style="margin-top:14px" id="wr-note"></p>
+  </div>
+</main>
+<footer class="foot"></footer>
+<script type="module" src="/assets/wrapped.js"></script>
+</body>
+</html>

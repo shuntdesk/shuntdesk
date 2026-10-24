@@ -996,3 +996,5 @@ html.simple.light ::selection { background: #2ed3a0; color: #060708; }
 @media (max-width: 760px) { .shlist .r { grid-template-columns: 1fr 80px 80px !important; } .shlist .r > :nth-child(2), .shlist .r > :nth-child(3) { display: none; } }
 .pmlist .r { grid-template-columns: minmax(140px, 1.2fr) 90px 110px 70px 110px 110px !important; }
 @media (max-width: 760px) { .pmlist .r { grid-template-columns: 1fr 70px 90px !important; } .pmlist .r > :nth-child(2), .pmlist .r > :nth-child(3), .pmlist .r > :nth-child(6) { display: none; } }
+.wrlist .r { grid-template-columns: minmax(140px, 1.2fr) 120px 130px 90px !important; }
+@media (max-width: 760px) { .wr-grid { grid-template-columns: 1fr !important; } .wrlist .r { grid-template-columns: 1fr 110px 70px !important; } .wrlist .r > :nth-child(2) { display: none; } }
