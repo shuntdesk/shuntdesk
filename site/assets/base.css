@@ -998,3 +998,8 @@ html.simple.light ::selection { background: #2ed3a0; color: #060708; }
 @media (max-width: 760px) { .pmlist .r { grid-template-columns: 1fr 70px 90px !important; } .pmlist .r > :nth-child(2), .pmlist .r > :nth-child(3), .pmlist .r > :nth-child(6) { display: none; } }
 .wrlist .r { grid-template-columns: minmax(140px, 1.2fr) 120px 130px 90px !important; }
 @media (max-width: 760px) { .wr-grid { grid-template-columns: 1fr !important; } .wrlist .r { grid-template-columns: 1fr 110px 70px !important; } .wrlist .r > :nth-child(2) { display: none; } }
+.tplist .r { grid-template-columns: 50px 60px minmax(120px, 1fr) 90px minmax(170px, 1.3fr) !important; } .tphot .r { grid-template-columns: minmax(120px, 1fr) 120px 70px 70px 70px !important; }
+.tplist .r.tp-big { background-color: rgba(46, 211, 160, .05); } .tplist .r.tp-new { animation: tpin 1.6s ease-out; } @keyframes tpin { from { background-color: rgba(237, 235, 230, .14); } to { background-color: transparent; } }
+.tplist .r b { font: 700 10px/1 "JetBrains Mono", monospace; letter-spacing: .1em; margin-left: 6px; }
+@media (max-width: 760px) { .tplist .r { grid-template-columns: 40px 50px 1fr 70px !important; } .tplist .r > :nth-child(5) { display: none; } .tphot .r { grid-template-columns: 1fr 110px !important; } .tphot .r > :nth-child(n+3) { display: none; } }
+.dep .r > span.long, .dep .r > span .long { color: var(--long); } .dep .r > span.short, .dep .r > span .short { color: var(--short); }

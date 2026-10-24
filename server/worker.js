@@ -3662,6 +3662,10 @@ const api = {
       if (url.pathname === '/api/launch') { const a = (url.searchParams.get('a') || '').toLowerCase(); return isAddr(a) ? json(await launch(env, a)) : json({ ok: false, why: 'bad address' }, 400); }
       if (url.pathname === '/api/stocks') return json(await stockRefs());
       if (url.pathname === '/api/bonds') return json(await bondView(env));
+      // The Tape reads the trades in the browser; the server names each curve (token, symbol, launcher, progress) and the hunters
+      if (url.pathname === '/api/tapemap') { const B = await bondsLoad(env), H = await huntLoad(env), V = hunterRank(H, B, Date.now());
+        const curves = {}; for (const r of B.rows || []) if (r.c) curves[r.c] = [r.t0, r.s || null, r.by || null, r.p != null ? Math.round(r.p * 10) / 10 : null, r.g ? 1 : 0];
+        return new Response(JSON.stringify({ ok: true, curves, hunters: V.top.slice(0, 60).filter(x => x.hits >= 2).map(x => [x.wallet, x.hits, x.tries]) }), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=120' } }); }
       if (url.pathname === '/api/wrapped') { const a = (url.searchParams.get('w') || '').toLowerCase(); if (!/^0x[0-9a-f]{40}$/.test(a)) return json({ ok: false, error: 'a Robinhood Chain wallet, 0x and 40 characters' }, 400); return json(await walletWrapped(env, a)); }
       if (url.pathname === '/api/profit') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!/^0x[0-9a-f]{40}$/.test(a)) return json({ ok: false, error: 'a Pons token, 0x and 40 characters' }, 400); return json(await profitMap(env, a)); }
       if (url.pathname === '/api/shadow') { const H = await huntLoad(env); return json({ ok: true, err: H.shadowErr || null, ...shadowView(H, Date.now()) }); }
