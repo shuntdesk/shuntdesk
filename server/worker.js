@@ -959,7 +959,7 @@ async function telegram(st, env, request, body) {
   if (!allow(st, 'tg:' + chat, 'tg', 40)) return reply('Slow down a little: 40 questions an hour per chat.');
   const site = 'https://shuntdesk.com', footer = '\n\n<i>A rule-based reading of public data. It can be wrong. Not advice.</i>';
   if (cmd === 'start' || cmd === 'help') return reply(`<b>Shuntdesk</b> · every token rides the line\n\nAsk anything about Shuntdesk, a token, the crew desk or what just launched. Or use:\n\n/check <code>0x…</code> what Shuntdesk knows about a Robinhood Chain token\nPaste a Solana mint: the seven checks on a Solana token\n/watchlist <code>wl-…</code> alerts in this chat for the watchlist you keep on the site, the CLI or the extension\n/scan <code>0x…</code> Agent Scan: what the contract lets its owner do\n/ledger <code>0x…</code> Dev Ledger: what the launcher did with it\n/devscore <code>0x…</code> Dev Score: every launch by that dev\n/report <code>0x…</code> report a token; the bot reads it\n/spotters who reported what lost half\n/bondgame today's Will it bond?\n/proof everything about $SHUNT you can check\n/alarms on launch alarms in your group (admins)\n
-<b>For $SHUNT holders</b>\n/link connect your wallet\n/alarm your own alarms\n/follow <code>0x…</code> hear when a wallet buys a Pons token\n/handle your name on the holder league\n/boost burn $SHUNT to boost a full scan\n/watch <code>0x…</code> Tripwire: a private alarm when the owner or the big wallets move\n/daily today's daily shift in the Yard\n/hunters wallets that keep buying early into curves that bond\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
+<b>For $SHUNT holders</b>\n/link connect your wallet\n/alarm your own alarms\n/follow <code>0x…</code> hear when a wallet buys a Pons token\n/handle your name on the holder league\n/boost burn $SHUNT to boost a full scan\n/watch <code>0x…</code> Tripwire: a private alarm when the owner or the big wallets move\n/daily today's daily shift in the Yard\n/hunters wallets that keep buying early into curves that bond\n/shadow the hunters copied on paper\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
   // anything that is not a command, or a token address with a question around it, goes to the conductor
   // a Solana mint pasted on its own, or after /check: the seven checks, read on the server
   const solFound = !found && clean.match(/(?<![1-9A-HJ-NP-Za-km-z])[1-9A-HJ-NP-Za-km-z]{32,44}(?![1-9A-HJ-NP-Za-km-z])/);
@@ -1114,6 +1114,12 @@ async function telegram(st, env, request, body) {
     const d = dailyView(st), w = yardView(st);
     const top = (rows, f) => rows.slice(0, 5).map((r, i) => `${i + 1}. ${tgEsc(r.handle)} · ${f(r)}`).join('\n') || 'Nobody yet.';
     return reply(`<b>The Yard · daily #${d.no}</b>\nFive trains, the same for everyone today. ${d.players} played.\n\n${top(d.rows, r => `${r.right}/${r.read} right, ${r.pts} pts`)}\n\n<b>This week</b>\n${top(w.rows, r => `${r.pts} pts`)}\n\nPlay: ${site}/play/`);
+  }
+  if (cmd === 'shadow') {
+    const S = shadowView(await huntLoad(env), Date.now()), eth = v => `${v >= 0 ? '+' : ''}${v.toFixed(4)} ETH`;
+    const open = S.open.slice(0, 4).map(o => `${tgEsc(o.symbol)} · ${o.hunters} hunters · ${o.nowRet != null ? (o.nowRet >= 0 ? '+' : '') + o.nowRet + '%' : 'just opened'}\n<code>${o.token}</code>`).join('\n\n');
+    const last = S.closed.slice(0, 4).map(o => `${tgEsc(o.symbol)} ${o.ret != null ? (o.ret >= 0 ? '+' : '') + o.ret + '%' : 'no read'} · ${tgEsc(o.why || '')}`).join('\n');
+    return reply(`<b>Shadow Desk</b> · the Bond Hunters copied on paper\n\n${S.trades ? `${S.trades} trades closed, ${S.wins} won, ${eth(S.pnl)} on ${S.size} paper ETH each\nThis week: ${S.week.trades} trades, ${eth(S.week.pnl)}` : 'No trade closed yet.'}${open ? `\n\n<b>Open</b>\n${open}` : ''}${last ? `\n\n<b>Last closed</b>\n${last}` : ''}\n\n${site}/shadow/\n\n<i>Fixed rules, paper only. Not advice.</i>`);
   }
   if (cmd === 'hunters') {
     const v = await hunterView(env, found ? found[0].toLowerCase() : null);
@@ -2033,7 +2039,8 @@ export async function hunterTick(st, env) {
     const bonds = Object.keys(ga).filter(k => !H.tok[k]?.w).map(k => rows.get(k) || { t0: k, g: ga[k] });
     const open = (B.rows || []).filter(r => !r.g && now - r.at < 24 * HOUR && now - r.at > 60 * 60000 && (r.max || 0) >= 3 && !H.tok[r.t0]?.w);
     const old = (B.rows || []).filter(r => !r.g && now - r.at >= 24 * HOUR && (r.max || 0) >= 5 && !H.tok[r.t0]?.w);
-    const pick = [...bonds.slice(0, 15), ...open.sort((a, b) => (b.p || 0) - (a.p || 0)).slice(0, 15), ...old.slice(0, 15)].slice(0, 24);
+    // an even share each, so the tries keep pace with the hits and a young board is not all bonds
+    const pick = [...bonds.slice(0, 8), ...open.sort((a, b) => (b.p || 0) - (a.p || 0)).slice(0, 8), ...old.slice(0, 8)];
     // a bond that left the board has no launch block on file: its mint log is its launch
     const lost = pick.filter(r => !r.b || !r.c);
     if (lost.length) { const ms = await logsBatch(lost.map(r => ({ address: r.t0, topics: [T_TRANSFER, '0x' + '0'.repeat(64)], fromBlock: hex(Math.max(0, head - 8000000)), toBlock: hex(head) })), env);
@@ -2057,9 +2064,57 @@ export async function hunterTick(st, env) {
       const text = `<b>Bond Hunters are in</b> · ${tgEsc(c.symbol)}\n<code>${c.token}</code>\n\n${n} of the wallets with the best record of buying early into curves that bonded bought this one in its first half hour.\n\n${c.hunters.slice(0, 3).map(w => `${w.wallet.slice(0, 6)}…${w.wallet.slice(-4)} · ${w.hits} of ${w.tries} bonded`).join('\n')}\n\nCurve at ${c.progress}%.\n\nhttps://shuntdesk.com/hunters/\n\n<i>A record of past buys, not a call. Read the token first: https://shuntdesk.com/ticket/?a=${c.token}</i>`;
       if (await tgSend(env, env.TELEGRAM_GROUP, text).catch(() => 0) === 200) H.al.n++;
     }
+    try { await shadowTick(H, B, V, now); } catch (e) { H.shadowErr = String(e.message || e).slice(0, 120); }
     H.err = null;
   } catch (e) { H.err = String(e.message || e).slice(0, 140); }
   await env.KV.put(HUNT, JSON.stringify(H));
+}
+// ---------- Shadow Desk: the hunters copied on paper, by fixed rules, in public ----------
+// When three wallets from the top 40 of the board, each with three bonds or more, are among the first buyers of an open
+// curve under 60%, the desk buys 0.1 paper ETH of it at the price its curve quotes at that read (which is an hour or
+// more after launch: the first half hour has to be over before the buyers are known). It sells at the first of: the
+// curve bonding (the pool's price, else the curve's last), double the entry, half the entry, or 24 hours. The curve's
+// own fee is taken on the way in and out. The price impact of the buy itself is left out: 0.1 ETH is small on a curve.
+const SHADOW_SIZE = 0.1;
+// the curves read through one multicall: the public node answers a batch of calls with 429, one call it serves
+async function curvesMC(list) {
+  const r = await multicall(list.flatMap(c => [[c, SEL.real], [c, SEL.thr], [c, SEL.grad], [c, SEL.qres], [c, SEL.tres]]));
+  return list.map((c, i) => { const [re, th, gr, qr, tr] = r.slice(i * 5, i * 5 + 5).map(u256); if (re === null || !th) return null;
+    return { progress: Math.min(100, Number(re * 10000n / th) / 100), bonded: gr === 1n, price: qr && tr ? Number(qr * 10n ** 18n / tr) / 1e18 : null }; });
+}
+async function shadowTick(H, B, V, now) {
+  const S = H.shadow = H.shadow || { open: [], closed: [], since: now };
+  const rows = new Map((B.rows || []).map(r => [r.t0, r]));
+  const best = new Set(V.top.slice(0, 40).filter(w => w.hits >= 3).map(w => w.wallet));
+  const want = V.inNow.map(c => ({ c, n: c.hunters.filter(w => best.has(w.wallet)).length, r: rows.get(c.token) }))
+    .filter(x => x.n >= 3 && x.r?.c && x.c.progress != null && x.c.progress < 60 && !S.open.some(o => o.t === x.c.token) && !S.closed.some(o => o.t === x.c.token)).slice(0, 3);
+  const n0 = S.open.length, all = [...S.open.map(o => o.c), ...want.map(x => x.r.c)]; if (!all.length) return;
+  const live = await curvesMC(all);
+  // the open ones first: bonded, the marks, or the clock
+  for (const [i, o] of [...S.open].entries()) {
+    const v = live[i]; if (!v) { if (now - o.at > 26 * HOUR) { S.open = S.open.filter(y => y !== o); S.closed.unshift({ ...o, out: null, why: 'no read', done: now }); } continue; }
+    let px = v.price, why = null;
+    if (v.bonded) { why = 'bonded'; try { const j = await (await fetch(`https://api.dexscreener.com/tokens/v1/robinhood/${o.t}`, { headers: UA, signal: AbortSignal.timeout(8000) })).json(); const q = (Array.isArray(j) ? j : []).sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0]; if (q?.priceNative) px = Number(q.priceNative); } catch (e) {} }
+    else if (px >= o.px * 2) why = 'doubled';
+    else if (px <= o.px * 0.5) why = 'halved';
+    else if (now - o.at >= 24 * HOUR) why = '24 hours';
+    o.last = px; o.p = v.progress;
+    if (!why || !px) continue;
+    const ret = px / o.px * (1 - o.fee) * (1 - o.fee) - 1;
+    S.open = S.open.filter(y => y !== o); S.closed.unshift({ ...o, out: px, ret, pnl: SHADOW_SIZE * ret, why, done: now });
+  }
+  want.forEach((x, k) => { const v = live[n0 + k]; if (!v?.price || v.bonded) return;
+    S.open.push({ t: x.c.token, s: x.c.symbol, c: x.r.c, px: v.price, p0: v.progress, n: x.n, fee: x.r.fee || 0.01, at: now, who: x.c.hunters.filter(w => best.has(w.wallet)).slice(0, 5).map(w => w.wallet) }); });
+  S.closed = S.closed.slice(0, 300);
+}
+function shadowView(H, now) {
+  const S = H.shadow || { open: [], closed: [], since: null }, done = S.closed.filter(x => x.ret != null);
+  const sum = xs => xs.reduce((s, x) => s + x.pnl, 0), wk = done.filter(x => now - x.done < 7 * 24 * HOUR), dy = done.filter(x => now - x.done < 24 * HOUR);
+  const r4 = v => Math.round(v * 10000) / 10000;
+  const row = x => ({ token: x.t, symbol: x.s, hunters: x.n, opened: new Date(x.at).toISOString(), entryProgress: Math.round((x.p0 || 0) * 10) / 10, ret: x.ret != null ? Math.round(x.ret * 1000) / 10 : null, pnl: x.pnl != null ? r4(x.pnl) : null, why: x.why || null, closed: x.done ? new Date(x.done).toISOString() : null, nowRet: x.last && !x.done ? Math.round((x.last / x.px - 1) * 1000) / 10 : null, progress: x.p != null ? Math.round(x.p * 10) / 10 : null });
+  return { since: S.since ? new Date(S.since).toISOString() : null, size: SHADOW_SIZE, trades: done.length, wins: done.filter(x => x.ret > 0).length, pnl: r4(sum(done)), week: { trades: wk.length, wins: wk.filter(x => x.ret > 0).length, pnl: r4(sum(wk)) }, day: { trades: dy.length, pnl: r4(sum(dy)) },
+    open: S.open.map(row), closed: S.closed.slice(0, 30).map(row),
+    rules: 'Buys 0.1 paper ETH when three wallets from the top 40 of the board, each with three bonds or more, are among the first buyers of an open curve under 60%, at the curve\'s price at that read. Sells at the first of: the curve bonds, double, half, or 24 hours. The curve fee is taken both ways. Paper only. Not advice.' };
 }
 function hunterRank(H, B, now) {
   const rows = new Map((B.rows || []).map(r => [r.t0, r])), W = new Map();
@@ -3433,6 +3488,7 @@ const api = {
       if (url.pathname === '/api/launch') { const a = (url.searchParams.get('a') || '').toLowerCase(); return isAddr(a) ? json(await launch(env, a)) : json({ ok: false, why: 'bad address' }, 400); }
       if (url.pathname === '/api/stocks') return json(await stockRefs());
       if (url.pathname === '/api/bonds') return json(await bondView(env));
+      if (url.pathname === '/api/shadow') { const H = await huntLoad(env); return json({ ok: true, err: H.shadowErr || null, ...shadowView(H, Date.now()) }); }
       if (url.pathname === '/api/hunters') { const w = (url.searchParams.get('w') || '').toLowerCase(); if (w && !/^0x[0-9a-f]{40}$/.test(w)) return json({ ok: false, error: 'a Robinhood Chain wallet, 0x and 40 characters' }, 400); return json(await hunterView(env, w || null)); }
       if (url.pathname === '/api/lab') return json(await labData(env));
       if (url.pathname === '/api/ledger' && !isSol((url.searchParams.get('a') || '').trim())) { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); if (!ledgers.has(a) && !allow(await load(env), ip, 'ledger', 60)) return json({ ok: false, why: 'slow down: 60 an hour' }, 429); return json(await devLedger(env, a)); }

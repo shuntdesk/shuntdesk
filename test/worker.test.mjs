@@ -183,3 +183,6 @@ test('Bond Hunters answers with an empty board and refuses a bad wallet', async 
   const [bs] = await call('hunters?w=0x12'); assert.equal(bs, 400);
   const [, one] = await call('hunters?w=0x' + '1'.repeat(40)); assert.equal(one.found, false);
 });
+test('Shadow Desk answers with its rules and no trade', async () => {
+  const [s, v] = await call('shadow'); assert.equal(s, 200); assert.equal(v.ok, true); assert.equal(v.size, 0.1); assert.ok(Array.isArray(v.open)); assert.match(v.rules, /Paper only/);
+});
