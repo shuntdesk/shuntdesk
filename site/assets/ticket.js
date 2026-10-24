@@ -57,7 +57,7 @@ function paintCard(res, done) {
     $('#t-crew').textContent = live ? 'SOLANA · READ ONLY, THE CREW DOES NOT TRADE IT' : '';
     return;
   }
-  titles(false); second(res); extras(res); devCard(res);
+  titles(false); second(res); extras(res); devCard(res); freshCard(res);
   $('#t-acts').innerHTML = (live ? `<a class="btn ${res.platform === 'short' ? 'r' : res.platform === 'long' ? 'g' : ''}" href="/desk/?a=${res.addr}">Trade it on paper →</a><button class="btn ghost" data-do="ask">Ask the conductor</button>` : '')
     + `<button class="btn ghost" data-do="card">Save the card</button><button class="btn ghost" data-do="x">Post on X</button><button class="btn ghost" data-do="link">Copy link</button><a class="btn ghost" href="${EXPLORER}/token/${res.addr}" target="_blank" rel="noopener">Explorer ↗</a>`
     + (live ? `<button class="btn ghost" data-do="watch">${watching(res.addr) ? 'Watching' : 'Watch'}</button><a class="btn ghost" href="/scan/?a=${res.addr}">Agent Scan</a><a class="btn ghost" href="/hand/?a=${res.addr}">Same Hand</a><a class="btn ghost" href="/deployer/?t=${res.addr}">Deployer record</a><a class="btn ghost" href="/replay/?a=${res.addr}">Replay</a>` : '');
@@ -186,6 +186,21 @@ async function extras(res) {
     <div class="lk-list">${r.closest.slice(0, 4).map(c => `<a href="/replay/?a=${c.token}">${esc(c.symbol || c.token.slice(0, 8))}<b class="${(c.move24h ?? c.move1h) < 0 ? 'short' : 'long'}">${mv(c.move24h ?? c.move1h)}</b></a>`).join('')}</div>
     <p class="note" style="margin:8px 0 0">${!day && r.base.firstDay ? `RESULTS A DAY ON START AROUND ${at(r.base.firstDay)}. ` : ''}${r.ageMin != null && r.ageMin > 360 ? 'THIS TOKEN IS OLDER THAN THE ONES IT IS SET AGAINST, WHICH WERE READ 30 TO 90 MINUTES AFTER LAUNCH. ' : ''}PAST RESULTS OF OTHER TOKENS, NOT A FORECAST.</p>`;
   $('#lk-by').textContent = `${r.matches} closest of ${r.base.judged.toLocaleString('en-US')} tokens logged since ${new Date(r.base.since).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
+}
+// Fresh Wallets, under the Dev Ledger: of a Pons token's first 20 buyers, how many were first seen the day of the launch,
+// and which ones one wallet funded
+let freshFor = '';
+async function freshCard(res) {
+  if (freshFor === res.addr) return; freshFor = res.addr;
+  const box = $('#fw'), stub = box.closest('.stub');
+  // the server reads a dozen new wallets a time: asked again until every first buyer is read, five times at most
+  let v = null; for (let k = 0; k < 5; k++) { try { v = await api('fresh?a=' + res.addr); } catch (e) {} if (freshFor !== res.addr) return; if (!v?.unread) break; box.innerHTML = `<p class="note">READ ${v.read} OF ${v.buyers} FIRST BUYERS…</p>`; await new Promise(r => setTimeout(r, 2500)); }
+  if (!v?.ok) { stub.hidden = !/try again|did not answer/.test(v?.error || ''); box.innerHTML = `<p class="note">${esc((v?.error || 'not answering right now').toUpperCase())}.</p>`; return; }
+  stub.hidden = false;
+  const hands = v.sharedFunders.filter(s => s.hub === false), col = v.level === 'high' ? 'short' : v.level === 'some' ? '' : 'long';
+  box.innerHTML = [[`<span class="${col}">${v.fresh} of ${v.read}</span>`, 'First buyers first seen less than a day before launch'], [String(v.inShared), 'First buyers funded by one same wallet'], [String(hands.length), 'Wallets that funded two or more of them'], [`<span class="${col}">${(v.level || '—').toUpperCase()}</span>`, 'How much it looks set up']]
+    .map(([a, b]) => `<div><b>${a}</b><span>${b}</span></div>`).join('');
+  $('#fw-n').textContent = (hands.length ? `Funded together: ${hands.map(s => `${s.funder.slice(0, 6)}…${s.funder.slice(-4)} paid ${s.wallets.length}${s.launcher ? ' (the launcher)' : ''}`).join(', ')}. ` : '') + (v.sharedFunders.some(s => s.hub) ? 'Funders that pay out to thousands (an exchange or a bridge) are left out. ' : '') + 'From each first buyer\'s first transaction on the chain.';
 }
 // Dev Ledger, under the verdict: every transfer of this token in or out of the wallet that launched it
 let devFor = '';

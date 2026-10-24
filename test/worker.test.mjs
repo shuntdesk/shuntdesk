@@ -192,3 +192,6 @@ test('Profit Map refuses a bad address', async () => {
 test('Wallet Wrapped refuses a bad wallet', async () => {
   const [s, v] = await call('wrapped?w=0x12'); assert.equal(s, 400); assert.equal(v.ok, false);
 });
+test('Fresh Wallets refuses a bad address', async () => {
+  const [s, v] = await call('fresh?a=0x12'); assert.equal(s, 400); assert.equal(v.ok, false);
+});

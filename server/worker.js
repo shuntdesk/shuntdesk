@@ -959,7 +959,7 @@ async function telegram(st, env, request, body) {
   if (!allow(st, 'tg:' + chat, 'tg', 40)) return reply('Slow down a little: 40 questions an hour per chat.');
   const site = 'https://shuntdesk.com', footer = '\n\n<i>A rule-based reading of public data. It can be wrong. Not advice.</i>';
   if (cmd === 'start' || cmd === 'help') return reply(`<b>Shuntdesk</b> · every token rides the line\n\nAsk anything about Shuntdesk, a token, the crew desk or what just launched. Or use:\n\n/check <code>0x…</code> what Shuntdesk knows about a Robinhood Chain token\nPaste a Solana mint: the seven checks on a Solana token\n/watchlist <code>wl-…</code> alerts in this chat for the watchlist you keep on the site, the CLI or the extension\n/scan <code>0x…</code> Agent Scan: what the contract lets its owner do\n/ledger <code>0x…</code> Dev Ledger: what the launcher did with it\n/devscore <code>0x…</code> Dev Score: every launch by that dev\n/report <code>0x…</code> report a token; the bot reads it\n/spotters who reported what lost half\n/bondgame today's Will it bond?\n/proof everything about $SHUNT you can check\n/alarms on launch alarms in your group (admins)\n
-<b>For $SHUNT holders</b>\n/link connect your wallet\n/alarm your own alarms\n/follow <code>0x…</code> hear when a wallet buys a Pons token\n/handle your name on the holder league\n/boost burn $SHUNT to boost a full scan\n/watch <code>0x…</code> Tripwire: a private alarm when the owner or the big wallets move\n/daily today's daily shift in the Yard\n/hunters wallets that keep buying early into curves that bond\n/shadow the hunters copied on paper\n/profit <code>0x…</code> who holds a token in profit\n/wrapped <code>0x…</code> a wallet's week on Pons as a card\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
+<b>For $SHUNT holders</b>\n/link connect your wallet\n/alarm your own alarms\n/follow <code>0x…</code> hear when a wallet buys a Pons token\n/handle your name on the holder league\n/boost burn $SHUNT to boost a full scan\n/watch <code>0x…</code> Tripwire: a private alarm when the owner or the big wallets move\n/daily today's daily shift in the Yard\n/hunters wallets that keep buying early into curves that bond\n/shadow the hunters copied on paper\n/profit <code>0x…</code> who holds a token in profit\n/wrapped <code>0x…</code> a wallet's week on Pons as a card\n/fresh <code>0x…</code> were the first buyers made for the launch?\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
   // anything that is not a command, or a token address with a question around it, goes to the conductor
   // a Solana mint pasted on its own, or after /check: the seven checks, read on the server
   const solFound = !found && clean.match(/(?<![1-9A-HJ-NP-Za-km-z])[1-9A-HJ-NP-Za-km-z]{32,44}(?![1-9A-HJ-NP-Za-km-z])/);
@@ -1114,6 +1114,13 @@ async function telegram(st, env, request, body) {
     const d = dailyView(st), w = yardView(st);
     const top = (rows, f) => rows.slice(0, 5).map((r, i) => `${i + 1}. ${tgEsc(r.handle)} · ${f(r)}`).join('\n') || 'Nobody yet.';
     return reply(`<b>The Yard · daily #${d.no}</b>\nFive trains, the same for everyone today. ${d.players} played.\n\n${top(d.rows, r => `${r.right}/${r.read} right, ${r.pts} pts`)}\n\n<b>This week</b>\n${top(w.rows, r => `${r.pts} pts`)}\n\nPlay: ${site}/play/`);
+  }
+  if (cmd === 'fresh') {
+    if (!found) return reply('Send /fresh followed by a Pons token: /fresh <code>0x…</code>');
+    const v = await freshWallets(env, found[0].toLowerCase()).catch(() => null);
+    if (!v?.ok) return reply(tgEsc(v?.error || 'Could not read it right now. Try again in a minute.'));
+    const hands = v.sharedFunders.filter(s => s.hub === false);
+    return reply(`<b>Fresh Wallets</b>\n<code>${v.token}</code>\n\n${v.fresh} of the first ${v.read} buyers were first seen on the chain less than a day before the launch.${hands.length ? `\n${v.inShared} of them were funded by the same wallet:\n${hands.slice(0, 3).map(s => `<code>${s.funder}</code> paid ${s.wallets.length}${s.launcher ? ' (the launcher)' : ''}`).join('\n')}` : '\nNo two of them were funded by the same wallet (exchanges and bridges left out).'}\n\nLooks set up: <b>${(v.level || 'unknown').toUpperCase()}</b>\n\n${site}/ticket/?a=${v.token}${footer}`);
   }
   if (cmd === 'wrapped') {
     if (!found) return reply('Send /wrapped followed by a wallet: /wrapped <code>0x…</code>');
@@ -2315,6 +2322,55 @@ function wrappedSvg(c) {
         c.worst && c.worst.pnl < 0 ? { lvl: 'r', text: `worst: ${c.worst.symbol || c.worst.token.slice(0, 8)} ${eth(c.worst.pnl)}${c.worst.mult != null ? ` (${c.worst.mult}x)` : ''}` } : null,
         { lvl: 'n', text: `${c.spent.toFixed(3)} ETH in, ${c.back.toFixed(3)} ETH back, ${c.held.toFixed(3)} ETH still held` }].filter(Boolean), 458);
   return cardFrame({ kind: 'WALLET WRAPPED · LAST 7 DAYS ON PONS', pill: !c.ok || !c.tokens ? 'NO TRADES' : c.pnl >= 0 ? 'UP' : 'DOWN', pillCol: c.ok && c.tokens ? col(c.pnl) : '#8d8b86', big: c.wallet.slice(0, 6) + '…' + c.wallet.slice(-4), meta: c.ok && c.tokens ? `${c.buys} buys and ${c.sells} sells across ${c.tokens} Pons tokens` : c.wallet, body, read: c.read || new Date().toISOString() });
+}
+
+// ---------- Fresh Wallets: how many of the first buyers were made for the launch ----------
+// The first 20 wallets that bought in the curve's first half hour (as Bond Hunters reads them), and for each its very
+// first transaction on the chain from the keyed index: when the wallet first did anything, and who sent it its first
+// ETH. A wallet first seen within a day before the launch is fresh; first buyers sharing the wallet that funded them
+// point to one hand behind several. Kept an hour: a first transaction does not change.
+const freshes = new Map(), firstTx = new Map();   // a wallet's first transaction never changes: kept for every later read
+export async function freshWallets(env, token) {
+  const hit = freshes.get(token), now = Date.now(); if (hit && now - hit.t < HOUR) return hit.v;
+  if (!env?.BLOCKSCOUT_API_KEY) return { ok: false, error: 'the chain index is not set up' };
+  const c = await ponsCurve(token); if (!c?.curve) return { ok: false, error: 'not a Pons token: Fresh Wallets reads the first buyers of a Pons curve' };
+  const head = parseInt(await rpc('eth_blockNumber'), 16);
+  // the launch: the factory's log for this token names its block and its launcher
+  // the node takes 10,000,000 blocks a query: the newest window first, then the ones before it
+  let ll = null; for (let z = head, k = 0; k < 3 && z > 39100000; k++, z -= 9900000) { [ll] = await logsBatch([{ address: PONS, topics: [T_LAUNCH, word64(token)], fromBlock: hex(Math.max(39100000, z - 9899999)), toBlock: hex(z) }], env); if (!ll || ll.length) break; }
+  if (!ll?.[0]) return { ok: false, error: ll ? 'no Pons launch found for this token' : 'the chain did not answer: try again in a minute' };
+  const b = parseInt(ll[0].blockNumber, 16), launchedAt = ll[0].timeStamp ? parseInt(ll[0].timeStamp, String(ll[0].timeStamp).startsWith('0x') ? 16 : 10) * 1000 : await rpc('eth_getBlockByNumber', [hex(b), false]).then(x => parseInt(x.timestamp, 16) * 1000).catch(() => null);
+  const [logs] = await logsBatch([{ address: token, topics: [T_TRANSFER], fromBlock: hex(b), toBlock: hex(Math.min(head, b + HUNT_WIN)) }], env);
+  if (!logs) return { ok: false, error: 'the chain did not answer: try again in a minute' };
+  const by = wordAddr(ll[0].topics[3]);
+  const buyers = huntBuyers(logs, c.curve, by);
+  // three at a time with a pause: the index turns a burst away
+  const one = async w => {
+    if (firstTx.has(w)) return firstTx.get(w);
+    const j = await fetch(`https://api.blockscout.com/4663/api?module=account&action=txlist&address=${w}&sort=asc&page=1&offset=1&apikey=${env.BLOCKSCOUT_API_KEY}`, { headers: UA, signal: AbortSignal.timeout(15000) }).then(r => r.json()).catch(() => null);
+    const t = Array.isArray(j?.result) ? j.result[0] : null;
+    const v = { wallet: w, first: t ? Number(t.timeStamp) * 1000 : null, funder: t && String(t.to).toLowerCase() === w ? String(t.from).toLowerCase() : null, asked: Array.isArray(j?.result), why: Array.isArray(j?.result) ? null : String(j?.message || j?.result || 'no answer').slice(0, 60) };
+    if (v.asked) { firstTx.set(w, v); if (firstTx.size > 5000) firstTx.delete(firstTx.keys().next().value); }
+    return v;
+  };
+  // a Worker run may make only so many requests: twelve new wallets a read at most, the rest on the next read
+  const rows = buyers.map(w => firstTx.has(w) ? { ...firstTx.get(w) } : { wallet: w, asked: false, why: 'not read yet' }), todo = rows.filter(r => !r.asked).slice(0, 12);
+  for (let i = 0; i < todo.length; i += 3) { const got = await Promise.all(todo.slice(i, i + 3).map(r => one(r.wallet))); got.forEach((g, k) => Object.assign(todo[i + k], g)); if (i + 3 < todo.length) await new Promise(r => setTimeout(r, 500)); }
+  const at = launchedAt || now, read = rows.filter(r => r.first);
+  for (const r of rows) { r.hoursBefore = r.first ? Math.round((at - r.first) / HOUR * 10) / 10 : null; r.fresh = r.first != null && at - r.first < 24 * HOUR; }
+  const fund = new Map(); for (const r of rows) if (r.funder) fund.set(r.funder, [...(fund.get(r.funder) || []), r.wallet]);
+  const shared = [...fund].filter(([, ws]) => ws.length >= 2).map(([funder, wallets]) => ({ funder, wallets, launcher: funder === by })).sort((a, b) => b.wallets.length - a.wallets.length).slice(0, 6);
+  // a funder that is a contract (a bridge) or has sent thousands of transactions (an exchange) pays out to everyone:
+  // a hub, not one hand
+  for (const s of shared) { try { const [code, n] = [await rpc('eth_getCode', [s.funder, 'latest']), await rpc('eth_getTransactionCount', [s.funder, 'latest'])]; s.sent = parseInt(n, 16); s.hub = (code && code !== '0x' && !/^0xef0100/.test(code)) || s.sent > 1000; } catch (e) { s.hub = null; } }
+  const hands = shared.filter(s => s.hub === false);
+  const fresh = rows.filter(r => r.fresh).length;
+  const v = { ok: true, token, launcher: by, launched: launchedAt ? new Date(launchedAt).toISOString() : null, buyers: rows.length, read: read.length, unread: rows.filter(r => !r.asked).length, unreadWhy: rows.find(r => !r.asked)?.why || null, fresh, freshShare: read.length ? Math.round(fresh / read.length * 100) : null,
+    sharedFunders: shared, inShared: hands.reduce((s, x) => s + x.wallets.length, 0), level: !read.length ? null : fresh / read.length >= 0.5 || hands.some(x => x.wallets.length >= 4 || x.launcher) ? 'high' : fresh / read.length >= 0.25 || hands.length ? 'some' : 'low',
+    rows: rows.map(r => ({ wallet: r.wallet, firstSeen: r.first ? new Date(r.first).toISOString() : null, hoursBefore: r.hoursBefore, fresh: r.fresh, funder: r.funder })),
+    note: 'The first 20 wallets that bought in the curve\'s first half hour, and each one\'s first transaction on Robinhood Chain from the keyed index. Fresh: first seen less than a day before the launch. A shared funder can also be an exchange or a bridge paying out to many. Not advice.' };
+  if (!v.unread) { freshes.set(token, { t: now, v }); if (freshes.size > 300) freshes.delete(freshes.keys().next().value); }
+  return v;
 }
 
 // ---------- Tripwire: a private alarm on Telegram for one token ----------
@@ -3666,6 +3722,7 @@ const api = {
       if (url.pathname === '/api/tapemap') { const B = await bondsLoad(env), H = await huntLoad(env), V = hunterRank(H, B, Date.now());
         const curves = {}; for (const r of B.rows || []) if (r.c) curves[r.c] = [r.t0, r.s || null, r.by || null, r.p != null ? Math.round(r.p * 10) / 10 : null, r.g ? 1 : 0];
         return new Response(JSON.stringify({ ok: true, curves, hunters: V.top.slice(0, 60).filter(x => x.hits >= 2).map(x => [x.wallet, x.hits, x.tries]) }), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=120' } }); }
+      if (url.pathname === '/api/fresh') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!/^0x[0-9a-f]{40}$/.test(a)) return json({ ok: false, error: 'a Pons token, 0x and 40 characters' }, 400); return json(await freshWallets(env, a)); }
       if (url.pathname === '/api/wrapped') { const a = (url.searchParams.get('w') || '').toLowerCase(); if (!/^0x[0-9a-f]{40}$/.test(a)) return json({ ok: false, error: 'a Robinhood Chain wallet, 0x and 40 characters' }, 400); return json(await walletWrapped(env, a)); }
       if (url.pathname === '/api/profit') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!/^0x[0-9a-f]{40}$/.test(a)) return json({ ok: false, error: 'a Pons token, 0x and 40 characters' }, 400); return json(await profitMap(env, a)); }
       if (url.pathname === '/api/shadow') { const H = await huntLoad(env); return json({ ok: true, err: H.shadowErr || null, ...shadowView(H, Date.now()) }); }
