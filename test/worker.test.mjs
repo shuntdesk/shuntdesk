@@ -25,11 +25,11 @@ test('the agent interface answers unknown paths with a pointer to llms.txt', asy
 test('the agent interface asks for an address', async () => {
   const [s] = await call('v1/token?a=nope'); assert.equal(s, 400);
 });
-test('MCP: initialize, list the thirteen tools, refuse a bad address', async () => {
+test('MCP: initialize, list the eighteen tools, refuse a bad address', async () => {
   const rpc = async b => { const r = await worker.fetch(new Request('http://x/mcp', { method: 'POST', body: JSON.stringify(b) }), env); return r.status === 202 ? null : r.json(); };
   const i = await rpc({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } }); assert.equal(i.result.serverInfo.name, 'shuntdesk');
   assert.equal(await rpc({ jsonrpc: '2.0', method: 'notifications/initialized' }), null);
-  const l = await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' }); assert.equal(l.result.tools.length, 13); assert.ok(l.result.tools.some(t => t.name === 'solana_token')); assert.ok(l.result.tools.some(t => t.name === 'shared_bags' && t.inputSchema.required.includes('other')));
+  const l = await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list' }); assert.equal(l.result.tools.length, 18); assert.ok(l.result.tools.some(t => t.name === 'bond_hunters')); assert.ok(l.result.tools.some(t => t.name === 'solana_token')); assert.ok(l.result.tools.some(t => t.name === 'shared_bags' && t.inputSchema.required.includes('other')));
   const c = await rpc({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'token', arguments: { address: 'x' } } }); assert.equal(c.result.isError, true);
 });
 test('the yard game gets only calls whose later price is known', async () => {

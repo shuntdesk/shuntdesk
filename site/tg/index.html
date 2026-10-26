@@ -19,7 +19,7 @@
   header { display: flex; align-items: center; gap: 9px; } header svg { width: 13px; height: 21px; } header b { font: 700 12px "JetBrains Mono", monospace; letter-spacing: .24em; }
   header .hi { margin-left: auto; font: 700 11px "JetBrains Mono", monospace; color: var(--dim); letter-spacing: .06em; }
   .tick { display: flex; gap: 14px; overflow: hidden; white-space: nowrap; margin: 12px -14px 0; padding: 9px 14px; border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); font: 700 12px "JetBrains Mono", monospace; color: var(--dim); }
-  .tick b { color: var(--ink); } .tick .g { color: var(--long); }
+  .tick b { color: var(--ink); } .tick .g, .list b.g { color: var(--long); }
   h1 { font: 900 40px/.94 "Big Shoulders Display", sans-serif; text-transform: uppercase; margin: 18px 0 6px; } h1 span { color: transparent; -webkit-text-stroke: 1.4px var(--ink); display: block; }
   h2 { font: 700 11px "JetBrains Mono", monospace; letter-spacing: .22em; color: var(--dim); margin: 22px 0 10px; text-transform: uppercase; display: flex; justify-content: space-between; }
   p.s { color: var(--dim); margin: 0 0 14px; font-size: 14px; }
@@ -65,6 +65,10 @@
     <form id="f"><input id="a" placeholder="paste a token address" spellcheck="false" autocomplete="off"><button type="submit">Check</button></form>
     <div id="res"></div>
     <h2>Recently checked</h2><div class="list" id="recent"></div>
+    <h2>Wallet Wrapped</h2>
+    <div class="card"><p class="s" style="margin:0 0 10px">Any wallet's last seven days on Pons as one card: what went in, what came back, the best and the worst trade.</p>
+      <form id="wf"><input id="wa" placeholder="paste a wallet 0x…" spellcheck="false" autocomplete="off"><button type="submit">Wrap</button></form>
+      <div id="wres"></div></div>
   </section>
 
   <section class="tab" id="t-play">
@@ -83,6 +87,8 @@
 
   <section class="tab" id="t-live">
     <h2>$SHUNT</h2><div class="card" id="shunt"><p class="s">Reading…</p></div>
+    <h2>Hot now <a class="btn ghost" style="padding:4px 9px;font-size:10px" href="/tape/">THE TAPE</a></h2><div class="list" id="hot"><p class="s">Reading the last ten minutes of trades…</p></div>
+    <h2>Bond Hunters are in <a class="btn ghost" style="padding:4px 9px;font-size:10px" href="/hunters/">BOARD</a></h2><div class="list" id="hunt"></div>
     <h2>Closest to bonding <a class="btn ghost" style="padding:4px 9px;font-size:10px" href="/bonds/">ALL</a></h2><div class="list" id="bonds"></div>
     <h2>Latest verdicts</h2><div class="list" id="calls"></div>
   </section>

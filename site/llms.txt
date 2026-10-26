@@ -28,7 +28,7 @@ Read-only JSON, no key, CORS open, 120 calls an hour per caller. All money figur
 
 ## MCP
 
-The same reads as MCP tools (token, scan, dev_ledger, curve_sim, twins, dev_score, shared_bags, verdicts, crew_desk, pons_graduations, daily_report) over Streamable HTTP: add https://shuntdesk.com/mcp as a remote server. Read-only, no key.
+The same reads as MCP tools (token, scan, dev_ledger, curve_sim, twins, dev_score, shared_bags, verdicts, crew_desk, pons_graduations, daily_report, profit_map, wallet_wrapped, fresh_wallets, bond_hunters, shadow_desk, plus solana_token and first_buyers) over Streamable HTTP: add https://shuntdesk.com/mcp as a remote server. Read-only, no key.
 
 ## CLI and agent skill
 
