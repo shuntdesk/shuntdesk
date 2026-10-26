@@ -2063,6 +2063,29 @@ function huntBuyers(logs, curve, by) {
   return out;
 }
 const wilson = (k, n) => { if (!n) return 0; const z = 1.64, p = k / n; return (p + z * z / (2 * n) - z * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))) / (1 + z * z / n); };
+// what to read: bonds not read yet, then the open curves an hour to a day old (their first half hour is over), then the
+// older open curves that got to 5% or more, the tries; an even share each, so the tries keep pace with the hits
+function huntPick(H, B, now, n) {
+  const rows = new Map((B.rows || []).map(r => [r.t0, r])), ga = B.ga || {};
+  const bonds = Object.keys(ga).filter(k => !H.tok[k]?.w).map(k => rows.get(k) || { t0: k, g: ga[k] });
+  const open = (B.rows || []).filter(r => !r.g && now - r.at < 24 * HOUR && now - r.at > 60 * 60000 && (r.max || 0) >= 3 && !H.tok[r.t0]?.w);
+  const old = (B.rows || []).filter(r => !r.g && now - r.at >= 24 * HOUR && (r.max || 0) >= 5 && !H.tok[r.t0]?.w);
+  return [...bonds.slice(0, n), ...open.sort((a, b) => (b.p || 0) - (a.p || 0)).slice(0, n), ...old.slice(0, n)];
+}
+// The outside reader: a scheduled GitHub Action reads the same logs from the public node, whose limits Cloudflare's
+// shared addresses keep running into, and sends the transfers here; the buyers are worked out the same way as above
+async function huntFeed(env, body) {
+  const H = await huntLoad(env), B = await bondsLoad(env), now = Date.now(), ga = B.ga || {}, rows = new Map((B.rows || []).map(r => [r.t0, r]));
+  let n = 0;
+  for (const f of (Array.isArray(body?.rows) ? body.rows : []).slice(0, 60)) {
+    const t0 = String(f.t0 || '').toLowerCase(); if (!/^0x[0-9a-f]{40}$/.test(t0) || !Array.isArray(f.logs) || H.tok[t0]?.w) continue;
+    const r = rows.get(t0) || { t0, g: ga[t0] }, c = String(r.c || f.c || '').toLowerCase(), b = r.b || Number(f.b); if (!/^0x[0-9a-f]{40}$/.test(c) || !b) continue;
+    const logs = f.logs.slice(0, 3000).map(([tx, a, z]) => ({ transactionHash: String(tx), topics: [T_TRANSFER, String(a).toLowerCase(), String(z).toLowerCase()] }));
+    const x = H.tok[t0] = H.tok[t0] || {}; x.s = r.s || String(f.s || '').slice(0, 16) || t0.slice(0, 8); x.by = r.by || null; x.b = b; x.at = r.at || Number(f.at) || now; x.w = huntBuyers(logs, c, r.by); if (ga[t0] || r.g) x.o = 1; n++;
+  }
+  H.feed = { t: now, n }; await env.KV.put(HUNT, JSON.stringify(H));
+  return { ok: true, applied: n };
+}
 export async function hunterTick(st, env) {
   const H = await huntLoad(env), now = Date.now(); if (now - H.t < 5 * 60000 - 5000) return; H.t = now;
   try {
@@ -2071,11 +2094,7 @@ export async function hunterTick(st, env) {
     const head = parseInt(await rpc('eth_blockNumber'), 16), idx = { n: 4 };   // four index reads a run at most
     // what to read this tick: bonds not read yet, then the open curves an hour to a day old (their first half hour is
     // over), then the older open curves that got to 5% or more, the tries
-    const bonds = Object.keys(ga).filter(k => !H.tok[k]?.w).map(k => rows.get(k) || { t0: k, g: ga[k] });
-    const open = (B.rows || []).filter(r => !r.g && now - r.at < 24 * HOUR && now - r.at > 60 * 60000 && (r.max || 0) >= 3 && !H.tok[r.t0]?.w);
-    const old = (B.rows || []).filter(r => !r.g && now - r.at >= 24 * HOUR && (r.max || 0) >= 5 && !H.tok[r.t0]?.w);
-    // an even share each, so the tries keep pace with the hits and a young board is not all bonds
-    const pick = [...bonds.slice(0, 4), ...open.sort((a, b) => (b.p || 0) - (a.p || 0)).slice(0, 4), ...old.slice(0, 4)];
+    const pick = huntPick(H, B, now, 4);
     // a bond that left the board has no launch block on file: its mint log is its launch
     const lost = pick.filter(r => !r.b || !r.c);
     if (lost.length) { const ms = await logsBatch(lost.map(r => ({ address: r.t0, topics: [T_TRANSFER, "0x" + "0".repeat(64)], fromBlock: hex(Math.max(0, head - 8000000)), toBlock: hex(head) })), env, idx);
@@ -2086,7 +2105,7 @@ export async function hunterTick(st, env) {
       const part = go.slice(i, i + 8), res = await logsBatch(part.map(r => ({ address: r.t0, topics: [T_TRANSFER], fromBlock: hex(r.b), toBlock: hex(Math.min(head, r.b + HUNT_WIN)) })), env, idx);
       part.forEach((r, k) => { if (!res[k]) return; got++; const x = H.tok[r.t0] = H.tok[r.t0] || {}; x.s = r.s || x.s || r.t0.slice(0, 8); x.by = r.by || x.by || null; x.b = r.b; x.at = r.at || x.at || now; x.w = huntBuyers(res[k], r.c, r.by); if (ga[r.t0] || r.g) x.o = 1; });
     }
-    H.last = { pick: pick.length, placed: go.length, read: got, why: logsWhy };   // this tick's reads, to see a node that turns them away
+    H.last = { pick: pick.length, placed: go.length, read: got, why: logsWhy, index: 4 - Math.max(0, idx.n) };   // this tick's reads, to see a node that turns them away
     // three of the best early in one open curve under 60%: said in the group, once a curve, four a day. Only once 150
     // curves are settled and only wallets with three bonds or more count: a young board would call on thin luck
     const V = hunterRank(H, B, now), settled = Object.values(H.tok).filter(x => x.w && (x.o || now - x.at >= 24 * HOUR)).length;
@@ -2189,7 +2208,7 @@ function hunterRank(H, B, now) {
 export async function hunterView(env, w) {
   const H = await huntLoad(env), B = await bondsLoad(env), now = Date.now(), V = hunterRank(H, B, now);
   const toks = Object.values(H.tok).filter(x => x.w), bonded = toks.filter(x => x.o).length;
-  const base = { ok: true, read: H.t || null, err: H.err || null, last: H.last || null, saidToday: H.al?.n || 0, said: (H.al?.done || []).slice(-5), board: { curves: toks.length, bonded, settled: toks.filter(x => x.o || now - x.at >= 24 * HOUR).length } };
+  const base = { ok: true, read: H.t || null, err: H.err || null, last: H.last || null, feed: H.feed || null, saidToday: H.al?.n || 0, said: (H.al?.done || []).slice(-5), board: { curves: toks.length, bonded, settled: toks.filter(x => x.o || now - x.at >= 24 * HOUR).length } };
   if (w) { const v = V.all.get(w); let rank = V.top.findIndex(x => x.wallet === w); const group = V.top.find(x => x.wallet === w || x.linked?.includes(w)); if (rank < 0 && group) rank = V.top.indexOf(group);
     return { ...base, wallet: w, found: !!v, rank: rank >= 0 ? rank + 1 : null, sameHand: group ? [group.wallet, ...(group.linked || [])].filter(x => x !== w) : [], hits: v?.hits || 0, tries: v?.tries || 0, rate: v?.tries ? Math.round(v.hits / v.tries * 1000) / 10 : null, hitList: (v?.bonded || []).sort((a, b) => b.at - a.at).slice(0, 12), open: v?.open || [] }; }
   return { ...base, hunters: V.top.slice(0, 30).map(({ wallet, hits, tries, rate, bonded, open, linked }) => ({ wallet, hits, tries, rate, last: bonded.slice(0, 4).map(b => b.symbol), openNow: open.length, linked: linked || [] })), inNow: V.inNow.slice(0, 12),
@@ -3756,6 +3775,9 @@ const api = {
       if (url.pathname === '/api/fresh') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!/^0x[0-9a-f]{40}$/.test(a)) return json({ ok: false, error: 'a Pons token, 0x and 40 characters' }, 400); return json(await freshWallets(env, a)); }
       if (url.pathname === '/api/wrapped') { const a = (url.searchParams.get('w') || '').toLowerCase(); if (!/^0x[0-9a-f]{40}$/.test(a)) return json({ ok: false, error: 'a Robinhood Chain wallet, 0x and 40 characters' }, 400); return json(await walletWrapped(env, a)); }
       if (url.pathname === '/api/profit') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!/^0x[0-9a-f]{40}$/.test(a)) return json({ ok: false, error: 'a Pons token, 0x and 40 characters' }, 400); return json(await profitMap(env, a)); }
+      if (url.pathname === '/api/_hunt/todo' || url.pathname === '/api/_hunt/feed') { if (!env.HUNT_KEY || request.headers.get('x-feed') !== env.HUNT_KEY) return json({ error: 'not found' }, 404);
+        if (url.pathname === '/api/_hunt/feed') return json(await huntFeed(env, await request.json().catch(() => null)));
+        const H = await huntLoad(env), B = await bondsLoad(env); return json({ ok: true, rows: huntPick(H, B, Date.now(), 10).map(r => ({ t0: r.t0, c: r.c || null, b: r.b || null, s: r.s || null, at: r.at || null })) }); }
       if (url.pathname === '/api/_tick/hunt') { if (!env.TELEGRAM_SECRET || request.headers.get('x-tick') !== env.TELEGRAM_SECRET) return json({ error: 'not found' }, 404); await hunterTick(null, env); return json({ ok: true }); }
       if (url.pathname === '/api/shadow') { const H = await huntLoad(env); return json({ ok: true, err: H.shadowErr || null, ...shadowView(H, Date.now()) }); }
       if (url.pathname === '/api/hunters') { const w = (url.searchParams.get('w') || '').toLowerCase(); if (w && !/^0x[0-9a-f]{40}$/.test(w)) return json({ ok: false, error: 'a Robinhood Chain wallet, 0x and 40 characters' }, 400); return json(await hunterView(env, w || null)); }

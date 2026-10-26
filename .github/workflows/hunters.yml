@@ -1,0 +1,21 @@
+name: Bond Hunters reader
+# Reads the first half hour of transfers of the Pons tokens Bond Hunters still needs, from the public Robinhood Chain
+# node, and sends them to shuntdesk.com. See scripts/hunt-feed.mjs.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  feed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/hunt-feed.mjs
+        env:
+          HUNT_KEY: ${{ secrets.HUNT_KEY }}
