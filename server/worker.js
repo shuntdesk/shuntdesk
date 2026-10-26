@@ -946,8 +946,16 @@ async function tgSeen(env, msg) {
 async function telegram(st, env, request, body) {
   if (!env.TELEGRAM_SECRET || request.headers.get('x-telegram-bot-api-secret-token') !== env.TELEGRAM_SECRET) return new Response('forbidden', { status: 403 });
   const msg = body?.message || body?.channel_post; const text = String(msg?.text || '').trim(), chat = msg?.chat?.id;
+  const me0 = /bot$/i.test(env.TELEGRAM_BOT_NAME || '') ? env.TELEGRAM_BOT_NAME.toLowerCase().replace(/^@/, '') : 'shuntdesk_bot';
+  // added to a group: say what it does there, once
+  if (chat && msg?.new_chat_members?.some(u => String(u.username || '').toLowerCase() === me0)) {
+    const G = st.seenGroups = st.seenGroups || {}; G[chat] = { title: String(msg.chat.title || '').slice(0, 60), t: Date.now(), added: Date.now() };
+    return new Response(JSON.stringify({ method: 'sendMessage', chat_id: chat, parse_mode: 'HTML', disable_web_page_preview: true, text: `<b>Shunt is on the line</b> · Shuntdesk's bot for Robinhood Chain\n\nAsk me about any token here: start a message with "Shunt", or reply to me. Or use:\n\n/check <code>0x…</code> the seven checks on a token\n/fresh <code>0x…</code> were its first buyers made for the launch?\n/profit <code>0x…</code> who holds it in profit\n/hunters the wallets that keep getting in early\n/new tokens that just bonded on Pons\n/alarms on launch alarms for this group (admins)\n\nRead-only, free, from public chain data. Not advice.\nhttps://shuntdesk.com/bot/` }), { headers: { 'Content-Type': 'application/json' } });
+  }
   if (!chat || !text) return new Response('ok');
-  const reply = (html, extra = {}) => new Response(JSON.stringify({ method: 'sendMessage', chat_id: chat, text: html.slice(0, 4000), parse_mode: 'HTML', disable_web_page_preview: true, reply_to_message_id: msg.message_id, ...extra }), { headers: { 'Content-Type': 'application/json' } });
+  // in a group that is not The Yard, one line under each answer says where it comes from, unless a Conductor put it there
+  let brand = '';
+  const reply = (html, extra = {}) => new Response(JSON.stringify({ method: 'sendMessage', chat_id: chat, text: (html + brand).slice(0, 4000), parse_mode: 'HTML', disable_web_page_preview: true, reply_to_message_id: msg.message_id, ...extra }), { headers: { 'Content-Type': 'application/json' } });
   // the bot's own username, exactly: a loose match on 'shuntdesk' would answer every message that names the X account
   const me = /bot$/i.test(env.TELEGRAM_BOT_NAME || '') ? env.TELEGRAM_BOT_NAME.toLowerCase().replace(/^@/, '') : 'shuntdesk_bot', group = msg.chat.type !== 'private';
   if (msg.from?.is_bot) return new Response('ok');   // buy alerts and other bots are not spoken to
@@ -958,13 +966,27 @@ async function telegram(st, env, request, body) {
   const clean = text.replace(new RegExp('@' + me + '(?![a-z0-9_])', 'ig'), '').replace(NAME, '').replace(/,\s*shunt(?:desk)?\s*([?!.]*)$/i, '$1').trim() || text.trim();
   const found = clean.match(/0x[0-9a-fA-F]{40}/), cmd = (clean.match(/^\/(\w+)/)?.[1] || '').toLowerCase();
   if (group && !cmd && !mentioned) return new Response('ok');   // in groups, only speak when spoken to
+  if (group && String(chat) !== String(env.TELEGRAM_GROUP)) { const G = st.seenGroups = st.seenGroups || {}; G[chat] = { ...(G[chat] || {}), title: String(msg.chat.title || '').slice(0, 60), t: Date.now(), n: (G[chat]?.n || 0) + 1 };
+    if (Object.keys(G).length > 500) delete G[Object.entries(G).sort((a, b) => a[1].t - b[1].t)[0][0]];
+    if (!condGroups(st).includes(String(chat))) brand = '\n\n<i>Shunt by Shuntdesk · shuntdesk.com · $SHUNT on Robinhood Chain</i>'; }
   // a command meant for another bot (/start@otherbot) is not ours
   const to = clean.match(/^\/\w+@(\w+)/)?.[1]; if (group && cmd && !mentioned && to && to.toLowerCase() !== me) return new Response('ok');
   if (cmd === 'id') return reply(`This chat: <code>${chat}</code> (${tgEsc(msg.chat.type)}${msg.chat.title ? ', ' + tgEsc(msg.chat.title) : ''})`);
-  if (!allow(st, 'tg:' + chat, 'tg', 40)) return reply('Slow down a little: 40 questions an hour per chat.');
+  const lim = condGroups(st).includes(String(chat)) ? 120 : 40;
+  if (!allow(st, 'tg:' + chat, 'tg', lim)) return reply(`Slow down a little: ${lim} questions an hour per chat.`);
+  if (cmd === 'conductor') {
+    if (!group) return reply(`Conductor: a holder of ${HOLD_COND.toLocaleString('en-US')} $SHUNT puts Shunt in their own group, with no Shuntdesk line under its answers, a limit of 120 questions an hour, and the Bond Hunters alerts there. Add @${me} to your group, then send /conductor in it.${roadOpen(st, 'conductor') ? '' : '\n\nIt opens when the $SHUNT curve reaches 50%: https://shuntdesk.com/road/'}`);
+    if (!roadOpen(st, 'conductor')) return reply('The Conductor tier opens when the $SHUNT curve reaches 50%. The road: https://shuntdesk.com/road/');
+    const h = st.holders?.[String(msg.from?.id)]; if (!h || h.bal < HOLD_COND) return reply(`Conductor needs ${HOLD_COND.toLocaleString('en-US')} $SHUNT in a wallet linked to you: send /link to the bot in a private chat first.`);
+    const isAdmin = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getChatMember?chat_id=${chat}&user_id=${msg.from?.id}`).then(r => r.json()).then(j => ['creator', 'administrator'].includes(j.result?.status)).catch(() => false);
+    if (!isAdmin) return reply('Only a group admin can make this a Conductor group.');
+    const G = st.groups = st.groups || {}; G[chat] = { ...(G[chat] || {}), title: String(msg.chat.title || '').slice(0, 60), cond: String(msg.from.id), t: Date.now(), on: G[chat]?.on ?? false }; brand = '';
+    return reply('This is a Conductor group now: no Shuntdesk line under the answers, 120 questions an hour, and the Bond Hunters alerts here. It holds while your linked wallet keeps 20,000,000 $SHUNT.');
+  }
+  if (cmd === 'road') { const r = roadView(st); return reply(`<b>Road to Bond</b> · $SHUNT\n\nCurve at <b>${r.progress != null ? r.progress.toFixed(1) : '?'}%</b>${r.raised != null ? `, ${r.raised.toFixed(2)} of ${r.need} ETH` : ''}.\n\n${r.marks.map(m => `${m.open ? 'OPEN' : m.at + '%'} · ${tgEsc(m.name)}`).join('\n')}\n\nhttps://shuntdesk.com/road/\n\n<i>Features, not a price. Read from the curve contract.</i>`); }
   const site = 'https://shuntdesk.com', footer = '\n\n<i>A rule-based reading of public data. It can be wrong. Not advice.</i>';
   if (cmd === 'start' || cmd === 'help') return reply(`<b>Shuntdesk</b> · every token rides the line\n\nAsk anything about Shuntdesk, a token, the crew desk or what just launched. Or use:\n\n/check <code>0x…</code> what Shuntdesk knows about a Robinhood Chain token\nPaste a Solana mint: the seven checks on a Solana token\n/watchlist <code>wl-…</code> alerts in this chat for the watchlist you keep on the site, the CLI or the extension\n/scan <code>0x…</code> Agent Scan: what the contract lets its owner do\n/ledger <code>0x…</code> Dev Ledger: what the launcher did with it\n/devscore <code>0x…</code> Dev Score: every launch by that dev\n/report <code>0x…</code> report a token; the bot reads it\n/spotters who reported what lost half\n/bondgame today's Will it bond?\n/proof everything about $SHUNT you can check\n/alarms on launch alarms in your group (admins)\n
-<b>For $SHUNT holders</b>\n/link connect your wallet\n/alarm your own alarms\n/follow <code>0x…</code> hear when a wallet buys a Pons token\n/handle your name on the holder league\n/boost burn $SHUNT to boost a full scan\n/watch <code>0x…</code> Tripwire: a private alarm when the owner or the big wallets move\n/daily today's daily shift in the Yard\n/hunters wallets that keep buying early into curves that bond\n/shadow the hunters copied on paper\n/profit <code>0x…</code> who holds a token in profit\n/wrapped <code>0x…</code> a wallet's week on Pons as a card\n/fresh <code>0x…</code> were the first buyers made for the launch?\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
+<b>For $SHUNT holders</b>\n/link connect your wallet\n/alarm your own alarms\n/follow <code>0x…</code> hear when a wallet buys a Pons token\n/handle your name on the holder league\n/boost burn $SHUNT to boost a full scan\n/watch <code>0x…</code> Tripwire: a private alarm when the owner or the big wallets move\n/daily today's daily shift in the Yard\n/hunters wallets that keep buying early into curves that bond\n/shadow the hunters copied on paper\n/road the $SHUNT curve and what opens at each mark\n/profit <code>0x…</code> who holds a token in profit\n/wrapped <code>0x…</code> a wallet's week on Pons as a card\n/fresh <code>0x…</code> were the first buyers made for the launch?\n/new tokens that just graduated from Pons\n/desk the crew's public paper desk\n/report the last 24 hours\n\n${site}`);
   // anything that is not a command, or a token address with a question around it, goes to the conductor
   // a Solana mint pasted on its own, or after /check: the seven checks, read on the server
   const solFound = !found && clean.match(/(?<![1-9A-HJ-NP-Za-km-z])[1-9A-HJ-NP-Za-km-z]{32,44}(?![1-9A-HJ-NP-Za-km-z])/);
@@ -1026,8 +1048,9 @@ async function telegram(st, env, request, body) {
     else if (/^early\b/.test(arg)) f.early = !/\boff\b/.test(arg);
     else if (/^dev\b/.test(arg)) f.dev = !/\boff\b/.test(arg);
     else if (/^hunt/.test(arg)) f.hunt = !/\boff\b/.test(arg);
-    else if (/^off\b/.test(arg)) { f.clean = false; f.flags = false; f.curve = []; f.early = false; f.dev = false; f.hunt = false; }
-    return reply(`<b>Your alarms</b>\n\n• clean reads of new tokens: <b>${f.clean ? 'on' : 'off'}</b>\n• new tokens with a red flag: <b>${f.flags ? 'on' : 'off'}</b>\n• Pons curves crossing: <b>${f.curve.length ? f.curve.map(v => v + '%').join(', ') : 'off'}</b>\n• trusted devs and known dumpers launching: <b>${f.dev !== false ? 'on' : 'off'}</b>\n• Bond Hunters, three of the best early in one curve: <b>${f.hunt !== false ? 'on' : 'off'}</b> (/alarm hunt on|off)\n• Early Radar, clean launches minutes old (Pro, ${HOLD_PRO.toLocaleString('en-US')} $SHUNT): <b>${h.bal >= HOLD_PRO ? (f.early !== false ? 'on' : 'off') : 'locked'}</b>\n\nChange: /alarm clean on|off · /alarm flags on|off · /alarm curve 70 · /alarm curve off · /alarm dev on|off · /alarm early on|off · /alarm off\nUp to 40 a day, in this chat.`);
+    else if (/^shadow/.test(arg)) f.shadow = !/\boff\b/.test(arg);
+    else if (/^off\b/.test(arg)) { f.clean = false; f.flags = false; f.curve = []; f.early = false; f.dev = false; f.hunt = false; f.shadow = false; }
+    return reply(`<b>Your alarms</b>\n\n• clean reads of new tokens: <b>${f.clean ? 'on' : 'off'}</b>\n• new tokens with a red flag: <b>${f.flags ? 'on' : 'off'}</b>\n• Pons curves crossing: <b>${f.curve.length ? f.curve.map(v => v + '%').join(', ') : 'off'}</b>\n• trusted devs and known dumpers launching: <b>${f.dev !== false ? 'on' : 'off'}</b>\n• Bond Hunters, three of the best early in one curve: <b>${f.hunt !== false ? 'on' : 'off'}</b> (/alarm hunt on|off)\n• Shadow Desk trades as they happen (Pro, or every holder once the curve reaches 75%): <b>${h.bal >= HOLD_PRO || roadOpen(st, 'shadowall') ? (f.shadow !== false ? 'on' : 'off') : 'Pro'}</b> (/alarm shadow on|off)\n• Early Radar, clean launches minutes old (Pro, ${HOLD_PRO.toLocaleString('en-US')} $SHUNT): <b>${h.bal >= HOLD_PRO ? (f.early !== false ? 'on' : 'off') : 'locked'}</b>\n\nChange: /alarm clean on|off · /alarm flags on|off · /alarm curve 70 · /alarm curve off · /alarm dev on|off · /alarm early on|off · /alarm off\nUp to 40 a day, in this chat.`);
   }
   if (cmd === 'watchlist') {
     const W = await watchLoad(env), code = (clean.match(/wl-[a-z0-9]{6}/i) || [])[0]?.toLowerCase(), mine = Object.entries(W.lists).find(([, l]) => l.chat === String(chat));
@@ -2160,9 +2183,11 @@ async function shadowTick(H, B, V, now) {
     if (!why || !px) continue;
     const ret = px / o.px * (1 - o.fee) * (1 - o.fee) - 1;
     S.open = S.open.filter(y => y !== o); S.closed.unshift({ ...o, out: px, ret, pnl: SHADOW_SIZE * ret, why, done: now });
+    H.sq = [...(H.sq || []), { k: 'close', s: o.s, t: o.t, r: Math.round(ret * 1000) / 10, pnl: SHADOW_SIZE * ret, why }].slice(-20);
   }
   want.forEach((x, k) => { const v = live[n0 + k]; if (!v?.price || v.bonded) return;
-    S.open.push({ t: x.c.token, s: x.c.symbol, c: x.r.c, px: v.price, p0: v.progress, n: x.n, fee: x.r.fee || 0.01, at: now, who: x.c.hunters.filter(w => best.has(w.wallet)).slice(0, 5).map(w => w.wallet) }); });
+    S.open.push({ t: x.c.token, s: x.c.symbol, c: x.r.c, px: v.price, p0: v.progress, n: x.n, fee: x.r.fee || 0.01, at: now, who: x.c.hunters.filter(w => best.has(w.wallet)).slice(0, 5).map(w => w.wallet) });
+    H.sq = [...(H.sq || []), { k: 'open', s: x.c.symbol, t: x.c.token, n: x.n, p: Math.round(v.progress * 10) / 10 }].slice(-20); });
   S.closed = S.closed.slice(0, 300);
 }
 function shadowView(H, now) {
@@ -2174,6 +2199,48 @@ function shadowView(H, now) {
     open: S.open.map(row), closed: S.closed.slice(0, 30).map(row),
     rules: 'Buys 0.1 paper ETH when three wallets from the top 40 of the board, each with three bonds or more, are among the first buyers of an open curve under 60%, at the curve\'s price at that read. Sells at the first of: the curve bonds, double, half, or 24 hours. The curve fee is taken both ways. Paper only. Not advice.' };
 }
+// ---------- Road to Bond: $SHUNT's curve, read from its contract, and what opens at each mark ----------
+// The highest progress the curve has shown is kept: a mark once reached stays open even if the curve comes back down.
+// Each first crossing is said in the group, once.
+const ROAD = [
+  { at: 25, key: 'hunterweek', name: 'Hunter of the Week', what: 'every Monday, the wallet with the best week of early buys into curves that bonded, as a card in the group and on X' },
+  { at: 50, key: 'conductor', name: 'The Conductor tier', what: 'holders of 20,000,000 $SHUNT put Shunt in their own group with no Shuntdesk line under its answers, a higher limit, and the hunter alerts there' },
+  { at: 75, key: 'shadowall', name: 'Shadow Desk alerts for every holder', what: 'every Shadow Desk trade by DM the moment it opens and closes, for every holder, not only Pro' },
+  { at: 100, key: 'dataset', name: 'The Bond Hunters history, open', what: 'every first-buyer record behind the board published as an open dataset on Hugging Face, for anyone to check or build on' },
+];
+const roadOpen = (st, key) => { const m = ROAD.find(r => r.key === key); return !!m && (st.road?.max || 0) >= m.at; };
+async function roadTick(st, env) {
+  const R = st.road = st.road || { max: 0, t: 0, hit: {} }, now = Date.now(); if (now - R.t < 10 * 60000) return;
+  // the bond board reads every curve every ten minutes already: $SHUNT's row first, its own contract only if missing
+  const row = (await bondsLoad(env)).rows?.find(r => r.t0 === SHUNT);
+  const c = row && row.p != null ? { progress: row.g ? 100 : row.p, raised: row.q, need: row.th, graduated: !!row.g } : await ponsCurve(SHUNT).catch(() => null); if (!c) return; R.t = now;
+  R.now = c.progress; R.raised = c.raised; R.need = c.need; R.graduated = c.graduated; R.max = Math.max(R.max || 0, c.graduated ? 100 : c.progress);
+  for (const m of ROAD) if (R.max >= m.at && !R.hit[m.at]) {
+    R.hit[m.at] = now;
+    if (env.TELEGRAM_GROUP) tgQueue(st, [String(env.TELEGRAM_GROUP)], `<b>Road to Bond</b> · the $SHUNT curve reached ${m.at}%\n\n${m.at === 100 ? '$SHUNT bonded on Pons. ' : ''}Now open: <b>${tgEsc(m.name)}</b>, ${tgEsc(m.what)}.\n\nRead from the curve contract. The road: https://shuntdesk.com/road/`);
+  }
+}
+function roadView(st) {
+  const R = st.road || { max: 0, hit: {} };
+  return { ok: true, token: SHUNT, progress: R.now ?? null, raised: R.raised ?? null, need: R.need ?? null, graduated: !!R.graduated, highest: R.max || 0, read: R.t ? new Date(R.t).toISOString() : null,
+    marks: ROAD.map(m => ({ at: m.at, name: m.name, what: m.what, open: (R.max || 0) >= m.at, reached: R.hit?.[m.at] ? new Date(R.hit[m.at]).toISOString() : null })),
+    note: 'Progress is the ETH the $SHUNT curve has raised against the ETH it needs to bond, read from the curve contract. A mark once reached stays open. Features, not a price: nothing here says what $SHUNT will be worth.' };
+}
+// ---------- Hunter of the Week: the best week of early buys, each Monday once the road opens it ----------
+function hunterWeek(H, B, now) {
+  const V = hunterRank(H, B, now), lead = new Set(V.top.map(w => w.wallet)), T = new Map();
+  for (const [t, x] of Object.entries(H.tok)) { if (!x.w || now - x.at > 7 * 24 * HOUR) continue; const done = x.o ? 1 : now - x.at >= 24 * HOUR ? 0 : null; if (done === null) continue;
+    for (const w of x.w) { if (!lead.has(w)) continue; const v = T.get(w) || { wallet: w, hits: 0, tries: 0, bonded: [] }; v.tries++; if (done) { v.hits++; v.bonded.push(x.s); } T.set(w, v); } }
+  const best = [...T.values()].filter(v => v.hits >= 2).sort((a, b) => b.hits - a.hits || a.tries - b.tries)[0];
+  return best ? { ...best, week: new Date(now - 7 * 24 * HOUR).toISOString().slice(0, 10), linked: V.top.find(x => x.wallet === best.wallet)?.linked || [] } : null;
+}
+async function hunterWeekTick(st, env) {
+  if (!roadOpen(st, 'hunterweek')) return;
+  const now = new Date(), wk = now.toISOString().slice(0, 10); if (now.getUTCDay() !== 1 || now.getUTCHours() < 12 || st.hweek?.d === wk) return;
+  const v = hunterWeek(await huntLoad(env), await bondsLoad(env), Date.now()); st.hweek = { d: wk, v };
+  if (!v || !env.TELEGRAM_GROUP) return;
+  tgQueue(st, [String(env.TELEGRAM_GROUP)], `<b>Hunter of the Week</b> · week of ${v.week}\n<code>${v.wallet}</code>\n\nBought early into ${v.tries} Pons curves this week, and ${v.hits} of them bonded: ${v.bonded.slice(0, 6).map(tgEsc).join(', ')}.${v.linked.length ? `\nRuns with ${v.linked.length} other wallet${v.linked.length > 1 ? 's' : ''} that bought the same curves.` : ''}\n\nThe card: https://shuntdesk.com/card/hunter/latest\nThe board: https://shuntdesk.com/hunters/\n\n<i>A record of past buys, not a call. Not advice.</i>`);
+}
 // the holders' hunter alerts, from the queue Bond Hunters fills in its own run
 async function hunterHolders(st, env) {
   const H = await huntLoad(env); if (!H.hq?.length) return;
@@ -2181,8 +2248,21 @@ async function hunterHolders(st, env) {
   for (const q of due) {
     const text = `<b>Bond Hunters are in</b> · ${tgEsc(q.symbol || q.token.slice(0, 8))}\n<code>${q.token}</code>\n\n${q.hunters.length} wallets with three or more early buys into curves that bonded bought this one in its first half hour:\n${q.hunters.map(([w, h, t]) => `${w.slice(0, 6)}…${w.slice(-4)} · ${h} of ${t} bonded`).join('\n')}\n\nCurve at ${q.progress}%.\n\nProfit Map: https://shuntdesk.com/profit/?a=${q.token}\nThe seven checks: https://shuntdesk.com/ticket/?a=${q.token}\n\n<i>Holder alert. A record of past buys, not a call. /alarm hunt off to stop.</i>`;
     for (const [chat, h] of Object.entries(st.holders || {})) if (h.bal >= HOLD_MIN && h.f?.hunt !== false) holderSend(st, chat, text, 'hunt');
+    const groups = condGroups(st); if (groups.length) tgQueue(st, groups, text.replace('Holder alert.', 'Conductor group alert.').replace(' /alarm hunt off to stop.', ''));
   }
 }
+async function shadowHolders(st, env) {
+  const H = await huntLoad(env); if (!H.sq?.length) return;
+  const due = H.sq.splice(0); await env.KV.put(HUNT, JSON.stringify(H));
+  const all = roadOpen(st, 'shadowall');
+  for (const e of due) {
+    const text = e.k === 'open' ? `<b>Shadow Desk bought</b> · ${tgEsc(e.s)}\n<code>${e.t}</code>\n\n0.1 paper ETH at the curve's price, ${e.n} of the best Bond Hunters early in it. Curve at ${e.p}%.\n\nSells at the bond, double, half or 24 hours. https://shuntdesk.com/shadow/\n\n<i>Paper only, fixed rules. Not advice.</i>`
+      : `<b>Shadow Desk sold</b> · ${tgEsc(e.s)}\n\n${e.r >= 0 ? '+' : ''}${e.r}% (${e.why}), ${e.pnl >= 0 ? '+' : ''}${e.pnl.toFixed(4)} paper ETH.\n\nhttps://shuntdesk.com/shadow/\n\n<i>Paper only, fixed rules. Not advice.</i>`;
+    for (const [chat, h] of Object.entries(st.holders || {})) if (h.bal >= (all ? HOLD_MIN : HOLD_PRO) && h.f?.shadow !== false) holderSend(st, chat, text, 'shadow');
+  }
+}
+// the groups a Conductor holder put Shunt in, while that holder still holds 20,000,000
+const condGroups = st => roadOpen(st, 'conductor') ? Object.entries(st.groups || {}).filter(([, g]) => g.cond && (st.holders?.[g.cond]?.bal || 0) >= HOLD_COND).map(([c]) => c) : [];
 function hunterRank(H, B, now) {
   const rows = new Map((B.rows || []).map(r => [r.t0, r])), W = new Map();
   for (const [t, x] of Object.entries(H.tok)) {
@@ -3190,7 +3270,8 @@ async function boostToken(st, env, token, tx, from, chat) {
 // the curve and the launcher's record are read, two a minute. A launcher with two or more launches before gets its
 // Dev Score (one a minute, kept six hours): a clean record or a record of dumping is said to the holders who asked.
 const HOLD_PRO = 5000000;
-const tierOf = bal => bal >= HOLD_PRO ? 'Pro' : bal >= HOLD_MIN ? 'Holder' : null;
+const HOLD_COND = 20000000;
+const tierOf = bal => bal >= HOLD_COND ? 'Conductor' : bal >= HOLD_PRO ? 'Pro' : bal >= HOLD_MIN ? 'Rider' : null;
 export async function earlyFeed(st, env) {
   if (!Object.values(st.holders || {}).some(h => h.bal >= HOLD_MIN)) return;   // nobody to tell
   const E = st.early = st.early || { block: 0, q: [], t: 0 }, now = Date.now(); if (now - E.t < 55000) return; E.t = now;
@@ -3833,6 +3914,8 @@ const api = {
       if (url.pathname === '/api/holder' && body) { if (!allow(st, ip, 'holder', 20)) return json({ ok: false, why: 'slow down' }, 429); const [code, out] = await holderVerify(st, env, body); await save(env, st); return json(out, code); }
       if (url.pathname === '/api/holder') return json({ ok: true, message: holderMessage(String(url.searchParams.get('c') || '')), min: HOLD_MIN, pro: HOLD_PRO, boost: BOOST_MIN, trip: HOLD_TRIP });
       if (url.pathname === '/api/caught') return json(await caughtView(env));
+      if (url.pathname === '/api/road') return json(roadView(st));
+      if (url.pathname === '/api/botgroups') { const G = st.seenGroups || {}; return json({ ok: true, groups: Object.keys(G).length, active7d: Object.values(G).filter(g => Date.now() - g.t < 7 * 24 * HOUR).length, conductor: condGroups(st).length }); }
       if (url.pathname === '/api/rugday') { const pv = url.searchParams.has('preview') ? await rugDayRH(st, env, true).catch(() => null) : null; return json({ ok: true, today: st.rugRH?.[0] || null, preview: pv, earlier: (st.rugRH || []).slice(1, 8) }); }
       if (url.pathname === '/api/solhub') { const g = await solGrad(st, env); await save(env, st); return json({ ok: true, rugDay: st.rugDay || [], board: solBoardView(st), graduation: { rows: g.rows.slice(0, 8), graduated: g.graduated.slice(0, 8), read: g.read } }); }
       if (url.pathname === '/api/gradsol') { const r = await solGrad(st, env); await save(env, st); return json(r); }
@@ -3869,6 +3952,16 @@ const api = {
       if (url.pathname.startsWith('/card/')) {
         const png = url.pathname.endsWith('.png'), raw = url.pathname.slice(6).replace(/\.png$/, '').split('/'), parts = raw.map((x, i) => i === raw.length - 1 && isSol(x) ? x : x.toLowerCase()), kind = parts.length === 2 ? parts[0] : 'token', a = parts[parts.length - 1];
         // the week's champion: /card/champ/latest(.png)
+        // the Hunter of the Week: the week's pick, or this week so far before the first Monday post
+        if (kind === 'hunter') {
+          const v = st.hweek?.v || hunterWeek(await huntLoad(env), await bondsLoad(env), Date.now()), read = new Date().toISOString();
+          const svg = v ? cardFrame({ kind: 'BOND HUNTERS · HUNTER OF THE WEEK', pill: `${v.hits} BONDED`, pillCol: '#2ed3a0', big: v.wallet.slice(0, 6) + '…' + v.wallet.slice(-4), meta: `week of ${v.week} · early in ${v.tries} Pons curves`,
+              body: cardStats([{ k: 'BONDED', v: String(v.hits), col: '#2ed3a0' }, { k: 'CURVES BOUGHT EARLY', v: String(v.tries) }, { k: 'HIT RATE', v: Math.round(v.hits / v.tries * 100) + '%' }]) + cardRows([{ lvl: 'g', text: 'bonded: ' + v.bonded.slice(0, 5).join(', ') }, { lvl: 'n', text: 'bought in the first half hour of each curve, read from the chain' }], 458), read })
+            : cardFrame({ kind: 'BOND HUNTERS · HUNTER OF THE WEEK', pill: 'THIS WEEK', big: 'Still hunting', meta: 'No wallet has two bonds this week yet', body: '', read });
+          if (png) { const { svgToPng } = await import('./card.js'); return new Response(await svgToPng(svg), { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=1800' } }); }
+          const img = `${url.origin}/card/hunter/latest.png?h=${Math.floor(Date.now() / 1800000)}`, ttl = v ? `Hunter of the Week: ${v.wallet.slice(0, 6)}…${v.wallet.slice(-4)}, ${v.hits} bonded` : 'Hunter of the Week';
+          return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${ttl}</title><meta property="og:title" content="${ttl}"><meta property="og:image" content="${img}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${img}"><meta http-equiv="refresh" content="0;url=/hunters/${v ? '?w=' + v.wallet : ''}"></head><body style="margin:0;background:#060708"><img src="${img}" alt="${ttl}" style="display:block;max-width:100%;margin:0 auto"></body></html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+        }
         if (kind === 'champ') {
           const c = (st.champions || [])[0], read = new Date().toISOString();
           const svg = c ? cardFrame({ kind: 'SEASON PASS · TOURNAMENT', pill: 'CHAMPION', pillCol: '#2ed3a0', big: cardCut(c.handle, 14), meta: `${c.game} · week of ${c.week}`, body: cardStats([{ k: 'POINTS', v: String(c.pts), col: '#2ed3a0' }]) + cardRows([{ lvl: 'g', text: `won the week's ${c.game} tournament on shuntdesk.com` }], 458), read })
@@ -3982,6 +4075,9 @@ const api = {
     try { await earlyTick(st, env); } catch (e) {}
     try { await followTick(st, env); } catch (e) {}
     try { await hunterHolders(st, env); } catch (e) {}
+    try { await shadowHolders(st, env); } catch (e) {}
+    try { await roadTick(st, env); } catch (e) {}
+    try { await hunterWeekTick(st, env); } catch (e) {}
     try { await holderWeekly(st, env); } catch (e) {}
     try { await tgFlush(st, env); } catch (e) {}
     try { await handAlert(st, env); } catch (e) { st.handLast = { t: Date.now(), why: String(e.message || e).slice(0, 120) }; }

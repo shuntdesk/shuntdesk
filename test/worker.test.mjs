@@ -195,3 +195,13 @@ test('Wallet Wrapped refuses a bad wallet', async () => {
 test('Fresh Wallets refuses a bad address', async () => {
   const [s, v] = await call('fresh?a=0x12'); assert.equal(s, 400); assert.equal(v.ok, false);
 });
+test('Shunt in any group: a welcome when added, a line under answers outside The Yard, none inside it', async () => {
+  const post = (message, extra = {}) => worker.fetch(new Request('http://x/api/tg', { method: 'POST', headers: { 'x-telegram-bot-api-secret-token': 'right' }, body: JSON.stringify({ message }) }), { ...env, TELEGRAM_SECRET: 'right', TELEGRAM_GROUP: '-100999', ...extra });
+  const added = await (await post({ message_id: 5, chat: { id: -100555, type: 'supergroup', title: 'Other' }, new_chat_members: [{ id: 9, is_bot: true, username: 'shuntdesk_bot' }] })).json();
+  assert.match(added.text, /Shunt is on the line/);
+  const other = await (await post({ message_id: 6, chat: { id: -100555, type: 'supergroup', title: 'Other' }, from: { id: 1, first_name: 'A' }, text: '/road' })).json();
+  assert.match(other.text, /Road to Bond/); assert.match(other.text, /Shunt by Shuntdesk/);
+  const yard = await (await post({ message_id: 7, chat: { id: -100999, type: 'supergroup', title: 'Yard' }, from: { id: 1, first_name: 'A' }, text: '/road' })).json();
+  assert.doesNotMatch(yard.text, /Shunt by Shuntdesk/);
+  const [s, r] = await call('road'); assert.equal(s, 200); assert.equal(r.marks.length, 4); assert.equal(r.marks[0].at, 25);
+});
