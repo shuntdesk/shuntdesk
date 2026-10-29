@@ -3885,6 +3885,8 @@ export default {
     // pages that moved: the manifesto became the docs, the fine print became privacy and terms
     const moved = { '/manifesto': '/docs/', '/manifesto/': '/docs/', '/fine-print': '/terms/', '/fine-print/': '/terms/' }[path];
     if (moved) return Response.redirect(new URL(moved, u).href, 301);
+    // closed: every page of both sides answers with one line; the code, the data and the API stay as they are
+    if (env.CLOSED === '1' && !path.startsWith('/api/') && !path.startsWith('/card/') && !path.startsWith('/badge/') && path !== '/mcp') return new Response('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Shuntdesk</title><meta name="robots" content="noindex"><style>html,body{margin:0;height:100%;background:#060708;color:#edebe6;font:600 clamp(28px,6vw,64px)/1.2 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;align-items:center;justify-content:center;text-align:center}</style></head><body><p>Sorry and Thank you.</p></body></html>', { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
     if (!env.DESK) return api.fetch(request, env);   // local server: no Durable Object, a file stands in
     // one address: www and plain http both go to https://shuntdesk.com (a desk kept in the browser belongs to one origin)
     if (u.hostname === 'www.shuntdesk.com' || (u.hostname === 'shuntdesk.com' && u.protocol === 'http:')) return Response.redirect('https://shuntdesk.com' + u.pathname + u.search, 301);
