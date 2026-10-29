@@ -9,7 +9,7 @@ export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;'
 const MARK = 'M136 456V297.7L292 173.7V90L326 56H376V214.3L220 338.3V422L186 456Z';   // the Shuntdesk mark: one stroke leaving its lane for the next
 const LOGO = `<svg viewBox="136 56 240 400" fill="currentColor" aria-hidden="true"><path d="${MARK}"/></svg>`;
 const SOL = document.documentElement.classList.contains('sol');
-const NAV = SOL ? [['Hub', '/'], ['Launch', '/launch/'], ['Stonk', '/stonk/'], ['Ticket', '/ticket/'], ['Wrapped', '/wrapped/'], ['Docs', '/docs/']] : [['Yard', '/'], ['Board', '/board/'], ['Desk', '/desk/'], ['Ticket', '/ticket/'], ['Tools', '/tools/'], ['Docs', '/docs/']];
+const NAV = SOL ? [['Hub', '/'], ['Launch', '/launch/'], ['Stonk', '/stonk/'], ['Ape Check', '/ape/'], ['Rail', '/rail/'], ['Play', '/gord/'], ['Wrapped', '/wrapped/']] : [['Yard', '/'], ['Board', '/board/'], ['Desk', '/desk/'], ['Ticket', '/ticket/'], ['Tools', '/tools/'], ['Docs', '/docs/']];
 // the other side, at the same path
 const sideLink = () => `<div class="side-sw"><a href="https://shuntdesk.com${SOL ? (location.pathname === '/' ? '/solana/' : location.pathname) : location.pathname}"${SOL ? '' : ' class="on"'}>RH</a><a href="https://sol.shuntdesk.com${!SOL && location.pathname === '/solana/' ? '/' : SOL ? location.pathname : '/'}"${SOL ? ' class="on"' : ''}>SOL</a></div>`;
 // the project's X account, shown in the header and the footer; empty hides both links

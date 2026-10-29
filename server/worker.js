@@ -17,7 +17,8 @@ import { solHolders, solShared, solLedger, solWallet, solSim } from './soltools.
 import { solFirst, solSerial, funderOf } from './solfirst.js';
 import { stonkToken, stonkBoard, stonkStats } from './stonk.js';
 import { solWrapped, solProfit } from './solwrap.js';
-import { solFresh, stonkHuntTick, stonkHunters } from './stonkhunt.js';
+import { solFresh, stonkHuntTick, stonkHunters, arenaTick, arenaView } from './stonkhunt.js';
+import { solHolders as solHoldersT } from './soltools.js';
 import { owners as solOwners } from './soltools.js';
 import { parsed as solParsed } from './soltools.js';
 
@@ -2507,6 +2508,69 @@ export async function freshWallets(env, token) {
   return v;
 }
 
+// ---------- Ape Check: one StonkFun token, one score, every point it lost shown ----------
+// Fixed rules over four reads: what the launcher still holds, how much the ten largest wallets hold, how many of the
+// first buyers were made for the launch (and funded by one hand), and where the curve stands. Kept ten minutes.
+const apes = new Map();
+export async function apeCheck(env, mint) {
+  const hit = apes.get(mint), now = Date.now(); if (hit && now - hit.t < 10 * 60000) return hit.v;
+  const t = await stonkToken(env, mint); if (!t.ok) return t;
+  const [h, fr] = await Promise.all([solHoldersT(env, mint).catch(() => null), solFresh(env, mint).catch(() => null)]);
+  const lost = [], keep = [], dev = t.creator && h?.ok ? (h.wallets.find(x => x.wallet === t.creator)?.share || 0) : null;
+  if (dev != null) { if (dev > 10) lost.push([25, `the launcher still holds ${dev.toFixed(1)}%`]); else if (dev > 5) lost.push([10, `the launcher holds ${dev.toFixed(1)}%`]); else keep.push(`the launcher holds ${dev.toFixed(1)}%`); }
+  const top10 = h?.ok ? h.top10 : null;
+  if (top10 != null) { if (top10 > 50) lost.push([20, `the ten largest wallets hold ${top10.toFixed(0)}%`]); else if (top10 > 30) lost.push([10, `the ten largest wallets hold ${top10.toFixed(0)}%`]); else keep.push(`the ten largest wallets hold ${top10.toFixed(0)}%`); }
+  if (fr?.ok) { const hands = fr.sharedFunders.filter(s => s.hub === false);
+    if (fr.level === 'high') lost.push([25, `${fr.fresh} of the first ${fr.read} buyers were made for the launch`]); else if (fr.level === 'some') lost.push([10, `${fr.fresh} of the first ${fr.read} buyers were new wallets`]); else keep.push(`${fr.fresh} of the first ${fr.read} buyers were new wallets`);
+    if (hands.length) lost.push([10, `${fr.inShared} first buyers funded by the same wallet`]); }
+  if ((t.liquidity || 0) < 1000 && t.status !== 'graduated') lost.push([10, 'under $1,000 of liquidity']);
+  const score = Math.max(0, 100 - lost.reduce((s, [n]) => s + n, 0));
+  const v = { ok: true, mint, symbol: t.symbol, name: t.name, quote: t.quote, status: t.status, marketCap: t.marketCap, curve: t.curve, sfProgress: t.sfProgress, creator: t.creator, dev, top10, fresh: fr?.ok ? { fresh: fr.fresh, read: fr.read, level: fr.level } : null,
+    score, grade: score >= 80 ? 'LOOKS CLEAN' : score >= 55 ? 'CAREFUL' : 'RED FLAGS', lost: lost.map(([n, why]) => ({ points: n, why })), kept: keep, read: new Date().toISOString(),
+    note: 'Fixed rules over public reads of Solana and StonkFun: the launcher\'s holding, the ten largest wallets, the first buyers and the liquidity. A score of the setup, not of the price. Not advice.' };
+  apes.set(mint, { t: now, v }); if (apes.size > 300) apes.delete(apes.keys().next().value);
+  return v;
+}
+function apeSvg(c) {
+  const col = c.score >= 80 ? '#14f195' : c.score >= 55 ? '#f0c75e' : '#ff6b6b', p = c.status === 'graduated' ? 'graduated' : c.curve ? `curve ${c.curve.progress.toFixed(1)}%` : c.sfProgress != null ? `${c.sfProgress}% of $40K mc` : '';
+  const rows = [...c.lost.map(l => ({ lvl: 'r', text: `-${l.points} · ${l.why}` })), ...c.kept.map(k => ({ lvl: 'g', text: k }))].slice(0, 4);
+  const body = `<text x="64" y="440" font-family="Big Shoulders Display" font-weight="900" font-size="140" fill="${col}">${c.score}</text><text x="68" y="474" font-family="JetBrains Mono" font-weight="700" font-size="16" letter-spacing="4" fill="#8d8b86">${cardX(c.grade)} · OF 100</text>` + cardRows(rows, 350).replace(/x="72"/g, 'x="452"').replace(/x="94"/g, 'x="474"');
+  return cardFrame({ kind: 'APE CHECK · STONKFUN ON SOLANA', pill: c.grade, pillCol: col, big: '$' + cardCut(c.symbol || '?', 12), meta: `${c.name || ''} · paired with ${c.quote || '?'} · ${p}`, body, read: c.read });
+}
+// ---------- Graduate or Die: five fresh StonkFun launches an hour; call each one; StonkFun answers a day later ----------
+// A round opens on the hour with the five newest LaunchLab launches of the last hour and takes calls for 45 minutes.
+// Each launch is judged 24 hours after its round opened: graduated, or not. Most launches die, so the points lean that
+// way: a right "graduate" +10, a wrong one -2; a right "die" +1, a wrong one -3. A weekly board, no money.
+const GORD_PTS = { g: [10, -2], d: [1, -3] };
+async function gordTick(st, env) {
+  const G = st.gord = st.gord || { rounds: [] }, now = Date.now(), slot = Math.floor(now / HOUR) * HOUR;
+  if (!G.rounds.some(r => r.id === slot)) {
+    const v = await stonkBoard(env, 'tape').catch(() => null);
+    const picks = (v?.rows || []).filter(r => r.curve && now - Date.parse(r.created) < HOUR).slice(0, 5);
+    if (picks.length >= 3) G.rounds.unshift({ id: slot, closes: slot + 45 * 60000, tokens: picks.map(r => ({ m: r.mint, s: r.symbol, p: Math.round(r.curve.progress * 10) / 10, q: r.quote, img: r.image })), calls: {} });
+  }
+  // a round a day old is judged: one StonkFun read per token
+  for (const R of G.rounds.filter(r => !r.done && now - r.id >= 24 * HOUR).slice(0, 2)) {
+    for (const t of R.tokens) if (t.g == null) { const x = await stonkToken(env, t.m).catch(() => null); if (x?.ok) t.g = x.status === 'graduated' ? 1 : 0; }
+    if (R.tokens.every(t => t.g != null)) { R.done = now; const W = weekBoard(st, 'gordW');
+      for (const [h, c] of Object.entries(R.calls)) { let pts = 0; for (const t of R.tokens) { const k = c[t.m]; if (!k) continue; const [ok, bad] = GORD_PTS[k]; pts += (k === 'g') === !!t.g ? ok : bad; } c.pts = pts; W.rows[h] = (W.rows[h] || 0) + pts; } }
+  }
+  G.rounds = G.rounds.slice(0, 40);
+}
+function gordView(st, me) {
+  const G = st.gord || { rounds: [] }, now = Date.now(), open = G.rounds.find(r => !r.done && now < r.closes), W = weekBoard(st, 'gordW');
+  const pub = r => ({ id: new Date(r.id).toISOString(), closes: new Date(r.closes).toISOString(), judged: r.done ? new Date(r.done).toISOString() : null, judgesAt: new Date(r.id + 24 * HOUR).toISOString(), players: Object.keys(r.calls).length,
+    tokens: r.tokens.map(t => ({ mint: t.m, symbol: t.s, progress: t.p, quote: t.q, image: t.img, graduated: t.g == null ? null : !!t.g, calledGraduate: Object.values(r.calls).filter(c => c[t.m] === 'g').length })), mine: me && r.calls[me] ? r.calls[me] : null });
+  return { ok: true, open: open ? pub(open) : null, waiting: G.rounds.filter(r => !r.done && now >= r.closes).slice(0, 6).map(pub), judged: G.rounds.filter(r => r.done).slice(0, 6).map(pub), board: boardOf(st, W.rows),
+    rules: 'Five fresh StonkFun launches an hour. Call each one graduate or die before the round closes (45 minutes). A day later StonkFun says which graduated. Right graduate +10, wrong -2; right die +1, wrong -3. Weekly board, no money.' };
+}
+function gordCall(st, b) {
+  const h = handleOf(b); if (!okHandle(h)) return [400, { ok: false, why: 'handle must be 2 to 16 letters, digits or _' }];
+  const G = st.gord, now = Date.now(), R = G?.rounds.find(r => !r.done && now < r.closes); if (!R) return [400, { ok: false, why: 'no round is open: the next opens on the hour' }];
+  if (R.calls[h]) return [409, { ok: false, why: 'you already called this round' }];
+  const c = {}; for (const t of R.tokens) { const k = b?.calls?.[t.m]; if (k === 'g' || k === 'd') c[t.m] = k; } if (Object.keys(c).length < R.tokens.length) return [400, { ok: false, why: 'call every token in the round' }];
+  R.calls[h] = c; return [200, gordView(st, h)];
+}
 // ---------- Tripwire: a private alarm on Telegram for one token ----------
 // /watch 0x… in a DM to the bot. Every three minutes the server looks at what happened to the token since the last
 // look: a transaction that called one of the contract's power functions (the selectors Agent Scan found), and
@@ -3662,7 +3726,7 @@ async function snipeView(st, env, me) {
 }
 
 // ---------- the Season Pass: one week of every game, as XP and a rank; the featured game is the week's tournament ----------
-const SEASON_GAMES = [['rugrun', 'Rug Run', '/rug-run/'], ['bondgame', 'Will it bond?', '/bond-game/'], ['race', 'Curve Racing', '/race/'], ['bingo', 'Launch Bingo', '/bingo/'], ['fantasy', 'Fantasy Launcher', '/fantasy/'], ['sniper', 'Paper Sniper', '/sniper/']];
+const SEASON_GAMES = [['rugrun', 'Rug Run', '/rug-run/'], ['bondgame', 'Will it bond?', '/bond-game/'], ['race', 'Curve Racing', '/race/'], ['bingo', 'Launch Bingo', '/bingo/'], ['fantasy', 'Fantasy Launcher', '/fantasy/'], ['sniper', 'Paper Sniper', '/sniper/']];   // Graduate or Die adds XP but stays out of the tournament rotation, which this list's length sets
 const RANKS = [[0, 'Rookie'], [100, 'Brakeman'], [300, 'Fireman'], [600, 'Driver'], [1000, 'Dispatcher'], [2000, 'Yardmaster']];
 const featured = (t = Date.now()) => SEASON_GAMES[Math.floor(seasonId(t) / (7 * 86400000)) % SEASON_GAMES.length];
 function seasonScores(st) {
@@ -3670,7 +3734,7 @@ function seasonScores(st) {
   yardRoll(st); add('yard', Object.fromEntries(Object.entries(st.yard.rows).map(([h, r]) => [h, r.pts])), 0.1);
   const sun = new Date(Date.now() - new Date().getUTCDay() * 86400000).toISOString().slice(0, 10); add('rugrun', st.rrBoard?.[sun], 10);
   const G = st.bg || {}, bw = {}; for (const d of (G.hist || []).slice(0, 7)) for (const [h, p] of Object.entries(d.board || {})) bw[h] = (bw[h] || 0) + p; add('bondgame', bw, 20);
-  add('race', weekBoard(st, 'raceW').rows, 0.5); add('bingo', weekBoard(st, 'bingoW').rows, 10); add('fantasy', st.fant?.id === seasonId() ? fantasyScores(st) : {}, 1); add('sniper', weekBoard(st, 'snipeW').rows, 0.2);
+  add('race', weekBoard(st, 'raceW').rows, 0.5); add('bingo', weekBoard(st, 'bingoW').rows, 10); add('fantasy', st.fant?.id === seasonId() ? fantasyScores(st) : {}, 1); add('sniper', weekBoard(st, 'snipeW').rows, 0.2); add('gord', weekBoard(st, 'gordW').rows, 1);
   const H = leagueHandles(st); for (const [h, x] of Object.entries(out)) { x.holder = H.has(h); x.xp = Math.round(x.xp * (x.holder ? 1.2 : 1)); x.rank = RANKS.filter(r => x.xp >= r[0]).at(-1)[1]; }
   return out;
 }
@@ -3864,7 +3928,7 @@ const api = {
       if (url.pathname === '/api/_hunt/todo' || url.pathname === '/api/_hunt/feed') { if (!env.HUNT_KEY || request.headers.get('x-feed') !== env.HUNT_KEY) return json({ error: 'not found' }, 404);
         if (url.pathname === '/api/_hunt/feed') return json(await huntFeed(env, await request.json().catch(() => null)));
         const H = await huntLoad(env), B = await bondsLoad(env); return json({ ok: true, rows: huntPick(H, B, Date.now(), 10).map(r => ({ t0: r.t0, c: r.c || null, b: r.b || null, s: r.s || null, at: r.at || null })) }); }
-      if (url.pathname === '/api/_tick/shunt') { if (!env.TELEGRAM_SECRET || request.headers.get('x-tick') !== env.TELEGRAM_SECRET) return json({ error: 'not found' }, 404); await stonkHuntTick(env); return json({ ok: true }); }
+      if (url.pathname === '/api/_tick/shunt') { if (!env.TELEGRAM_SECRET || request.headers.get('x-tick') !== env.TELEGRAM_SECRET) return json({ error: 'not found' }, 404); await stonkHuntTick(env); await arenaTick(env).catch(() => 0); return json({ ok: true }); }
       if (url.pathname === '/api/_tick/hunt') { if (!env.TELEGRAM_SECRET || request.headers.get('x-tick') !== env.TELEGRAM_SECRET) return json({ error: 'not found' }, 404); await hunterTick(null, env); return json({ ok: true }); }
       if (url.pathname === '/api/shadow') { const H = await huntLoad(env); return json({ ok: true, err: H.shadowErr || null, ...shadowView(H, Date.now()) }); }
       if (url.pathname === '/api/hunters' && url.searchParams.get('chain') === 'sol') { const w = (url.searchParams.get('w') || '').trim(); return json(await stonkHunters(env, isSol(w) ? w : null)); }
@@ -3925,6 +3989,8 @@ const api = {
       // StonkFun: one token, and the boards (tape, hot, near, graduated)
       // Launch Desk: the mint of Shuntdesk's own Solana token, set at launch behind the feed key
       if (url.pathname === '/api/launchdesk') { if (request.method === 'POST') { if (!env.HUNT_KEY || request.headers.get('x-feed') !== env.HUNT_KEY) return json({ error: 'not found' }, 404); const m = String((body || {}).mint || '').trim(); if (m && !isSol(m)) return json({ ok: false, error: 'a Solana mint' }, 400); st.launch = { mint: m || null, t: Date.now() }; await save(env, st); return json({ ok: true, mint: st.launch.mint }); } return json({ ok: true, mint: st.launch?.mint || null, since: st.launch?.t ? new Date(st.launch.t).toISOString() : null }); }
+      if (url.pathname === '/api/arena') return json(await arenaView(env));
+      if (url.pathname === '/api/ape') { const m = (url.searchParams.get('m') || '').trim(); if (!isSol(m)) return json({ ok: false, error: 'a Solana mint' }, 400); return json(await apeCheck(env, m).catch(e => ({ ok: false, error: e.message }))); }
       if (url.pathname === '/api/stonk') { const m = (url.searchParams.get('m') || '').trim(); if (!isSol(m)) return json({ ok: false, error: 'a Solana mint' }, 400); return json(await stonkToken(env, m)); }
       if (url.pathname.startsWith('/api/stonk/')) { const k = url.pathname.slice(11); if (k === 'stats') return json(await stonkStats().catch(e => ({ ok: false, error: e.message }))); return json(await stonkBoard(env, k).catch(e => ({ ok: false, error: e.message }))); }
       if (url.pathname === '/api/botgroups') { const G = st.seenGroups || {}; return json({ ok: true, groups: Object.keys(G).length, active7d: Object.values(G).filter(g => Date.now() - g.t < 7 * 24 * HOUR).length, conductor: condGroups(st).length }); }
@@ -3951,20 +4017,28 @@ const api = {
         if (url.pathname.endsWith('/events')) { const since = Number(url.searchParams.get('since')) || 0; return json({ ok: true, code: c, events: v.events.filter(e => e.t > since), checked: S.t }); }
         return json({ ...v, checked: S.t });
       }
-      if (['/api/race', '/api/bingo', '/api/fantasy', '/api/snipe', '/api/season'].includes(url.pathname)) {
+      if (['/api/race', '/api/bingo', '/api/fantasy', '/api/snipe', '/api/season', '/api/gord'].includes(url.pathname)) {
         const me = String(url.searchParams.get('me') || '').toLowerCase(), k = url.pathname.slice(5);
         if (body) {
           if (!allow(st, ip, 'g2-' + k, k === 'snipe' ? 40 : 20)) return json({ ok: false, why: 'slow down' }, 429);
-          const [code, out] = k === 'race' ? racePick(st, body) : k === 'bingo' ? bingoPick(st, body) : k === 'fantasy' ? fantasyPick(st, body) : k === 'snipe' ? await snipeOpen(st, body) : [404, { ok: false, why: 'nothing to post here' }];
+          const [code, out] = k === 'gord' ? gordCall(st, body) : k === 'race' ? racePick(st, body) : k === 'bingo' ? bingoPick(st, body) : k === 'fantasy' ? fantasyPick(st, body) : k === 'snipe' ? await snipeOpen(st, body) : [404, { ok: false, why: 'nothing to post here' }];
           if (code === 200) await save(env, st); return json(out, code);
         }
-        const v = k === 'race' ? raceView(st, me) : k === 'bingo' ? bingoView(st, me) : k === 'fantasy' ? await fantasyView(st, env, me) : k === 'snipe' ? await snipeView(st, env, me) : seasonView(st, me);
+        const v = k === 'gord' ? gordView(st, me) : k === 'race' ? raceView(st, me) : k === 'bingo' ? bingoView(st, me) : k === 'fantasy' ? await fantasyView(st, env, me) : k === 'snipe' ? await snipeView(st, env, me) : seasonView(st, me);
         await save(env, st); return json(v);
       }
       if (url.pathname.startsWith('/card/')) {
         const png = url.pathname.endsWith('.png'), raw = url.pathname.slice(6).replace(/\.png$/, '').split('/'), parts = raw.map((x, i) => i === raw.length - 1 && isSol(x) ? x : x.toLowerCase()), kind = parts.length === 2 ? parts[0] : 'token', a = parts[parts.length - 1];
         // the week's champion: /card/champ/latest(.png)
         // the Hunter of the Week: the week's pick, or this week so far before the first Monday post
+        if (kind === 'ape') {
+          if (!isSol(a)) return new Response('not found', { status: 404 });
+          const c = await apeCheck(env, a).catch(e => ({ ok: false, error: e.message }));
+          const svg = c.ok ? apeSvg(c) : cardFrame({ kind: 'APE CHECK · STONKFUN ON SOLANA', pill: 'NOT READ', pillCol: '#8d8b86', big: 'Not a StonkFun token', meta: String(c.error || '').slice(0, 60), body: '', read: new Date().toISOString() });
+          if (png) { const { svgToPng } = await import('./card.js'); return new Response(await svgToPng(svg), { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=600' } }); }
+          const img = `${url.origin}/card/ape/${a}.png?h=${Math.floor(Date.now() / 600000)}`, ttl = c.ok ? `$${c.symbol} Ape Check: ${c.score}/100, ${c.grade.toLowerCase()}` : 'Ape Check';
+          return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${ttl}</title><meta property="og:title" content="${ttl}"><meta property="og:image" content="${img}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${img}"><meta http-equiv="refresh" content="0;url=https://sol.shuntdesk.com/ape/?m=${a}"></head><body style="margin:0;background:#060708"><img src="${img}" alt="${ttl}" style="display:block;max-width:100%;margin:0 auto"></body></html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+        }
         if (kind === 'hunter') {
           const v = st.hweek?.v || hunterWeek(await huntLoad(env), await bondsLoad(env), Date.now()), read = new Date().toISOString();
           const svg = v ? cardFrame({ kind: 'BOND HUNTERS · HUNTER OF THE WEEK', pill: `${v.hits} BONDED`, pillCol: '#2ed3a0', big: v.wallet.slice(0, 6) + '…' + v.wallet.slice(-4), meta: `week of ${v.week} · early in ${v.tries} Pons curves`,
@@ -4067,6 +4141,7 @@ const api = {
     try { await rugDayRH(st, env); } catch (e) {}
     try { await boardTick(st, env); } catch (e) {}   // Graduation Watch keeps reading its curves, so a graduation is caught with nobody on the page
     try { await raceTick(st, env); } catch (e) {}
+    try { await gordTick(st, env); } catch (e) {}
     try { await bingoTick(st, env); } catch (e) {}
     try { await fantasyTick(st, env); } catch (e) {}
     try { await snipeTick(st, env); } catch (e) {}

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ape Check — Shuntdesk</title>
+<meta name="description" content="Paste any StonkFun token on Solana: one score out of 100 from fixed rules, every lost point shown, and a card to post.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shuntdesk">
+<meta property="og:title" content="Ape Check — Shuntdesk">
+<meta property="og:description" content="Paste any StonkFun token on Solana: one score out of 100 from fixed rules, every lost point shown, and a card to post.">
+<meta property="og:url" content="https://shuntdesk.com/ape/">
+<meta property="og:image" content="https://shuntdesk.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shuntdesk. One score. Three tracks.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://shuntdesk.com/og.png">
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#060708">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/simple.css">
+<script src="/assets/ui-mode.js"></script>
+</head>
+<body class="sub">
+<canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
+<main class="page">
+  <div class="ph"><div><div class="eyebrow">Ape Check · StonkFun on Solana</div><h1 class="disp">Before you ape,<br><span class="acc">check it.</span></h1></div>
+    <div class="side"><p class="note" style="max-width:460px;margin:0">PASTE ANY STONKFUN TOKEN. ONE SCORE OUT OF 100 FROM FIXED RULES, EVERY POINT IT LOST SHOWN, AND A CARD TO POST BEFORE YOUR FRIENDS APE IN.</p></div></div>
+  <form class="pf-form" id="ap-form"><input id="ap-m" placeholder="a StonkFun token mint" autocomplete="off" spellcheck="false"><button class="btn" type="submit">Ape check →</button></form>
+  <p class="note" id="ap-msg"></p>
+  <div id="ap-out" hidden>
+    <div style="display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:18px;align-items:start" class="wr-grid">
+      <div><img id="ap-card" alt="Ape Check card" style="width:100%;border-radius:8px;display:block;background:#0b0c0e;aspect-ratio:1200/630"></div>
+      <div class="stub n"><div class="in"><div class="cap"><b>Why this score</b><span>fixed rules, the same for every token</span></div>
+        <div id="ap-why"></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px"><button class="btn" id="ap-copy" type="button">Copy link</button><a class="btn ghost" id="ap-x" target="_blank" rel="noopener">Post on X</a><a class="btn ghost" id="ap-t" target="_blank" rel="noopener">Share on Telegram</a></div>
+        <p class="note" style="margin-top:12px"><a class="acc" id="ap-full" href="#">THE FULL SEVEN CHECKS →</a></p></div></div>
+    </div>
+    <div class="stub n" style="margin-top:16px"><div class="in"><div class="cap"><b>The rules</b><span>start at 100</span></div>
+      <ol class="howto-l"><li>The launcher still holds more than 10%: minus 25. More than 5%: minus 10.</li><li>The ten largest wallets hold more than 50%: minus 20. More than 30%: minus 10.</li><li>Half or more of the first buyers were wallets made the day of the launch, or four came from one funder: minus 25. A quarter: minus 10.</li><li>First buyers funded by the same wallet (exchanges and bridges left out): minus 10.</li><li>Under $1,000 of liquidity: minus 10.</li></ol></div></div>
+    <p class="note" style="margin-top:14px" id="ap-note"></p>
+  </div>
+</main>
+<footer class="foot"></footer>
+<script type="module" src="/assets/ape.js"></script>
+</body>
+</html>

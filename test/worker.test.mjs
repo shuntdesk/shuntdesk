@@ -205,3 +205,7 @@ test('Shunt in any group: a welcome when added, a line under answers outside The
   assert.doesNotMatch(yard.text, /Shunt by Shuntdesk/);
   const [s, r] = await call('road'); assert.equal(s, 200); assert.equal(r.marks.length, 4); assert.equal(r.marks[0].at, 25);
 });
+test('Graduate or Die answers with its rules and refuses a call with no round open', async () => {
+  const [s, v] = await call('gord'); assert.equal(s, 200); assert.equal(v.ok, true); assert.match(v.rules, /graduate/);
+  const [s2, v2] = await call('gord', { handle: 'tester', calls: {} }); assert.equal(s2, 400); assert.equal(v2.ok, false);
+});

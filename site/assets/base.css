@@ -1030,3 +1030,8 @@ html.sol ::selection { background: #9945ff; color: #fff; }
 .ld-ca { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 6px 0 4px; } .ld-ca code { font: 700 15px "JetBrains Mono", monospace; word-break: break-all; }
 .ldlist .r { grid-template-columns: 1fr 90px !important; }
 @media (max-width: 760px) { .sklist .r { grid-template-columns: 1fr 90px !important; } .sklist .r > :nth-child(2), .sklist .r > :nth-child(3), .sklist .r > :nth-child(4), .sklist .r > :nth-child(6) { display: none; } }
+/* ---------- Graduate or Die ---------- */
+.gd-t { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid rgba(237,235,230,.08); flex-wrap: wrap; } .gd-t .sy img { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; vertical-align: middle; margin-right: 10px; } .gd-t .sy { font: 900 24px "Big Shoulders Display"; } .gd-t small { display: block; font: 500 12px Barlow, sans-serif; color: var(--mut); margin-top: 2px; } .gd-t b { font: 700 12px "JetBrains Mono", monospace; letter-spacing: .14em; }
+.gdlist .r { grid-template-columns: 34px 1fr 70px !important; cursor: default; }
+.arlist .r { grid-template-columns: 34px minmax(140px, 1.2fr) 120px 90px 80px minmax(140px, 1fr) !important; }
+@media (max-width: 760px) { .arlist .r { grid-template-columns: 26px 1fr 100px !important; } .arlist .r > :nth-child(n+4) { display: none; } }

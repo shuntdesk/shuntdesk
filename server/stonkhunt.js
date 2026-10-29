@@ -1,6 +1,7 @@
 // The first buyers of a StonkFun launch, Fresh Wallets for it, and Stonk Hunters: the wallets that keep buying early into
 // StonkFun curves that graduate. A curve's first trades come from its LaunchLab pool: the node's signature list walked
 // back to the start (1,000 a call), then the oldest hundred parsed by Helius in one call.
+import { solWrapped } from './solwrap.js';
 const HOUR = 3600000, WSOL = 'So11111111111111111111111111111111111111112';
 const SF = 'https://www.stonkfun.xyz', UA = { 'User-Agent': 'Mozilla/5.0 (compatible; Shuntdesk/1.0; +https://shuntdesk.com)', Accept: 'application/json' };
 const rpcUrl = env => `https://mainnet.helius-rpc.com/?api-key=${env.HELIUS_API_KEY}`;
@@ -90,4 +91,22 @@ export async function stonkHunters(env, wallet) {
   if (wallet) { const v = W.get(wallet); const rank = top.findIndex(x => x.wallet === wallet); return { ...base, wallet, found: !!v, rank: rank >= 0 ? rank + 1 : null, hits: v?.hits || 0, tries: v?.tries || 0, rate: v?.tries ? Math.round(v.hits / v.tries * 1000) / 10 : null, hitList: (v?.bonded || []).slice(0, 12).map(s => ({ symbol: s })), open: [], sameHand: [] }; }
   return { ...base, hunters: top.slice(0, 30).map(v => ({ wallet: v.wallet, hits: v.hits, tries: v.tries, rate: v.rate, last: v.bonded.slice(0, 4), openNow: 0, linked: [] })), inNow: [],
     note: 'The first 20 wallets that bought on each StonkFun LaunchLab curve, from its pool\'s oldest trades on Solana. A hit is a curve that graduated; a try is one that reached $10,000 at its peak and did not, a day on. A record of past buys, not a call. Not advice.' };
+}
+
+// ---------- Stonk Arena: the week's best traders of StonkFun tokens ----------
+// The wallets that show up most among the first buyers of the last week's StonkFun curves, each one's last seven days read
+// as its Wallet Wrapped, StonkFun tokens only. Two wallets a run, each kept a day.
+export async function arenaTick(env) {
+  const H = await shLoad(env), now = Date.now(), A = H.arena = H.arena || {};
+  const seen = new Map(); for (const x of Object.values(H.tok)) if (x.w && now - x.at < 7 * 24 * HOUR) for (const w of x.w) seen.set(w, (seen.get(w) || 0) + 1);
+  const cand = [...seen].filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).slice(0, 60).map(([w]) => w);
+  for (const w of cand.filter(w => !A[w] || now - A[w].t > 24 * HOUR).slice(0, 2)) { try { const v = await solWrapped(env, w); if (v.ok) A[w] = { t: now, pnl: v.stonkPnl || 0, in: v.stonkIn || 0, tokens: v.stonkTokens || 0, won: v.won, lost: v.lost, best: v.stonkBest || null }; } catch (e) {} }
+  for (const w in A) if (now - A[w].t > 8 * 24 * HOUR) delete A[w];
+  await env.KV.put(SH, JSON.stringify(H));
+}
+export async function arenaView(env) {
+  const H = await shLoad(env), A = H.arena || {};
+  const rows = Object.entries(A).filter(([, a]) => a.tokens > 0 && a.in > 0).map(([wallet, a]) => ({ wallet, pnl: a.pnl, in: a.in, tokens: a.tokens, mult: Math.round((a.pnl + a.in) / a.in * 100) / 100, best: a.best, read: new Date(a.t).toISOString() })).sort((a, b) => b.pnl - a.pnl);
+  return { ok: true, chain: 'solana', read: rows.length, top: rows.slice(0, 25), worst: rows.slice(-3).reverse(),
+    note: 'The wallets seen most among the first buyers of the last week\'s StonkFun curves, each one\'s last seven days of StonkFun swaps against SOL, from Helius, priced by Jupiter. Each wallet read once a day. Not advice.' };
 }

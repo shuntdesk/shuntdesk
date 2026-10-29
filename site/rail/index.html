@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Launch Rail — Shuntdesk</title>
+<meta name="description" content="Every live StonkFun launch on Solana as a train in a 3D yard, running toward the graduation gate as its curve fills, read from its LaunchLab pool.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Shuntdesk">
+<meta property="og:title" content="Launch Rail — Shuntdesk">
+<meta property="og:description" content="Every live StonkFun launch on Solana as a train in a 3D yard, running toward the graduation gate as its curve fills.">
+<meta property="og:url" content="https://shuntdesk.com/rail/">
+<meta property="og:image" content="https://shuntdesk.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Shuntdesk. One score. Three tracks.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://shuntdesk.com/og.png">
+<link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#060708">
+<link rel="stylesheet" href="/assets/base.css">
+<link rel="stylesheet" href="/assets/simple.css">
+<script src="/assets/ui-mode.js"></script>
+</head>
+<body class="sub b3d">
+<canvas id="yard"></canvas><div class="vig"></div><div class="grain"></div>
+<div class="stage">
+  <div><div class="eyebrow">Launch Rail · StonkFun on Solana</div><h1 class="disp">Every launch, a train.<br><span class="acc">Racing to graduate.</span></h1></div>
+  <div class="tally" id="tally"></div>
+</div>
+<main class="page">
+  <p class="mut" style="max-width:640px;margin-bottom:22px">Not a screensaver. Each train above is a live StonkFun launch on Solana, standing as far down the line as its curve has filled, read from its Raydium LaunchLab pool. The ones that graduate take the green track; the ones that stall stay in the depot. Point at a row to light its train.</p>
+  <div class="stats">
+    <div class="stub stat"><div class="in"><div class="cap"><b>On the rail</b></div><div class="v" id="s-n">0</div><small id="s-src">loading StonkFun</small></div></div>
+    <div class="stub stat"><div class="in"><div class="cap"><b>Closest</b></div><div class="v" id="s-top">···</div><small id="s-top-s">furthest down the line</small></div></div>
+    <div class="stub stat"><div class="in"><div class="cap"><b>Graduated</b></div><div class="v" id="s-g">0</div><small>through the gate, latest</small></div></div>
+    <div class="stub stat"><div class="in"><div class="cap"><b>Read</b></div><div class="v" id="s-t">···</div><small>every 30 seconds</small></div></div>
+  </div>
+  <div class="stub n"><div class="in">
+    <div class="dep" id="dep">
+      <div class="r h"><span>AGE</span><span>TOKEN</span><span>MARKET CAP</span><span>PAIRED</span><span>DOWN THE LINE</span><span>STATE</span><span></span></div>
+    </div>
+  </div></div>
+</main>
+<footer class="foot"></footer>
+<script type="module" src="/assets/rail.js"></script>
+</body>
+</html>

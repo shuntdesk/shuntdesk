@@ -52,7 +52,7 @@ export async function solWrapped(env, w) {
   const spent = list.reduce((s, x) => s + x.in, 0), back = list.reduce((s, x) => s + x.out, 0), held = list.reduce((s, x) => s + x.held, 0);
   const v = { ok: true, chain: 'solana', unit: 'SOL', solUsd, wallet: w, read: new Date().toISOString(), full: txs.length < 400, tokens: list.length, buys: list.reduce((s, x) => s + x.buys, 0), sells: list.reduce((s, x) => s + x.sells, 0),
     spent: r4(spent), back: r4(back), held: r4(held), pnl: r4(back + held - spent), won: ranked.filter(x => x.pnl > 0).length, lost: ranked.filter(x => x.pnl < 0).length, exitLiquidity: ranked.filter(x => x.mult != null && x.mult < 0.5).length,
-    stonkTokens: list.filter(x => x.stonk).length, otherQuote: other, best: pick(ranked[0]), worst: pick(ranked.at(-1)), rows: ranked.slice(0, 20).map(pick),
+    stonkTokens: list.filter(x => x.stonk).length, stonkPnl: r4(list.filter(x => x.stonk).reduce((t, x) => t + x.pnl, 0)), stonkIn: r4(list.filter(x => x.stonk).reduce((t, x) => t + x.in, 0)), stonkBest: pick(list.filter(x => x.stonk && x.in > 0).sort((a, b) => b.pnl - a.pnl)[0]), otherQuote: other, best: pick(ranked[0]), worst: pick(ranked.at(-1)), rows: ranked.slice(0, 20).map(pick),
     note: 'The last seven days on Solana, from Helius\' parsed transactions: SOL in for each token received in a swap, SOL back for each one given, and what is still held at Jupiter\'s price now. Swaps against another quote token are not priced. Not advice.' };
   wraps.set(w, { t: now, v }); if (wraps.size > 200) wraps.delete(wraps.keys().next().value);
   return v;
