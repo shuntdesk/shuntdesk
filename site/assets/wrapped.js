@@ -4,6 +4,8 @@ import { mountChrome, $, esc, feedYard } from './ui.js';
 import { api } from './data.js';
 mountChrome('');
 feedYard(createYard($('#yard'), { ambient: true }));
+// on sol.shuntdesk.com the page speaks of Solana
+if (document.documentElement.classList.contains('sol')) { $('.eyebrow').textContent = 'Wallet Wrapped · Solana'; $('h1.disp').innerHTML = 'Your week on Solana.<br><span class="acc">One card.</span>'; $('#wr-w').placeholder = 'a Solana wallet'; document.title = 'Wallet Wrapped on Solana — Shuntdesk'; }
 const isSolA = a => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a), isW = a => /^0x[0-9a-fA-F]{40}$/.test(a) || isSolA(a);
 const eth = v => `${v >= 0 ? '+' : ''}${v.toFixed(4)}`;
 const cls = v => v > 0 ? 'long' : v < 0 ? 'short' : '';

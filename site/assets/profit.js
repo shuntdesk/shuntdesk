@@ -4,6 +4,7 @@ import { mountChrome, $, esc, feedYard } from './ui.js';
 import { api } from './data.js';
 mountChrome('');
 feedYard(createYard($('#yard'), { ambient: true }));
+if (document.documentElement.classList.contains('sol')) { $('.eyebrow').textContent = 'Profit Map · Solana'; $('#pm-a').placeholder = 'a Solana token mint'; }
 const isT = a => /^0x[0-9a-fA-F]{40}$/.test(a) || /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a);
 const n0 = v => v >= 1e9 ? (v / 1e9).toFixed(2) + 'B' : v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? (v / 1e3).toFixed(1) + 'K' : Math.round(v || 0).toString();
 const e4 = v => (v >= 0 ? '' : '-') + Math.abs(v).toFixed(4);
