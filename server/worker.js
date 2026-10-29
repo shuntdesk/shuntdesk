@@ -16,6 +16,8 @@ import { solScan, isSol, solPrice, pumpCurve, curveAt, curveFrom, rpc as solRpc,
 import { solHolders, solShared, solLedger, solWallet, solSim } from './soltools.js';
 import { solFirst, solSerial, funderOf } from './solfirst.js';
 import { stonkToken, stonkBoard, stonkStats } from './stonk.js';
+import { solWrapped, solProfit } from './solwrap.js';
+import { owners as solOwners } from './soltools.js';
 import { parsed as solParsed } from './soltools.js';
 
 const DS = 'https://api.dexscreener.com';
@@ -2445,14 +2447,14 @@ export async function walletWrapped(env, w) {
   return v;
 }
 function wrappedSvg(c) {
-  const eth = v => `${v >= 0 ? '+' : ''}${v.toFixed(v >= 10 || v <= -10 ? 2 : 3)} ETH`, col = v => v > 0 ? '#2ed3a0' : v < 0 ? '#ff6b6b' : '#edebe6';
+  const U = c.unit || 'ETH', eth = v => `${v >= 0 ? '+' : ''}${v.toFixed(v >= 10 || v <= -10 ? 2 : 3)} ${U}`, col = v => v > 0 ? '#2ed3a0' : v < 0 ? '#ff6b6b' : '#edebe6';
   const body = !c.ok ? cardRows([{ lvl: 'n', text: 'not read right now: ' + (c.error || 'the index did not answer') }], 360)
     : !c.tokens ? cardRows([{ lvl: 'n', text: 'no Pons trade by this wallet in the last seven days' }], 360)
     : [[64, 'THE WEEK', eth(c.pnl), col(c.pnl)], [470, 'TOKENS', String(c.tokens), '#edebe6'], [680, 'WON / LOST', `${c.won} / ${c.lost}`, '#edebe6'], [930, 'EXIT LIQUIDITY', String(c.exitLiquidity), c.exitLiquidity ? '#ff6b6b' : '#edebe6']].map(([x, k, v, f]) => `<text x="${x}" y="356" font-family="Big Shoulders Display" font-weight="900" font-size="64" fill="${f}">${cardX(v)}</text><text x="${x + 2}" y="386" font-family="JetBrains Mono" font-weight="700" font-size="15" letter-spacing="3" fill="#8d8b86">${k}</text>`).join('')
       + cardRows([c.best && c.best.pnl > 0 ? { lvl: 'g', text: `best: ${c.best.symbol || c.best.token.slice(0, 8)} ${eth(c.best.pnl)}${c.best.mult != null ? ` (${c.best.mult}x)` : ''}${c.best.bonded ? ', bonded' : ''}` } : null,
         c.worst && c.worst.pnl < 0 ? { lvl: 'r', text: `worst: ${c.worst.symbol || c.worst.token.slice(0, 8)} ${eth(c.worst.pnl)}${c.worst.mult != null ? ` (${c.worst.mult}x)` : ''}` } : null,
-        { lvl: 'n', text: `${c.spent.toFixed(3)} ETH in, ${c.back.toFixed(3)} ETH back, ${c.held.toFixed(3)} ETH still held` }].filter(Boolean), 458);
-  return cardFrame({ kind: 'WALLET WRAPPED · LAST 7 DAYS ON PONS', pill: !c.ok || !c.tokens ? 'NO TRADES' : c.pnl >= 0 ? 'UP' : 'DOWN', pillCol: c.ok && c.tokens ? col(c.pnl) : '#8d8b86', big: c.wallet.slice(0, 6) + '…' + c.wallet.slice(-4), meta: c.ok && c.tokens ? `${c.buys} buys and ${c.sells} sells across ${c.tokens} Pons tokens` : c.wallet, body, read: c.read || new Date().toISOString() });
+        { lvl: 'n', text: `${c.spent.toFixed(3)} ${U} in, ${c.back.toFixed(3)} ${U} back, ${c.held.toFixed(3)} ${U} still held` }].filter(Boolean), 458);
+  return cardFrame({ kind: c.chain === 'solana' ? 'WALLET WRAPPED · LAST 7 DAYS ON SOLANA' : 'WALLET WRAPPED · LAST 7 DAYS ON PONS', pill: !c.ok || !c.tokens ? 'NO TRADES' : c.pnl >= 0 ? 'UP' : 'DOWN', pillCol: c.ok && c.tokens ? col(c.pnl) : '#8d8b86', big: c.wallet.slice(0, 6) + '…' + c.wallet.slice(-4), meta: c.ok && c.tokens ? `${c.buys} buys and ${c.sells} sells across ${c.tokens} ${c.chain === 'solana' ? 'Solana' : 'Pons'} tokens` : c.wallet, body, read: c.read || new Date().toISOString() });
 }
 
 // ---------- Fresh Wallets: how many of the first buyers were made for the launch ----------
@@ -3856,8 +3858,8 @@ const api = {
         const curves = {}; for (const r of B.rows || []) if (r.c) curves[r.c] = [r.t0, r.s || null, r.by || null, r.p != null ? Math.round(r.p * 10) / 10 : null, r.g ? 1 : 0];
         return new Response(JSON.stringify({ ok: true, curves, hunters: V.top.slice(0, 60).filter(x => x.hits >= 2).map(x => [x.wallet, x.hits, x.tries]) }), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=120' } }); }
       if (url.pathname === '/api/fresh') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!/^0x[0-9a-f]{40}$/.test(a)) return json({ ok: false, error: 'a Pons token, 0x and 40 characters' }, 400); return json(await freshWallets(env, a)); }
-      if (url.pathname === '/api/wrapped') { const a = (url.searchParams.get('w') || '').toLowerCase(); if (!/^0x[0-9a-f]{40}$/.test(a)) return json({ ok: false, error: 'a Robinhood Chain wallet, 0x and 40 characters' }, 400); return json(await walletWrapped(env, a)); }
-      if (url.pathname === '/api/profit') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!/^0x[0-9a-f]{40}$/.test(a)) return json({ ok: false, error: 'a Pons token, 0x and 40 characters' }, 400); return json(await profitMap(env, a)); }
+      if (url.pathname === '/api/wrapped') { const raw = (url.searchParams.get('w') || '').trim(); if (isSol(raw)) return json(await solWrapped(env, raw).catch(e => ({ ok: false, error: e.message }))); const a = raw.toLowerCase(); if (!/^0x[0-9a-f]{40}$/.test(a)) return json({ ok: false, error: 'a Robinhood Chain wallet, 0x and 40 characters' }, 400); return json(await walletWrapped(env, a)); }
+      if (url.pathname === '/api/profit') { const raw = (url.searchParams.get('a') || '').trim(); if (isSol(raw)) return json(await solProfit(env, raw, solOwners).catch(e => ({ ok: false, error: e.message }))); const a = raw.toLowerCase(); if (!/^0x[0-9a-f]{40}$/.test(a)) return json({ ok: false, error: 'a Pons token, 0x and 40 characters' }, 400); return json(await profitMap(env, a)); }
       if (url.pathname === '/api/_hunt/todo' || url.pathname === '/api/_hunt/feed') { if (!env.HUNT_KEY || request.headers.get('x-feed') !== env.HUNT_KEY) return json({ error: 'not found' }, 404);
         if (url.pathname === '/api/_hunt/feed') return json(await huntFeed(env, await request.json().catch(() => null)));
         const H = await huntLoad(env), B = await bondsLoad(env); return json({ ok: true, rows: huntPick(H, B, Date.now(), 10).map(r => ({ t0: r.t0, c: r.c || null, b: r.b || null, s: r.s || null, at: r.at || null })) }); }
@@ -3976,10 +3978,10 @@ const api = {
           if (png) { const { svgToPng } = await import('./card.js'); return new Response(await svgToPng(svg), { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=1800' } }); }
           return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Shuntdesk champion</title><meta property="og:title" content="${c ? cardX(c.handle) + ' is the Shuntdesk champion' : 'Shuntdesk Season Pass'}"><meta property="og:image" content="${url.origin}/card/champ/latest.png?h=${Math.floor(Date.now() / 1800000)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta http-equiv="refresh" content="0;url=/season/"></head><body></body></html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
         }
-        if (!(isAddr(a) || (isSol(a) && kind === 'token')) || !['token', 'wallet', 'dev', 'wrapped'].includes(kind)) return new Response('not found', { status: 404 });
+        if (!(isAddr(a) || (isSol(a) && (kind === 'token' || kind === 'wrapped'))) || !['token', 'wallet', 'dev', 'wrapped'].includes(kind)) return new Response('not found', { status: 404 });
         const ck = kind === 'token' ? (isSol(a) ? 's:' + a : a) : (kind === 'wallet' ? 'w:' : kind === 'wrapped' ? 'r:' : 'd:') + a;
         if (!cards.has(ck) && !(kind === 'wrapped' && wrapped.has(a)) && !allow(st, ip, 'card', 60)) return new Response('slow down', { status: 429 });
-        const c = kind === 'wrapped' ? await walletWrapped(env, a) : kind === 'wallet' ? await walletCard(st, env, a) : kind === 'dev' ? await devCard(st, env, a) : isSol(a) ? await solCard(st, env, a) : await cardData(st, env, a); await save(env, st);
+        const c = kind === 'wrapped' ? (isSol(a) ? await solWrapped(env, a).catch(e => ({ ok: false, error: e.message, wallet: a })) : await walletWrapped(env, a)) : kind === 'wallet' ? await walletCard(st, env, a) : kind === 'dev' ? await devCard(st, env, a) : isSol(a) ? await solCard(st, env, a) : await cardData(st, env, a); await save(env, st);
         const svg = () => kind === 'wrapped' ? wrappedSvg(c) : kind === 'wallet' ? walletSvg(c) : kind === 'dev' ? devSvg(c) : cardSvg(c);
         if (png) { const { svgToPng } = await import('./card.js'); return new Response(await svgToPng(svg()), { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=1800' } }); }
         if (url.searchParams.has('svg')) return new Response(svg(), { headers: { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'no-store' } });

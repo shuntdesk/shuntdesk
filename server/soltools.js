@@ -7,7 +7,7 @@ const keep = (m, k, v, n = 200) => { m.set(k, { t: Date.now(), v }); if (m.size 
 const fresh = (m, k, ms) => { const h = m.get(k); return h && Date.now() - h.t < ms ? h.v : null; };
 
 // the largest holders of a mint, each token account resolved to its owner and the owner to a wallet or a program
-async function owners(env, mint) {
+export async function owners(env, mint) {
   // the node's largest accounts; for the very largest tokens it gives up, and GoPlus's holder list stands in
   const [acct, big] = await Promise.all([rpc(env, 'getAccountInfo', [mint, { encoding: 'jsonParsed' }]), rpc(env, 'getTokenLargestAccounts', [mint]).catch(() => null)]);
   const mi = acct?.value?.data?.parsed?.info; if (!mi) throw new Error('not a token mint on Solana');
