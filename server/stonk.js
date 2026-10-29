@@ -30,9 +30,12 @@ const row = (t, curve) => ({ mint: t.mint, pool: t.pool, name: t.name, symbol: t
 // one token: StonkFun's record (its creator) and its curve from chain
 export async function stonkToken(env, mint) {
   const j = await sf('/api/public/v1/tokens/' + mint, 20000).catch(e => ({ error: e.message }));
-  const t = j?.data?.token; if (!t) return { ok: false, error: j?.error ? String(j.error.message || j.error).slice(0, 80) : 'not a StonkFun token' };
+  let t = j?.data?.token;
+  // a launch minutes old is in v2 before v1 lists it
+  if (!t) { const v = await sf('/api/v2/launches/' + mint, 20000).catch(() => null); const p = v?.pool; if (p) { t = { ...p, quote: { symbol: p.quoteSymbol, mint: p.quoteMint }, market: { marketCapUsd: p.marketCapUsd, volume24hUsd: p.volume24hUsd, peakMarketCapUsd: p.peakMarketCapUsd, priceUsd: p.priceUsd }, links: { website: p.website, twitter: p.twitter, telegram: p.telegram } }; } }
+  if (!t) return { ok: false, error: j?.error ? String(j.error.message || j.error).slice(0, 80) : 'not a StonkFun token' };
   const [curve] = t.status === 'graduated' ? [null] : await stonkCurves(env, [t.pool]).catch(() => [null]);
-  return { ok: true, ...row(t, curve), creator: j.data.launch?.creator || null, launchpad: t.launchpad, mode: t.mode, links: t.links || {}, startMarketCap: j.data.launch?.startMarketCapUsd ?? null,
+  return { ok: true, ...row(t, curve), creator: j?.data?.launch?.creator || null, launchpad: t.launchpad, mode: t.mode || (t.isRewardLaunch ? 'reward' : 'standard'), transferTaxBps: t.transferTaxBps ?? null, links: t.links || {}, startMarketCap: j?.data?.launch?.startMarketCapUsd ?? null,
     note: 'Market data from StonkFun. The curve is read from its Raydium LaunchLab pool on Solana: the quote it raised against the quote it needs to move to a Raydium pool. StonkFun\'s own progress is market cap against $40,000. Not advice.' };
 }
 // the newest launches, the most traded and the ones closest to graduating, each with its curve from chain

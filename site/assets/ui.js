@@ -9,6 +9,8 @@ export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;'
 const MARK = 'M136 456V297.7L292 173.7V90L326 56H376V214.3L220 338.3V422L186 456Z';   // the Shuntdesk mark: one stroke leaving its lane for the next
 const LOGO = `<svg viewBox="136 56 240 400" fill="currentColor" aria-hidden="true"><path d="${MARK}"/></svg>`;
 const SOL = document.documentElement.classList.contains('sol');
+// $SHUNT on Solana, launched on StonkFun 29 October 2026
+const SOL_CA = '7HNn2E96EuxBHyYjYSnJK5LYtxPZX6PiimbgEUoX9aqV';
 const NAV = SOL ? [['Hub', '/'], ['Launch', '/launch/'], ['Stonk', '/stonk/'], ['Ape Check', '/ape/'], ['Rail', '/rail/'], ['Play', '/gord/'], ['Wrapped', '/wrapped/']] : [['Yard', '/'], ['Board', '/board/'], ['Desk', '/desk/'], ['Ticket', '/ticket/'], ['Tools', '/tools/'], ['Docs', '/docs/']];
 // the other side, at the same path
 const sideLink = () => `<div class="side-sw"><a href="https://shuntdesk.com${SOL ? (location.pathname === '/' ? '/solana/' : location.pathname) : location.pathname}"${SOL ? '' : ' class="on"'}>RH</a><a href="https://sol.shuntdesk.com${!SOL && location.pathname === '/solana/' ? '/' : SOL ? location.pathname : '/'}"${SOL ? ' class="on"' : ''}>SOL</a></div>`;
@@ -28,7 +30,7 @@ export function mountChrome(active) {
     <button class="uimode" type="button" title="Switch between the Yard UI and Simple UI">${document.documentElement.classList.contains('simple') ? 'Yard<span> UI</span>' : 'Simple<span> UI</span>'}</button>
     ${document.documentElement.classList.contains('simple') ? `<button class="uitheme" type="button" title="Light or dark">${document.documentElement.classList.contains('light') ? 'Dark' : 'Light'}</button>` : ''}
     ${sideLink()}
-    ${SOL ? `<a class="cachip" href="/launch/" title="Shuntdesk on StonkFun"><b>SOL</b><span>Launch Desk</span><i>→</i></a>` : caChip()}
+    ${SOL ? `<a class="cachip" href="/launch/" title="The official $SHUNT on Solana" aria-label="The official $SHUNT on Solana, contract ${SOL_CA}"><b>CA</b><span>${SOL_CA.slice(0, 4)}…${SOL_CA.slice(-4)}</span><i>$SHUNT SOL →</i></a>` : caChip()}
     ${xLink('xlink')}
     <div class="chain"><i></i><span>${SOL ? 'SOLANA' : 'ROBINHOOD CHAIN'}</span><b id="blk">${SOL ? 'MAINNET' : '······'}</b></div>
   </header>`);
