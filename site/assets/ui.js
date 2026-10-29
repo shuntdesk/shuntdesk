@@ -8,7 +8,10 @@ export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;'
 
 const MARK = 'M136 456V297.7L292 173.7V90L326 56H376V214.3L220 338.3V422L186 456Z';   // the Shuntdesk mark: one stroke leaving its lane for the next
 const LOGO = `<svg viewBox="136 56 240 400" fill="currentColor" aria-hidden="true"><path d="${MARK}"/></svg>`;
-const NAV = [['Yard', '/'], ['Board', '/board/'], ['Desk', '/desk/'], ['Ticket', '/ticket/'], ['Tools', '/tools/'], ['Docs', '/docs/']];
+const SOL = document.documentElement.classList.contains('sol');
+const NAV = SOL ? [['Hub', '/'], ['Launch', '/launch/'], ['Stonk', '/stonk/'], ['Ticket', '/ticket/'], ['Wrapped', '/wrapped/'], ['Docs', '/docs/']] : [['Yard', '/'], ['Board', '/board/'], ['Desk', '/desk/'], ['Ticket', '/ticket/'], ['Tools', '/tools/'], ['Docs', '/docs/']];
+// the other side, at the same path
+const sideLink = () => `<div class="side-sw"><a href="https://shuntdesk.com${SOL ? (location.pathname === '/' ? '/solana/' : location.pathname) : location.pathname}"${SOL ? '' : ' class="on"'}>RH</a><a href="https://sol.shuntdesk.com${!SOL && location.pathname === '/solana/' ? '/' : SOL ? location.pathname : '/'}"${SOL ? ' class="on"' : ''}>SOL</a></div>`;
 // the project's X account, shown in the header and the footer; empty hides both links
 const X_HANDLE = 'shuntdesk';
 const X_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>';
@@ -24,9 +27,10 @@ export function mountChrome(active) {
     <div class="sp"></div>
     <button class="uimode" type="button" title="Switch between the Yard UI and Simple UI">${document.documentElement.classList.contains('simple') ? 'Yard<span> UI</span>' : 'Simple<span> UI</span>'}</button>
     ${document.documentElement.classList.contains('simple') ? `<button class="uitheme" type="button" title="Light or dark">${document.documentElement.classList.contains('light') ? 'Dark' : 'Light'}</button>` : ''}
-    ${caChip()}
+    ${sideLink()}
+    ${SOL ? `<a class="cachip" href="/launch/" title="Shuntdesk on StonkFun"><b>SOL</b><span>Launch Desk</span><i>→</i></a>` : caChip()}
     ${xLink('xlink')}
-    <div class="chain"><i></i><span>ROBINHOOD CHAIN</span><b id="blk">······</b></div>
+    <div class="chain"><i></i><span>${SOL ? 'SOLANA' : 'ROBINHOOD CHAIN'}</span><b id="blk">${SOL ? 'MAINNET' : '······'}</b></div>
   </header>`);
   document.body.prepend(top);
   // the look: Simple UI is the clean terminal, kept per browser; the landing has its own page in each look
@@ -42,7 +46,7 @@ export function mountChrome(active) {
     try { localStorage.setItem('sd.theme', light ? 'light' : 'dark'); } catch (e) {}
     th.textContent = light ? 'Dark' : 'Light';
   });
-  const tick = async () => { try { const n = await blockNumber(); $('#blk').textContent = '#' + n.toLocaleString('en-US'); } catch (e) {} };
+  const tick = async () => { if (SOL) return; try { const n = await blockNumber(); $('#blk').textContent = '#' + n.toLocaleString('en-US'); } catch (e) {} };
   tick(); setInterval(tick, 12000);
 
   const foot = $('.foot');

@@ -15,6 +15,7 @@ import { sameHand } from '../site/assets/hand.js';
 import { solScan, isSol, solPrice, pumpCurve, curveAt, curveFrom, rpc as solRpc, cache as solCache } from './solana.js';
 import { solHolders, solShared, solLedger, solWallet, solSim } from './soltools.js';
 import { solFirst, solSerial, funderOf } from './solfirst.js';
+import { stonkToken, stonkBoard, stonkStats } from './stonk.js';
 import { parsed as solParsed } from './soltools.js';
 
 const DS = 'https://api.dexscreener.com';
@@ -3824,6 +3825,7 @@ export default {
     if (!env.DESK) return api.fetch(request, env);   // local server: no Durable Object, a file stands in
     // one address: www and plain http both go to https://shuntdesk.com (a desk kept in the browser belongs to one origin)
     if (u.hostname === 'www.shuntdesk.com' || (u.hostname === 'shuntdesk.com' && u.protocol === 'http:')) return Response.redirect('https://shuntdesk.com' + u.pathname + u.search, 301);
+    if (u.hostname === 'sol.shuntdesk.com' && (path === '/' || path === '/index.html')) return env.ASSETS.fetch(new Request(new URL('/solana/', u), request));   // the Solana side opens on its hub
     return path.startsWith('/api/') || path.startsWith('/badge/') || path.startsWith('/card/') || path === '/mcp' ? env.DESK.get(env.DESK.idFromName('main')).fetch(request) : env.ASSETS.fetch(request);
   },
   scheduled(event, env) { return env.DESK ? undefined : api.scheduled(event, env); }
@@ -3915,6 +3917,11 @@ const api = {
       if (url.pathname === '/api/holder') return json({ ok: true, message: holderMessage(String(url.searchParams.get('c') || '')), min: HOLD_MIN, pro: HOLD_PRO, boost: BOOST_MIN, trip: HOLD_TRIP });
       if (url.pathname === '/api/caught') return json(await caughtView(env));
       if (url.pathname === '/api/road') return json(roadView(st));
+      // StonkFun: one token, and the boards (tape, hot, near, graduated)
+      // Launch Desk: the mint of Shuntdesk's own Solana token, set at launch behind the feed key
+      if (url.pathname === '/api/launchdesk') { if (request.method === 'POST') { if (!env.HUNT_KEY || request.headers.get('x-feed') !== env.HUNT_KEY) return json({ error: 'not found' }, 404); const m = String((body || {}).mint || '').trim(); if (m && !isSol(m)) return json({ ok: false, error: 'a Solana mint' }, 400); st.launch = { mint: m || null, t: Date.now() }; await save(env, st); return json({ ok: true, mint: st.launch.mint }); } return json({ ok: true, mint: st.launch?.mint || null, since: st.launch?.t ? new Date(st.launch.t).toISOString() : null }); }
+      if (url.pathname === '/api/stonk') { const m = (url.searchParams.get('m') || '').trim(); if (!isSol(m)) return json({ ok: false, error: 'a Solana mint' }, 400); return json(await stonkToken(env, m)); }
+      if (url.pathname.startsWith('/api/stonk/')) { const k = url.pathname.slice(11); if (k === 'stats') return json(await stonkStats().catch(e => ({ ok: false, error: e.message }))); return json(await stonkBoard(env, k).catch(e => ({ ok: false, error: e.message }))); }
       if (url.pathname === '/api/botgroups') { const G = st.seenGroups || {}; return json({ ok: true, groups: Object.keys(G).length, active7d: Object.values(G).filter(g => Date.now() - g.t < 7 * 24 * HOUR).length, conductor: condGroups(st).length }); }
       if (url.pathname === '/api/rugday') { const pv = url.searchParams.has('preview') ? await rugDayRH(st, env, true).catch(() => null) : null; return json({ ok: true, today: st.rugRH?.[0] || null, preview: pv, earlier: (st.rugRH || []).slice(1, 8) }); }
       if (url.pathname === '/api/solhub') { const g = await solGrad(st, env); await save(env, st); return json({ ok: true, rugDay: st.rugDay || [], board: solBoardView(st), graduation: { rows: g.rows.slice(0, 8), graduated: g.graduated.slice(0, 8), read: g.read } }); }

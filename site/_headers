@@ -3,7 +3,7 @@
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=()
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://api.dexscreener.com https://api.geckoterminal.com https://robinhoodchain.blockscout.com https://rpc.mainnet.chain.robinhood.com https://robinhood-rpc.publicnode.com https://api.gopluslabs.io https://api.binance.com https://data-api.binance.vision wss://stream.binance.com wss://stream.binance.com:9443 wss://data-stream.binance.vision; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' https://api.dexscreener.com https://api.geckoterminal.com https://robinhoodchain.blockscout.com https://rpc.mainnet.chain.robinhood.com https://robinhood-rpc.publicnode.com https://api.gopluslabs.io https://api.binance.com https://data-api.binance.vision wss://stream.binance.com wss://stream.binance.com:9443 wss://data-stream.binance.vision; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
 
 /assets/fonts/*
   Cache-Control: public, max-age=31536000, immutable
@@ -17,4 +17,4 @@
 /tg/*
   ! X-Frame-Options
   ! Content-Security-Policy
-  Content-Security-Policy: default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://api.dexscreener.com https://api.geckoterminal.com https://robinhoodchain.blockscout.com https://rpc.mainnet.chain.robinhood.com https://robinhood-rpc.publicnode.com https://api.gopluslabs.io https://api.binance.com https://data-api.binance.vision wss://stream.binance.com wss://stream.binance.com:9443 wss://data-stream.binance.vision; frame-ancestors https://web.telegram.org https://*.telegram.org; base-uri 'self'; form-action 'self'
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' https://api.dexscreener.com https://api.geckoterminal.com https://robinhoodchain.blockscout.com https://rpc.mainnet.chain.robinhood.com https://robinhood-rpc.publicnode.com https://api.gopluslabs.io https://api.binance.com https://data-api.binance.vision wss://stream.binance.com wss://stream.binance.com:9443 wss://data-stream.binance.vision; frame-ancestors https://web.telegram.org https://*.telegram.org; base-uri 'self'; form-action 'self'

@@ -1010,3 +1010,23 @@ html.simple.light ::selection { background: #2ed3a0; color: #060708; }
 .road-marks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 16px; } .road-marks h2 { font: 900 28px/1 "Big Shoulders Display"; margin: 10px 0 6px; text-transform: uppercase; } .road-marks p { color: var(--mut); margin: 0; } .road-open .cap span { color: var(--long); }
 .road-tiers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 10px; } .road-tiers b { font: 900 30px/1 "Big Shoulders Display"; text-transform: uppercase; } .road-tiers small { display: block; font: 700 12px "JetBrains Mono", monospace; color: var(--long); margin: 4px 0 8px; } .road-tiers p { margin: 0; color: var(--mut); }
 @media (max-width: 760px) { .road-marks, .road-tiers { grid-template-columns: 1fr; } .road-big b { font-size: 64px; } }
+/* ---------- the Solana side: sol.shuntdesk.com ---------- */
+.side-sw { display: inline-flex; border: 1px solid rgba(237,235,230,.18); border-radius: 4px; overflow: hidden; margin-right: 10px; }
+.side-sw a { font: 700 11px "JetBrains Mono", monospace; letter-spacing: .14em; padding: 8px 11px; color: var(--mut); }
+.side-sw a.on { background: #edebe6; color: #060708; }
+html.sol .side-sw a.on { background: linear-gradient(90deg, #9945ff, #14f195); color: #060708; }
+html.sol { --long: #14f195; --acc: #14f195; }
+html.sol body { background: radial-gradient(120% 70% at 90% -10%, rgba(153,69,255,.24), transparent 60%), radial-gradient(90% 60% at -10% 110%, rgba(20,241,149,.12), transparent 60%), var(--bg); }
+html.sol .disp .acc, html.sol h1 .acc { background: linear-gradient(90deg, #9945ff, #14f195); -webkit-background-clip: text; background-clip: text; color: transparent; }
+html.sol .btn:not(.ghost) { background: linear-gradient(90deg, #9945ff, #14f195); color: #060708; border-color: transparent; }
+html.sol .eyebrow { color: #c9a7ff; }
+html.sol .top nav a.on::after { background: linear-gradient(90deg, #9945ff, #14f195); box-shadow: 0 0 12px rgba(153,69,255,.8); }
+html.sol .chain i { background: #14f195; box-shadow: 0 0 10px #14f195; }
+html.sol ::selection { background: #9945ff; color: #fff; }
+@media (max-width: 760px) { .side-sw a { padding: 7px 8px; } }
+/* ---------- Stonk Watch, Launch Desk ---------- */
+.sklist .r { grid-template-columns: minmax(150px, 1.3fr) 90px 100px 100px minmax(170px, 1.3fr) 60px !important; } .sklist .sy img { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; vertical-align: middle; margin-right: 8px; }
+.sk-p small { color: var(--dim); font-size: 10px; } .sk-bar { display: inline-block; width: 70px; height: 6px; background: #1d1f23; border-radius: 3px; overflow: hidden; vertical-align: middle; margin-right: 8px; } .sk-bar i { display: block; height: 100%; background: linear-gradient(90deg, #9945ff, #14f195); } .sk-bar.mc i { background: #8d8b86; }
+.ld-ca { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 6px 0 4px; } .ld-ca code { font: 700 15px "JetBrains Mono", monospace; word-break: break-all; }
+.ldlist .r { grid-template-columns: 1fr 90px !important; }
+@media (max-width: 760px) { .sklist .r { grid-template-columns: 1fr 90px !important; } .sklist .r > :nth-child(2), .sklist .r > :nth-child(3), .sklist .r > :nth-child(4), .sklist .r > :nth-child(6) { display: none; } }
