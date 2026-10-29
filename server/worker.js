@@ -17,6 +17,7 @@ import { solHolders, solShared, solLedger, solWallet, solSim } from './soltools.
 import { solFirst, solSerial, funderOf } from './solfirst.js';
 import { stonkToken, stonkBoard, stonkStats } from './stonk.js';
 import { solWrapped, solProfit } from './solwrap.js';
+import { solFresh, stonkHuntTick, stonkHunters } from './stonkhunt.js';
 import { owners as solOwners } from './soltools.js';
 import { parsed as solParsed } from './soltools.js';
 
@@ -3857,14 +3858,16 @@ const api = {
       if (url.pathname === '/api/tapemap') { const B = await bondsLoad(env), H = await huntLoad(env), V = hunterRank(H, B, Date.now());
         const curves = {}; for (const r of B.rows || []) if (r.c) curves[r.c] = [r.t0, r.s || null, r.by || null, r.p != null ? Math.round(r.p * 10) / 10 : null, r.g ? 1 : 0];
         return new Response(JSON.stringify({ ok: true, curves, hunters: V.top.slice(0, 60).filter(x => x.hits >= 2).map(x => [x.wallet, x.hits, x.tries]) }), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=120' } }); }
-      if (url.pathname === '/api/fresh') { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!/^0x[0-9a-f]{40}$/.test(a)) return json({ ok: false, error: 'a Pons token, 0x and 40 characters' }, 400); return json(await freshWallets(env, a)); }
+      if (url.pathname === '/api/fresh') { const raw = (url.searchParams.get('a') || '').trim(); if (isSol(raw)) return json(await solFresh(env, raw).catch(e => ({ ok: false, error: e.message }))); const a = raw.toLowerCase(); if (!/^0x[0-9a-f]{40}$/.test(a)) return json({ ok: false, error: 'a Pons token, 0x and 40 characters' }, 400); return json(await freshWallets(env, a)); }
       if (url.pathname === '/api/wrapped') { const raw = (url.searchParams.get('w') || '').trim(); if (isSol(raw)) return json(await solWrapped(env, raw).catch(e => ({ ok: false, error: e.message }))); const a = raw.toLowerCase(); if (!/^0x[0-9a-f]{40}$/.test(a)) return json({ ok: false, error: 'a Robinhood Chain wallet, 0x and 40 characters' }, 400); return json(await walletWrapped(env, a)); }
       if (url.pathname === '/api/profit') { const raw = (url.searchParams.get('a') || '').trim(); if (isSol(raw)) return json(await solProfit(env, raw, solOwners).catch(e => ({ ok: false, error: e.message }))); const a = raw.toLowerCase(); if (!/^0x[0-9a-f]{40}$/.test(a)) return json({ ok: false, error: 'a Pons token, 0x and 40 characters' }, 400); return json(await profitMap(env, a)); }
       if (url.pathname === '/api/_hunt/todo' || url.pathname === '/api/_hunt/feed') { if (!env.HUNT_KEY || request.headers.get('x-feed') !== env.HUNT_KEY) return json({ error: 'not found' }, 404);
         if (url.pathname === '/api/_hunt/feed') return json(await huntFeed(env, await request.json().catch(() => null)));
         const H = await huntLoad(env), B = await bondsLoad(env); return json({ ok: true, rows: huntPick(H, B, Date.now(), 10).map(r => ({ t0: r.t0, c: r.c || null, b: r.b || null, s: r.s || null, at: r.at || null })) }); }
+      if (url.pathname === '/api/_tick/shunt') { if (!env.TELEGRAM_SECRET || request.headers.get('x-tick') !== env.TELEGRAM_SECRET) return json({ error: 'not found' }, 404); await stonkHuntTick(env); return json({ ok: true }); }
       if (url.pathname === '/api/_tick/hunt') { if (!env.TELEGRAM_SECRET || request.headers.get('x-tick') !== env.TELEGRAM_SECRET) return json({ error: 'not found' }, 404); await hunterTick(null, env); return json({ ok: true }); }
       if (url.pathname === '/api/shadow') { const H = await huntLoad(env); return json({ ok: true, err: H.shadowErr || null, ...shadowView(H, Date.now()) }); }
+      if (url.pathname === '/api/hunters' && url.searchParams.get('chain') === 'sol') { const w = (url.searchParams.get('w') || '').trim(); return json(await stonkHunters(env, isSol(w) ? w : null)); }
       if (url.pathname === '/api/hunters') { const w = (url.searchParams.get('w') || '').toLowerCase(); if (w && !/^0x[0-9a-f]{40}$/.test(w)) return json({ ok: false, error: 'a Robinhood Chain wallet, 0x and 40 characters' }, 400); return json(await hunterView(env, w || null)); }
       if (url.pathname === '/api/lab') return json(await labData(env));
       if (url.pathname === '/api/ledger' && !isSol((url.searchParams.get('a') || '').trim())) { const a = (url.searchParams.get('a') || '').toLowerCase(); if (!isAddr(a)) return json({ ok: false, why: 'bad address' }, 400); if (!ledgers.has(a) && !allow(await load(env), ip, 'ledger', 60)) return json({ ok: false, why: 'slow down: 60 an hour' }, 429); return json(await devLedger(env, a)); }
@@ -4073,6 +4076,8 @@ const api = {
     // Bond Hunters reads a few dozen logs a run: it gets a run of its own, a request back into this same object, so the
     // other jobs of this minute do not spend its share of requests
     try { if (env.DESK && env.TELEGRAM_SECRET) await env.DESK.get(env.DESK.idFromName('main')).fetch('https://shuntdesk.com/api/_tick/hunt', { headers: { 'x-tick': env.TELEGRAM_SECRET }, signal: AbortSignal.timeout(110000) }); else await hunterTick(st, env); } catch (e) {}
+    // Stonk Hunters on Solana: a run of its own too
+    try { if (env.DESK && env.TELEGRAM_SECRET) await env.DESK.get(env.DESK.idFromName('main')).fetch('https://shuntdesk.com/api/_tick/shunt', { headers: { 'x-tick': env.TELEGRAM_SECRET }, signal: AbortSignal.timeout(110000) }); } catch (e) {}
     try { await lindexTick(env); } catch (e) {}
     try { await radarTick(st, env); } catch (e) {}
     try { await groupDigest(st, env); } catch (e) {}

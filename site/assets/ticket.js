@@ -51,7 +51,7 @@ function paintCard(res, done) {
   $('#t-crew').textContent = !live || !res.crew ? '' : 'CREW DESK: ' + ({ offline: 'NOT ANSWERING', 'no answer': 'NO ANSWER YET' }[res.crew] || res.crew.toUpperCase());
   if (sol) {   // a Solana ticket: read, not traded by the crew; the Robinhood Chain-only boxes stay hidden
     $('#second').hidden = true;
-    titles(true); extras(res); devCard(res); firstCard(res); nameCard(res);
+    titles(true); extras(res); devCard(res); firstCard(res); nameCard(res); freshCard(res);
     $('#t-acts').innerHTML = `<button class="btn ghost" data-do="ask">Ask the conductor</button><button class="btn ghost" data-do="card">Save the card</button><button class="btn ghost" data-do="x">Post on X</button><button class="btn ghost" data-do="link">Copy link</button><a class="btn ghost" href="https://solscan.io/token/${res.addr}" target="_blank" rel="noopener">Solscan ↗</a>` + (res.url ? `<a class="btn ghost" href="${esc(res.url)}" target="_blank" rel="noopener">DexScreener ↗</a>` : '')
       + (live ? `<button class="btn ghost" data-do="watch">${watching(res.addr) ? 'Watching' : 'Watch'}</button><a class="btn ghost" href="/exit/?a=${res.addr}">Exit Door</a><a class="btn ghost" href="/dev/?w=${res.addr}">Dev Score</a><a class="btn ghost" href="/replay/?a=${res.addr}">Replay</a>` + (res.launch?.pad === 'pumpfun' && !res.launch.graduated ? `<a class="btn ghost" href="/sim/?a=${res.addr}">Curve sim</a>` : '') : '');
     $('#t-crew').textContent = live ? 'SOLANA · READ ONLY, THE CREW DOES NOT TRADE IT' : '';

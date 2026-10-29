@@ -6,12 +6,15 @@ mountChrome('');
 feedYard(createYard($('#yard'), { ambient: true }));
 const w4 = a => a.slice(0, 6) + '…' + a.slice(-4);
 const ago = t => { const m = (Date.now() - t) / 60000; return m < 60 ? Math.max(1, Math.round(m)) + ' MIN AGO' : (m / 60).toFixed(1) + ' H AGO'; };
-const isW = a => /^0x[0-9a-fA-F]{40}$/.test(a);
+// on sol.shuntdesk.com the board is Stonk Hunters: StonkFun curves on Solana
+const SOL = document.documentElement.classList.contains('sol'), Q = SOL ? 'chain=sol&' : '';
+const isW = a => SOL ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a) : /^0x[0-9a-fA-F]{40}$/.test(a);
+if (SOL) { $('.eyebrow').textContent = 'Stonk Hunters · StonkFun on Solana'; document.title = 'Stonk Hunters — Shuntdesk'; }
 
 async function one(w) {
-  w = w.toLowerCase(); $('#hu-w').value = w; history.replaceState(null, '', '?w=' + w);
+  w = SOL ? w : w.toLowerCase(); $('#hu-w').value = w; history.replaceState(null, '', '?w=' + w);
   $('#hu-one').innerHTML = '<p class="note">READING…</p>';
-  let v = null; try { v = await api('hunters?w=' + w); } catch (e) {}
+  let v = null; try { v = await api('hunters?' + Q + 'w=' + w); } catch (e) {}
   if (!v?.ok) { $('#hu-one').innerHTML = '<p class="note">COULD NOT READ IT RIGHT NOW. TRY AGAIN IN A MINUTE.</p>'; return; }
   if (!v.found) { $('#hu-one').innerHTML = `<p class="note">NO EARLY BUY ON FILE FOR ${w4(w)} IN THE ${v.board.curves} CURVES READ SO FAR.</p>`; return; }
   $('#hu-one').innerHTML = `<div class="lk-row"><span>Bonded<b class="long">${v.hits} of ${v.tries}</b></span><span>Hit rate<b>${v.rate ?? '—'}%</b></span><span>On the board<b>${v.rank ? '#' + v.rank : 'not yet'}</b></span><span>Open now<b>${v.open.length}</b></span></div>
@@ -21,7 +24,7 @@ async function one(w) {
 }
 
 (async () => {
-  let v = null; try { v = await api('hunters'); } catch (e) {}
+  let v = null; try { v = await api('hunters' + (SOL ? '?chain=sol' : '')); } catch (e) {}
   if (!v?.ok) { $('#hu-list').innerHTML = $('#hu-now').innerHTML = '<p class="note">COULD NOT READ THE BOARD RIGHT NOW.</p>'; return; }
   $('#hu-c').textContent = v.board.curves.toLocaleString('en-US'); $('#hu-b').textContent = v.board.bonded; $('#hu-n').textContent = v.hunters.length; $('#hu-t').textContent = v.read ? ago(v.read) : '—';
   $('#hu-now').innerHTML = v.inNow.length ? `<div class="r h"><span>TOKEN</span><span>CURVE</span><span>HUNTERS</span><span>THEIR RECORD</span></div>` + v.inNow.map(c => `<a class="r" href="/ticket/?a=${c.token}"><span class="sy">${esc(c.symbol)}<small>${w4(c.token)}</small></span><span>${c.progress ?? '?'}%</span><span class="long">${c.hunters.length}</span><span>${c.hunters.slice(0, 3).map(h => `${h.hits}/${h.tries}`).join(' · ')}</span></a>`).join('')
