@@ -7,7 +7,7 @@ export function el(html) { const t = document.createElement('template'); t.inner
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const MARK = 'M136 456V297.7L292 173.7V90L326 56H376V214.3L220 338.3V422L186 456Z';   // the Shuntdesk mark: one stroke leaving its lane for the next
-const LOGO = `<svg viewBox="136 56 240 400" fill="currentColor" aria-hidden="true"><path d="${MARK}"/></svg>`;
+const LOGO = '';   // the site shows its name only, no mark
 const SOL = document.documentElement.classList.contains('sol');
 // $SHUNT on Solana, launched on StonkFun 29 October 2026
 const SOL_CA = '7HNn2E96EuxBHyYjYSnJK5LYtxPZX6PiimbgEUoX9aqV';
@@ -15,7 +15,7 @@ const NAV = SOL ? [['Hub', '/'], ['Launch', '/launch/'], ['Stonk', '/stonk/'], [
 // the other side, at the same path
 const sideLink = () => `<div class="side-sw"><a href="https://shuntdesk.com${SOL ? (location.pathname === '/' ? '/solana/' : location.pathname) : location.pathname}"${SOL ? '' : ' class="on"'}>RH</a><a href="https://sol.shuntdesk.com${!SOL && location.pathname === '/solana/' ? '/' : SOL ? location.pathname : '/'}"${SOL ? ' class="on"' : ''}>SOL</a></div>`;
 // the project's X account, shown in the header and the footer; empty hides both links
-const X_HANDLE = 'shuntdesk';
+const X_HANDLE = '';   // no X account linked from the site
 const X_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>';
 // the token's contract, shown in the header with a copy button; empty hides it
 const CA = '0x7e517e779b85895894becad80c9bb69b4cb1c4d6';

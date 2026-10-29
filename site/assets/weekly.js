@@ -22,7 +22,7 @@ function draw(v) {
   x.fillStyle = '#060708'; x.fillRect(0, 0, W, H);
   x.strokeStyle = 'rgba(237,235,230,.045)'; for (let i = 0; i <= W; i += 50) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i, H); x.stroke(); } for (let i = 0; i <= H; i += 50) { x.beginPath(); x.moveTo(0, i); x.lineTo(W, i); x.stroke(); }
   const g = x.createRadialGradient(1000, 0, 0, 1000, 0, 700); g.addColorStop(0, 'rgba(46,211,160,.12)'); g.addColorStop(1, 'rgba(46,211,160,0)'); x.fillStyle = g; x.fillRect(0, 0, W, H);
-  x.save(); x.translate(60, 46); x.scale(18 / 400, 18 / 400); x.translate(-136, -56); x.fillStyle = '#edebe6'; x.fill(MARK); x.restore();
+  
   x.fillStyle = '#edebe6'; x.font = `700 15px ${M}`; x.fillText('SHUNTDESK  ·  THE WEEK ON THE LINE', 92, 62);
   const end = new Date(v.read), start = new Date(end - 7 * 864e5), f = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
   x.fillStyle = '#2ed3a0'; x.textAlign = 'right'; x.fillText(`${f(start).toUpperCase()} – ${f(end).toUpperCase()}`, W - 60, 62); x.textAlign = 'left';

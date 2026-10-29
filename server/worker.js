@@ -3144,8 +3144,6 @@ function cardSvg(c) {
   <defs><radialGradient id="gl" cx="85%" cy="20%" r="70%"><stop offset="0" stop-color="#1b1d21"/><stop offset="1" stop-color="#060708"/></radialGradient>
   <pattern id="gr" width="48" height="48" patternUnits="userSpaceOnUse"><path d="M48 0H0V48" fill="none" stroke="#ffffff" stroke-opacity=".035"/></pattern></defs>
   <rect width="1200" height="630" fill="url(#gl)"/><rect width="1200" height="630" fill="url(#gr)"/>
-  <g transform="translate(870 70) scale(1.25)" opacity=".06"><path fill="#edebe6" d="M0 400V241.7L156 117.7V34L190 0H240V158.3L84 282.3V366L50 400Z"/></g>
-  <g transform="translate(64 52) scale(.11)"><path fill="#edebe6" d="M0 400V241.7L156 117.7V34L190 0H240V158.3L84 282.3V366L50 400Z"/></g>
   <text x="102" y="88" font-family="JetBrains Mono" font-weight="700" font-size="21" letter-spacing="7" fill="#edebe6">SHUNTDESK</text>
   <rect x="${1136 - vw}" y="58" width="${vw}" height="46" rx="6" fill="none" stroke="${vcol}" stroke-width="2"/><text x="${1136 - vw / 2}" y="89" text-anchor="middle" font-family="JetBrains Mono" font-weight="700" font-size="24" fill="${vcol}">${vtext}</text>
   <text x="60" y="232" font-family="Big Shoulders Display" font-weight="900" font-size="128" fill="#edebe6">${X(sym)}</text>
@@ -3164,8 +3162,6 @@ function cardFrame({ pill, pillCol = '#edebe6', big, meta, body, read, kind }) {
   <defs><radialGradient id="gl" cx="85%" cy="20%" r="70%"><stop offset="0" stop-color="#1b1d21"/><stop offset="1" stop-color="#060708"/></radialGradient>
   <pattern id="gr" width="48" height="48" patternUnits="userSpaceOnUse"><path d="M48 0H0V48" fill="none" stroke="#ffffff" stroke-opacity=".035"/></pattern></defs>
   <rect width="1200" height="630" fill="url(#gl)"/><rect width="1200" height="630" fill="url(#gr)"/>
-  <g transform="translate(870 70) scale(1.25)" opacity=".06"><path fill="#edebe6" d="M0 400V241.7L156 117.7V34L190 0H240V158.3L84 282.3V366L50 400Z"/></g>
-  <g transform="translate(64 52) scale(.11)"><path fill="#edebe6" d="M0 400V241.7L156 117.7V34L190 0H240V158.3L84 282.3V366L50 400Z"/></g>
   <text x="102" y="88" font-family="JetBrains Mono" font-weight="700" font-size="21" letter-spacing="7" fill="#edebe6">SHUNTDESK</text>
   <text x="102" y="114" font-family="JetBrains Mono" font-weight="700" font-size="15" letter-spacing="4" fill="#6f6d68">${cardX(kind)}</text>
   <rect x="${1136 - vw}" y="58" width="${vw}" height="46" rx="6" fill="none" stroke="${pillCol}" stroke-width="2"/><text x="${1136 - vw / 2}" y="89" text-anchor="middle" font-family="JetBrains Mono" font-weight="700" font-size="24" fill="${pillCol}">${cardX(pill)}</text>
@@ -3981,7 +3977,7 @@ const api = {
       if (url.pathname === '/api/proof') { const [dl, x, L] = await Promise.all([devLedger(env, SHUNT).catch(() => null), xray(st, env, SHUNT).catch(() => null), launch(env, SHUNT).catch(() => null)]);
         const rec = record(st); return json({ ok: true, token: SHUNT, ledger: dl?.ok ? dl : null, contract: x?.ok ? { functions: x.functions, named: x.named, unknown: x.unknown, proxy: !!x.proxy, owner: x.owner, powers: x.powers.filter(p => p.level === 'high').map(p => p.what), verified: x.source?.verified ?? null } : null,
           curve: L?.launchpad === 'pons' ? { progress: L.progress, graduated: L.graduated, raised: L.raised, need: L.need, holders: L.holders ?? null } : null,
-          record: { calls: st.verdicts.length, clean: rec.after24h.CLEAN, danger: rec.after24h.DANGER }, pools: SHUNT_POOLS, links: { source: 'https://github.com/shuntdesk/shuntdesk', data: 'https://huggingface.co/datasets/shuntdesk/verdicts', x: 'https://x.com/shuntdesk', telegram: 'https://t.me/shuntdesk' } }); }
+          record: { calls: st.verdicts.length, clean: rec.after24h.CLEAN, danger: rec.after24h.DANGER }, pools: SHUNT_POOLS, links: { source: 'https://github.com/shuntdesk/shuntdesk', data: 'https://huggingface.co/datasets/shuntdesk/verdicts', telegram: 'https://t.me/shuntdesk' } }); }
       if (url.pathname === '/api/holder' && body) { if (!allow(st, ip, 'holder', 20)) return json({ ok: false, why: 'slow down' }, 429); const [code, out] = await holderVerify(st, env, body); await save(env, st); return json(out, code); }
       if (url.pathname === '/api/holder') return json({ ok: true, message: holderMessage(String(url.searchParams.get('c') || '')), min: HOLD_MIN, pro: HOLD_PRO, boost: BOOST_MIN, trip: HOLD_TRIP });
       if (url.pathname === '/api/caught') return json(await caughtView(env));
@@ -4070,7 +4066,7 @@ const api = {
           return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${E(name)}</title><meta name="description" content="${E(desc)} Findings, not advice.">
 <meta property="og:type" content="website"><meta property="og:site_name" content="Shuntdesk"><meta property="og:title" content="${E(name)}"><meta property="og:description" content="${E(desc)} Findings, not advice."><meta property="og:url" content="${url.origin}/card/${kind}/${a}">
 <meta property="og:image" content="${img}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${img}">
-<meta http-equiv="refresh" content="0;url=${go}"><link rel="icon" href="/favicon.svg?v=2"></head><body style="margin:0;background:#060708"><a href="${go}"><img src="${img}" alt="${E(name)}: ${E(desc)}" style="display:block;max-width:100%;margin:0 auto"></a></body></html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=600' } });
+<meta http-equiv="refresh" content="0;url=${go}"></head><body style="margin:0;background:#060708"><a href="${go}"><img src="${img}" alt="${E(name)}: ${E(desc)}" style="display:block;max-width:100%;margin:0 auto"></a></body></html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=600' } });
         }
         const E = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'), name = c.symbol ? '$' + c.symbol : a.slice(0, 10);
         const desc = (c.verdict ? `${c.verdict.verdict} ${c.verdict.score}/100. ` : '') + (c.findings.slice(0, 3).map(f => f.text).join('. ') || 'Read from the chain') + '. Findings, not advice.';
@@ -4080,7 +4076,7 @@ const api = {
 <meta property="og:type" content="website"><meta property="og:site_name" content="Shuntdesk"><meta property="og:title" content="${E(name)} on Shuntdesk"><meta property="og:description" content="${E(desc)}">
 <meta property="og:url" content="${url.origin}/card/${a}"><meta property="og:image" content="${img}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${img}"><meta name="twitter:title" content="${E(name)} on Shuntdesk"><meta name="twitter:description" content="${E(desc)}">
-<meta http-equiv="refresh" content="0;url=${go}"><link rel="icon" href="/favicon.svg?v=2"></head>
+<meta http-equiv="refresh" content="0;url=${go}"></head>
 <body style="margin:0;background:#060708;color:#edebe6;font-family:system-ui"><a href="${go}"><img src="${img}" alt="${E(name)}: ${E(desc)}" style="display:block;max-width:100%;margin:0 auto"></a></body></html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=600' } });
       }
       if (url.pathname.startsWith('/badge/')) { const a = url.pathname.slice(7).replace(/\.svg$/, '').toLowerCase(); if (!isAddr(a)) return new Response('not found', { status: 404 }); if (!ledgers.has(a) && !allow(st, ip, 'badge', 120)) return new Response('slow down', { status: 429 });

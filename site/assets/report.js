@@ -24,7 +24,7 @@ function draw(r) {
   // the site's cut-corner frame
   c.strokeStyle = 'rgba(237,235,230,.2)'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(56, 28); c.lineTo(W - 28, 28); c.lineTo(W - 28, H - 56); c.lineTo(W - 56, H - 28); c.lineTo(28, H - 28); c.lineTo(28, 56); c.closePath(); c.stroke();
   // brand and date
-  c.fillStyle = INK; c.save(); c.translate(70, 64); c.scale(0.1, 0.1); c.translate(-136, -56); c.fill(new Path2D(MARK)); c.restore();
+  c.fillStyle = INK; 
   c.font = disp(46); c.textBaseline = 'alphabetic'; c.fillText('SHUNTDESK', 112, 104);
   const d = new Date(r.t); c.font = mono(20); c.fillStyle = MUT; c.textAlign = 'right';
   c.fillText(`DAILY REPORT · ${d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }).toUpperCase()} · ${d.toISOString().slice(11, 16)} UTC`, W - 70, 100); c.textAlign = 'left';

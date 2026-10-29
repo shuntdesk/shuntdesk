@@ -74,7 +74,7 @@ function alert(w, text) {
   const last = w.alerts[0];
   if (last && last.text === text && Date.now() - last.t < 6 * 3600000) return;   // the same alert once every six hours at most
   w.alerts.unshift({ t: Date.now(), text }); w.alerts = w.alerts.slice(0, 5);
-  try { if ('Notification' in window && Notification.permission === 'granted') new Notification(`Shuntdesk · ${w.sym}`, { body: text, icon: '/apple-touch-icon.png', tag: 'sd-' + w.addr }); } catch (e) {}
+  try { if ('Notification' in window && Notification.permission === 'granted') new Notification(`Shuntdesk · ${w.sym}`, { body: text, tag: 'sd-' + w.addr }); } catch (e) {}
 }
 
 // prices every watched token, raises alerts, and every half hour runs the oldest one on the line again

@@ -18,7 +18,7 @@ export async function drawCard(res) {
   g = c.createLinearGradient(0, 0, W * 0.7, 0); g.addColorStop(0, 'rgba(6,7,8,.96)'); g.addColorStop(1, 'rgba(6,7,8,0)'); c.fillStyle = g; c.fillRect(0, 0, W, H);
   // frame with cut corners
   c.strokeStyle = 'rgba(237,235,230,.22)'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(42, 22); c.lineTo(W - 22, 22); c.lineTo(W - 22, H - 42); c.lineTo(W - 42, H - 22); c.lineTo(22, H - 22); c.lineTo(22, 42); c.closePath(); c.stroke();
-  c.fillStyle = '#edebe6'; c.save(); c.translate(64, 63); c.scale(0.0725, 0.0725); c.translate(-136, -56); c.fill(new Path2D('M136 456V297.7L292 173.7V90L326 56H376V214.3L220 338.3V422L186 456Z')); c.restore();
+  c.fillStyle = '#edebe6'; 
   c.font = disp(40); c.textBaseline = 'alphabetic'; c.fillText('SHUNTDESK', 94, 92);
   c.fillStyle = '#ffffff'; c.font = mono(15, 700); c.fillText('TICKET ' + (res.chain === 'solana' ? res.addr.slice(0, 4) + '   ·   SOLANA' : res.addr.slice(2, 6).toUpperCase() + '   ·   ROBINHOOD CHAIN'), 64, 122);
   // token

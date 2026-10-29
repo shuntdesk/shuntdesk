@@ -59,7 +59,7 @@ async function card() {
   await document.fonts.load('900 40px "Big Shoulders Display"'); await document.fonts.load('400 20px "JetBrains Mono"'); await document.fonts.load('700 20px "JetBrains Mono"');
   const g = c.createRadialGradient(W / 2, H * 0.4, 0, W / 2, H * 0.4, W * 0.7); g.addColorStop(0, '#17191c'); g.addColorStop(1, '#060708'); c.fillStyle = g; c.fillRect(0, 0, W, H);
   c.strokeStyle = 'rgba(237,235,230,.2)'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(42, 22); c.lineTo(W - 22, 22); c.lineTo(W - 22, H - 42); c.lineTo(W - 42, H - 22); c.lineTo(22, H - 22); c.lineTo(22, 42); c.closePath(); c.stroke();
-  c.fillStyle = '#edebe6'; c.save(); c.translate(56, 52); c.scale(0.08, 0.08); c.translate(-136, -56); c.fill(new Path2D('M136 456V297.7L292 173.7V90L326 56H376V214.3L220 338.3V422L186 456Z')); c.restore();
+  c.fillStyle = '#edebe6'; 
   c.font = '900 38px "Big Shoulders Display"'; c.fillText('SHUNTDESK', 90, 86);
   c.font = '400 18px "JetBrains Mono"'; c.fillStyle = '#8b8e94'; c.textAlign = 'right'; c.fillText('SAME HAND · ' + (r.token ? short(r.token) : short(r.launcher)).toUpperCase(), W - 56, 82); c.textAlign = 'left';
   c.font = '900 104px "Big Shoulders Display"'; c.fillStyle = r.hand === 'dead' ? '#ff4d5e' : '#edebe6'; c.fillText({ dead: 'SAME HAND.', same: 'SAME HAND.', new: 'NO EARLIER LAUNCH.' }[r.hand], 52, 250);
